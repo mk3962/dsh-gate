@@ -1,0 +1,71 @@
+# dsh-gate 持续集成：规范自检 + 离线自测（不需要 npm install）
+# 两套系统各跑一遍：Linux 确认无平台相关路径假设，Windows 确认 PowerShell 安装脚本仍可解析。
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: ${{ matrix.os }} / node ${{ matrix.node }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        node: [20, 22]
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node ${{ matrix.node }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: 环境信息
+        shell: bash
+        run: node --version && npm --version
+
+      - name: 规范自检（15 项，npm run check）
+        run: npm run check
+
+      - name: 单元自测 + 负载自测（npm test）
+        run: npm test
+
+      - name: PowerShell 安装脚本语法检查
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $bad = 0
+          foreach ($f in @('scripts/install.ps1','scripts/uninstall.ps1')) {
+            $errs = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $f).Path, [ref]$null, [ref]$errs)
+            if ($errs -and $errs.Count -gt 0) {
+              Write-Host "::error file=$f::$($errs[0].Message)"
+              $bad++
+            } else {
+              Write-Host "OK  $f"
+            }
+          }
+          if ($bad -gt 0) { exit 1 }
+
+      - name: 打包体积体检（仅报告，不阻断）
+        if: runner.os == 'Linux' && matrix.node == 22
+        shell: bash
+        run: |
+          echo '--- payload 文件清单 ---'
+          git ls-files | grep -Ev '^\.github/' | wc -l
+          echo '--- 单个源文件最大 5 个 ---'
+          find lib client test scripts -type f \( -name '*.js' -o -name '*.mjs' \) -printf '%s %p\n' | sort -rn | head -5
+

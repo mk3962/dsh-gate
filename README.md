@@ -8,6 +8,8 @@
 
 MIT License · 需要 DSH ≥ 0.1.7-rc.1 · Node ≥ 20 · 离线可测（50 项断言）
 
+[![CI](https://github.com/mk3962/dsh-gate/actions/workflows/ci.yml/badge.svg)](https://github.com/mk3962/dsh-gate/actions/workflows/ci.yml)
+
 ---
 
 ## 为什么需要它
@@ -210,6 +212,19 @@ npm run verify    # 上面两个一起
 测试用 `test/vendor/dsh-tools` 的替身复刻宿主 `view / restrict / execute / assemble` 的真实语义
 （含「`view()` 无 scope = 全局视图」这条关键区别），通过 `--import ./test/stub-loader.mjs` 解析裸包名，
 因此**不需要 `npm install`、不需要 DSH 在跑**。
+
+### 持续集成
+
+推送到 `main`、开 PR 或手动触发时，[.github/workflows/ci.yml](.github/workflows/ci.yml) 跑四组矩阵：
+
+| 平台 | Node | 跑什么 |
+|---|---|---|
+| ubuntu-latest | 20 / 22 | `npm run check` + `npm test` |
+| windows-latest | 20 / 22 | 同上，另加 PowerShell 安装/卸载脚本语法检查（`[Parser]::ParseFile`） |
+
+一次约 1 分钟，**不需要 `npm install`**（测试自带 `dsh-tools` 替身，见下）。徽章状态见文件顶部。
+
+---
 
 目录说明：
 
