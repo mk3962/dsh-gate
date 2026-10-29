@@ -85,7 +85,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\install.ps1
 > 而前端列表还会把 `installed=false && official=false && error===undefined` 的行整条丢掉。
 > 只写 bundles 的插件能跑，但在「插件 → 已安装」里根本不出现 —— 这是 0.1.2 修掉的真实缺陷。
 
-脚本会：备份 `package.json` 与 `cordis.patch.yml`（默认到 `<DSH home>\backups\dsh-gate\`）、
+脚本会：备份 `package.json` 与 `cordis.patch.yml`（默认到 `<DSH home>\backups\dsh-gate`）、
 把旧源码移进备份、回读校验六项（JSON 合法 / 无 BOM / bundles 含 / 依赖含 / junction 就位 / patch 行就位）。
 进程检查只看**跑这个 profile 的 DSH**，不会因为你同时开着别的实例就拒绝。
 
@@ -110,6 +110,30 @@ ln -s "$HOME_DIR/local-plugins/dsh-gate" "$PROFILE/node_modules/dsh-gate"   # Wi
 ```
 
 > 用 `link:` 而**不是** `file:`：`file:` 依赖执行 `pnpm remove` 时会连源码目录一起删掉。
+
+### 方式 C：官方界面「插件 → 添加插件」（不用脚本，已实测）
+
+侧栏 **插件** → 右上 **添加插件** → **安装第三方插件** → 填一个**绝对路径**（或 GitHub 仓库地址）→ **安装**
+→ 安装完成对话框里点 **立即启用** → 重启该 profile 的 DSH。
+
+实测（2026-10-30，隔离实例 gate-test）：填入 `D:\dsh-gate-test-home\local-plugins\dsh-gate` 后，宿主跑的是
+`pnpm add link:<该路径>`，`package.json` 写入 `dependencies["dsh-gate"] = "link:D:/…/dsh-gate"`、
+`node_modules\dsh-gate` 是符号链接；**「立即启用」**把 `dsh-gate` 推进 `dsh.profile.bundles`（36→37）。
+重启后插件正常挂载：`/api/dsh-gate/state` 200（可见 179 / 常驻 14 / 按需 174 / 目录 3960 tokens），
+卡片可开关、可卸载、可配置 —— 和方式 A 的结果一致，只是不写 `gate.json`、不动 `cordis.patch.yml` 行。
+
+注意：
+
+- **必须绝对路径**：相对路径 / `~` 会被宿主拒绝（`a local path must be absolute`）。
+- 源码目录要**留着**：`link:` 只是符号链接，删了源码插件就加载不了。建议先固定放到
+  `<DSH home>\local-plugins\dsh-gate`（和方式 A 同一个位置），再把这个路径填进对话框。
+- 安装那一步**不会自动启用**，必须再点一次「立即启用」（漏了就会看到卡片但显示未启用）。
+- 本插件没有 `prepare`/构建脚本，所以 **Git 地址也能直接装**（宿主按 `kind: git` 走 `pnpm add <地址>`，
+  会把仓库拷进 `node_modules`，升级＝卸载后重装）。npm 包名暂时用不了：还没发布到 npm。
+- pnpm 会对 `link:` 依赖报一条 peerDependencies 警告（`@deepseek-ai/dsh-tools` 不从目标 node_modules 解析）——
+  无害，该模块由宿主 loader 提供。
+- **不写 `gate.json` 也能用**：没有策略文件时按内置默认（工具默认按需 + 10 个常用常驻）；
+  第一次点「保存策略」才会在 `<DSH home>\gate.json` 落地。
 
 ### 装好之后
 
