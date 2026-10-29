@@ -1,0 +1,71 @@
+{
+  "name": "dsh-gate",
+  "version": "0.1.5",
+  "description": "Two-tier prompt-surface gate for DeepSeek Harness: keep a small resident tool set declared, move every other tool / prompt section / skill catalog / MCP surface behind one on-demand catalog that the model can expand with gate_load, and manage it from a UI page.",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./client/index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/",
+    "client/",
+    "cordis.patch.yml",
+    "gate.example.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node --import ./test/stub-loader.mjs test/selftest.mjs && node --import ./test/stub-loader.mjs test/loadtest.mjs",
+    "test:selftest": "node --import ./test/stub-loader.mjs test/selftest.mjs",
+    "test:loadtest": "node --import ./test/stub-loader.mjs test/loadtest.mjs",
+    "check": "node scripts/check-spec.mjs",
+    "verify": "npm run check && npm test"
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "context-window",
+    "tools",
+    "progressive-disclosure",
+    "mcp",
+    "prompt-engineering"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mk3962/dsh-gate.git"
+  },
+  "homepage": "https://github.com/mk3962/dsh-gate#readme",
+  "bugs": {
+    "url": "https://github.com/mk3962/dsh-gate/issues"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-tools": "^0.1.7-rc.1 || ^0.2.0-rc.1"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-tools": {
+      "optional": true
+    }
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-plugin-manager"
+      ],
+      "platform": "web"
+    },
+    "engines": {
+      "dsh": ">=0.1.7-rc.1"
+    }
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "version": 2,
+  "enabled": true,
+  "tools": {
+    "defaultTier": 2,
+    "overrides": {
+      "pwsh": 1,
+      "read": 1,
+      "write": 1,
+      "edit": 1,
+      "grep": 1,
+      "glob": 1,
+      "web_search": 1,
+      "web_fetch": 1,
+      "ws_mcp_call": 1,
+      "skill": 1
+    }
+  },
+  "sections": {
+    "defaultTier": 1,
+    "overrides": {}
+  },
+  "skills": {
+    "tier": 1
+  },
+  "catalog": {
+    "groupByPlugin": true,
+    "maxDescriptionLength": 64
+  },
+  "protected": []
+}

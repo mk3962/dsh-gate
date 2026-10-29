@@ -1,0 +1,20 @@
+# dependencies
+node_modules/
+
+# local policy file (per machine, never commit)
+gate.json
+gate.local.json
+
+# backups produced by scripts/install.ps1 -BackupRoot
+backup/
+
+# os / editor noise
+.DS_Store
+Thumbs.db
+*.log
+.vscode/
+.idea/
+
+# release artifacts
+dist/
+*.zip

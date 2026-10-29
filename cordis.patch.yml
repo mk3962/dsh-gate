@@ -1,0 +1,14 @@
+# dsh-gate — 两层提示词表面闸门
+# 第一层（T1）常驻：工具声明照常进上下文，模型直接可调。
+# 第二层（T2）按需：从工具表里 restrict 掉，只在 gate:catalog 段落里留一行；
+#                  gate_load 加载后下一模型步出现。
+# off：既不进工具表也不进目录。protected：闸门不碰。
+#
+# 配置优先级：本行 config > ~/.dsh/gate.json > 内置默认。
+- insert:
+    - id: surface-gate
+      name: dsh-gate
+      config:
+        enabled: true
+        # 留空则用 <DSH_HOME>/gate.json；也可以写绝对路径。
+        policyFile: ""
