@@ -103,6 +103,7 @@ window.__ModuleLoader__.load({
 
       const overrides = draft || {};
       const own = new Set(Array.isArray(state.own) ? state.own : []);
+      const preset = new Set(Array.isArray(state.preset) ? state.preset : []);
       const authority = state.tiers || {};
       const isOwn = (name) => own.has(name);
       // 归层以服务端权威表 state.tiers 为准。
@@ -140,6 +141,17 @@ window.__ModuleLoader__.load({
         ...(isOwn(name)
           // 自身层工具 restrict 管不到，给按钮就是骗人：点了也不会生效。
           ? [h("span", { className: "dshg-note", title: "agent 自己注册的工具，restrict 管不到，永远常驻" }, "自身层")]
+          : preset.has(name)
+          // preset 平面：默认保持常驻不受管，点按钮＝在 overrides 里点名，点了才受管。
+          ? [
+            h("span", { className: "dshg-note", title: "agent preset 注册的工具：默认不写 overrides 就不受管（常驻）；点下方按钮即点名受管" }, "预设层"),
+            ...actions.map(([label, tier]) => h("button", {
+              key: label,
+              className: "dshg-btn",
+              onClick: () => setTier(name, tier),
+              title: label,
+            }, label)),
+          ]
           : actions.map(([label, tier]) => h("button", {
             key: label,
             className: "dshg-btn",

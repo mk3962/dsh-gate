@@ -215,11 +215,19 @@ ln -s "$HOME_DIR/local-plugins/dsh-gate" "$PROFILE/node_modules/dsh-gate"   # Wi
 
 ## 兼容性与已知限制
 
-- **PTC 模式下工具面才是主场**：PTC profile 里 `pwsh` / `read` / `write` / `edit` / `grep` / `glob` 根本不存在，
-  所以 `gate.json` 里给它们写的层不生效（没有这个工具，自然没得藏）。
-- **技能面需要 `skill` 工具存在**：PTC profile 的宿主不注册 `skill` 工具、技能目录走别的注入通道，
-  面板的技能列会保持为空。
+- **两类工具平面**（v0.1.6 起说清楚，旧文档写反了）：
+  - **全局层**：插件注册的工具（MCP 工具、`ws_mcp_call`、office/univer 之类）与宿主全局注册的工具 ——
+    闸门默认**全权管理**（默认层 + `overrides` 说了算）。
+  - **preset 平面**：`pwsh` / `read` / `write` / `edit` / `grep` / `glob` / `web_search` / `web_fetch` / `skill`
+    这些由 **agent preset**（`@deepseek-ai/dsh-web-app/presets/{ptc,standard}.patch.yml`）注册在 agent 祖先层。
+    它们**确实存在、也确实能调**（PTC 会话里实测 8/8 全在），但 v0.1.5 及以前的候选集只读全局视图，
+    于是"看不见、管不到"，`gate.json` 给它们写的层像个死键 —— 旧文档据此误写成"根本不存在"。
+    v0.1.6 起它们进候选集，但**默认不受管**（保持常驻、不写 deny）：只有你在 `overrides` 里点名
+    （例如 `"read": 2` 把它贬成按需），闸门才真正对它们生效。UI 上这类工具带「预设层」标记。
+  - 技能面同理：`skill` 工具存在且可点名受管；面板技能列只有在宿主真的把技能目录注入给 `skill` 工具后才非空。
 - **段落面**依赖宿主每轮 assemble 的真实快照；宿主大版本改段落渲染时可能读不到（会 fail-open）。
+- **`gate_load` 的粒度是「下一步」**：SDK 声明在每一步开始前渲染好，所以同一个 `run_code` 程序体内
+  紧跟 `gate_load` 再调该工具仍会 `tools.<name> is not a function`（真机实测），下一步才可用。
 - 目录里每条描述按 `catalog.maxDescriptionLength`（默认 64 字）截断。
 - 本地目录插件在「插件市场」的**更新**按钮不可用（没有 registry 版本可比）—— 升级走重新跑安装脚本 / 重新 `link:`。
 
@@ -229,7 +237,7 @@ ln -s "$HOME_DIR/local-plugins/dsh-gate" "$PROFILE/node_modules/dsh-gate"   # Wi
 
 ```bash
 npm run check     # DSH 插件规范自检（15 项：入口文件、BOM、patch 格式、client externals…）
-npm test          # 50 项断言：selftest 40 + loadtest 10，离线跑，不碰真实宿主
+npm test          # 55 项断言：selftest 45 + loadtest 10，离线跑，不碰真实宿主
 npm run verify    # 上面两个一起
 ```
 

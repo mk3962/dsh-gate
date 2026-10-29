@@ -1,6 +1,6 @@
 {
   "name": "dsh-gate",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Two-tier prompt-surface gate for DeepSeek Harness: keep a small resident tool set declared, move every other tool / prompt section / skill catalog / MCP surface behind one on-demand catalog that the model can expand with gate_load, and manage it from a UI page.",
   "type": "module",
   "main": "lib/index.js",

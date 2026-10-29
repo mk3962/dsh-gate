@@ -2,6 +2,20 @@
 
 版本号遵循语义化版本；格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [0.1.6] — 2026-10-30
+
+### Fixed
+- **候选集漏掉 preset 平面**（此前 `gate.json` 里给 `pwsh` / `read` / `write` / `edit` / `grep` / `glob` /
+  `web_search` / `web_fetch` / `skill` 写的层"不生效"，旧文档还误写成"PTC profile 里根本不存在"）。
+  根因：候选集只读 `tools.view()`（全局视图），而 agent preset 把工具注册在 **agent 祖先层**，
+  `view(agent).knownNames` 才有它们。改为候选集 = `view(agent).knownNames` ∪ 全局视图。
+- 为免误伤，preset 平面的工具**默认不受管**（常驻、不写 deny）；只有 `overrides` 点名（含通配）才真正生效。
+- `gate_load` 的名字校验同步改用同一候选集（preset 工具不再被判 unknown）。
+
+### Added
+- `gate_status` 与 `GET /api/dsh-gate/state` 增加 `presetNames`（UI 用「预设层」标记，说明默认不受管）。
+- 自测加 5 条 preset 平面用例（默认不受管 / 点名后真被 restrict / gate_load 认领 / tierMap 归层 / schema 覆盖）。
+
 ## [0.1.5] — 2026-10-29
 
 ### Fixed

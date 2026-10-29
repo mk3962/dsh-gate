@@ -28,13 +28,25 @@ for (const name of [
   "gate_status", "gate_search", "gate_load", "gate_call",
 ]) definitions.push({ name, description: desc(name), execute: async (args) => ({ content: [{ type: "text", text: name + " ok " + JSON.stringify(args) }] }) });
 
-function makeHost() {
-  const global = new Map(definitions.map((d) => [d.name, d]));
+/**
+ * @param {{preset?: string[]}} [options] preset = 真实宿主的 agent preset 平面：
+ * 这些名字只挂在 agent 祖先层，global 视图看不到（所以要把它们从 global 里搬走）。
+ */
+function makeHost(options) {
+  const presetNames = new Set((options && options.preset) || []);
+  const global = new Map(definitions.filter((d) => !presetNames.has(d.name)).map((d) => [d.name, d]));
+  // preset 平面：只挂在 agent 的祖先层，global 视图看不到（真实宿主由 agent preset 注册）。
+  const preset = new Map(definitions.filter((d) => presetNames.has(d.name)).map((d) => [d.name, d]));
   let restrictions = [];
+  const denied = (name) => restrictions.some((set) => set.has(name));
   const visibleFor = () => {
     const visible = new Map();
     for (const [name, definition] of global) {
-      if (restrictions.some((set) => set.has(name))) continue;
+      if (denied(name)) continue;
+      visible.set(name, definition);
+    }
+    for (const [name, definition] of preset) {
+      if (denied(name)) continue;
       visible.set(name, definition);
     }
     visible.set("run_code", { name: "run_code", description: "ptc transport" });
@@ -45,11 +57,13 @@ function makeHost() {
       // 真实宿主：view() 不带 scope = 全局视图，restriction 只对 agent scope 的 admits() 生效。
       const visible = scope === undefined ? new Map(global) : visibleFor();
       if (scope === undefined) visible.set("run_code", { name: "run_code", description: "ptc transport" });
-      return { visible, restrictableNames: new Set(global.keys()), knownNames: new Set([...global.keys(), "run_code"]) };
+      // 真实宿主：run_code 只进 visible，不进 knownNames/restrictableNames（所以它算 own 层）。
+      const known = new Set([...global.keys(), ...preset.keys()]);
+      return { visible, restrictableNames: new Set(known), knownNames: known };
     },
     restrict(filter) {
       const deny = new Set(filter.deny || []);
-      for (const name of deny) if (!global.has(name)) throw new Error("tools.restrict() names unknown global tool " + name);
+      for (const name of deny) if (!global.has(name) && !preset.has(name)) throw new Error("tools.restrict() names unknown global tool " + name);
       restrictions.push(deny);
       return () => { restrictions = restrictions.filter((set) => set !== deny); };
     },
@@ -86,7 +100,11 @@ function makeHost() {
       return { dispose() {} };
     },
   };
-  return { tools, agent, rootCtx, logger, handlers, global, restrictions: () => restrictions };
+  const addPreset = (name, definition) => {
+    preset.set(name, definition || { name, description: desc(name) });
+    return () => { preset.delete(name); };
+  };
+  return { tools, agent, rootCtx, logger, handlers, global, addPreset, preset, restrictions: () => restrictions };
 }
 
 const results = [];
@@ -428,6 +446,7 @@ const multiGate = () => {
       onDemandNames: ["web_search"],
       offNames: [],
       ownNames: ["run_code"],
+      presetNames: [],
       gated: live ? 9 : 5,
       catalogChars: 1,
       catalogTokens: 1,
@@ -464,6 +483,63 @@ await check("GET /state?agent=<不存在>：404 并列出已知 agent", async ()
   const body = JSON.parse(res.body);
   assert.equal(body.error, "agent not found");
   assert.deepEqual(body.agents.sort(), ["session-live", "session-old"]);
+});
+
+// ── preset 平面（agent preset 注册的工具：pwsh/read/write/grep/glob/web_search/skill…）──
+// 真误诊：gate.json 给它们写的层“不生效”，文档还写成“PTC profile 里根本不存在”。
+// 真相：它们由 preset 挂在 agent 祖先层，global 视图看不到 → 旧候选集漏掉它们。
+const presetHost = makeHost({ preset: ["pwsh", "read", "write", "skill"] });
+const presetPolicy = resolvePolicy({ tools: { defaultTier: 2, overrides: { univer_sheet: 2 } } }, { logger: presetHost.logger });
+const presetGate = createGate({ ctx: presetHost.rootCtx, logger: presetHost.logger, policy: presetPolicy });
+const presetEntry = presetGate.attach(presetHost.agent);
+await presetEntry.ready;
+presetGate.reapply(presetHost.agent);
+
+await check("preset 平面：默认不受管（常驻、不被 deny、不震荡）", () => {
+  const status = presetGate.status(presetHost.agent);
+  assert.ok(status.residentNames.includes("pwsh"), "resident=" + JSON.stringify(status.residentNames));
+  assert.ok(status.presetNames.includes("pwsh"), "preset=" + JSON.stringify(status.presetNames));
+  assert.ok(!status.onDemandNames.includes("pwsh"));
+  // 全局工具按默认层（2）被藏是正常的；这里只要求 preset 平面不被 deny。
+  for (const set of presetHost.restrictions()) {
+    assert.ok(!set.has("pwsh") && !set.has("write") && !set.has("skill"), "preset 工具不该被写进 deny: " + [...set].join(","));
+  }
+});
+await check("preset 平面：overrides 点名后真正受管（进按需 + 被 restrict 藏掉）", async () => {
+  const named = resolvePolicy({ tools: { defaultTier: 2, overrides: { pwsh: 2, read: 1 } } }, { logger: presetHost.logger });
+  const gate2 = createGate({ ctx: presetHost.rootCtx, logger: presetHost.logger, policy: named });
+  const entry2 = gate2.attach(presetHost.agent);
+  await entry2.ready;
+  gate2.reapply(presetHost.agent);
+  const status = gate2.status(presetHost.agent);
+  assert.ok(status.onDemandNames.includes("pwsh"), "onDemand=" + JSON.stringify(status.onDemandNames));
+  assert.ok(status.residentNames.includes("read"), "read 显式常驻");
+  assert.ok(status.gated > 0, "点名过的要真被藏掉");
+  const view = presetHost.tools.view(presetHost.agent);
+  assert.ok(!view.visible.has("pwsh"), "restrict 之后 pwsh 必须从 agent 视图消失");
+  assert.ok(view.visible.has("read"), "常驻的 read 必须还在");
+  assert.ok(presetHost.restrictions().length > 0, "必须真调用 restrict");
+  // 收拾干净，别把 restriction 泄漏给后续用例
+  await gate2.release(presetHost.agent);
+});
+await check("preset 平面：gate_load 能认领 preset 工具（不再报 unknown）", async () => {
+  const loaded = await presetGate.load(presetHost.agent, ["pwsh"]);
+  assert.deepEqual(loaded.unknown, [], "unknown=" + JSON.stringify(loaded.unknown));
+  assert.deepEqual(loaded.loaded, ["pwsh"]);
+});
+await check("preset 平面：tierMap 把它算常驻并单独列出（UI 打标用）", () => {
+  const map = presetGate.tierMap(presetHost.agent);
+  assert.equal(map.tiers.pwsh, TIER_RESIDENT);
+  assert.ok(map.presetNames.includes("read"), "presetNames=" + JSON.stringify(map.presetNames));
+});
+await check("preset 平面：gate_status schema 覆盖 presetNames", async () => {
+  registerGateTools({ ctx: presetHost.rootCtx, gate: presetGate, policy: presetPolicy });
+  const tool = presetHost.global.get("gate_status");
+  assert.ok(tool, "gate_status 未注册");
+  const value = presetGate.status(presetHost.agent);
+  const allowed = new Set(Object.keys(tool.output.schema.properties));
+  for (const key of Object.keys(value)) assert.ok(allowed.has(key), "schema 缺键: " + key);
+  assert.ok(allowed.has("presetNames"));
 });
 
 const failed = results.filter((r) => !r.ok);

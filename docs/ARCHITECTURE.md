@@ -33,8 +33,11 @@
 
 以 agent 为作用域（`view(agent)` 只返回该 agent 可见的工具，并且**只允许 restrict 继承链上的全局工具**）：
 
-1. 取全局视图 `tools.view()`（无 scope = 全部已注册工具）与 agent 视图 `tools.view(agent)`；
+1. 取 **agent 视图** `tools.view(agent)` 的 `knownNames`（不受 restriction 影响，含 agent preset 注册在祖先层的
+   `pwsh` / `read` / `write` / `grep` / `glob` / `web_search` / `skill` 等）∪ **全局视图** `tools.view()` 的 visible。
+   只用全局视图会漏掉整个 preset 平面（v0.1.5 及以前的实际缺陷：`gate.json` 给它们写的层形同死键）；
 2. 用 `policy` 逐个算目标层：`own` 层（agent 自己注册的，如 `run_code` / `gate_*` / 团队工具）无条件常驻；
+   **preset 平面默认不受管**（没被 `overrides` 点名就常驻、不进 deny），点名后才按层生效；
    `INTRINSIC_PROTECTED` 与 `policy.protected` 里的名字永远常驻；
 3. deny 集 = 目标层为 0 或 2 的工具名。**key = deny 排序后 join("|")**，与 last deny 相同就直接 return（防自激回环）；
 4. 组目录文本：按层 2 的分组渲染 `<gate-catalog>`（`lib/catalog.js`），token 用 chars/2.9 估算；
