@@ -27,5 +27,6 @@
     "groupByPlugin": true,
     "maxDescriptionLength": 64
   },
+  "narrowPassThrough": 12,
   "protected": []
 }

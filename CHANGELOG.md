@@ -2,6 +2,26 @@
 
 版本号遵循语义化版本；格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [0.1.7] — 2026-11-01
+
+### Fixed
+- **委派收窄的子代理被剥空工具面**（2026-11-01 事故：dsh-mnemon 写记忆恒失败，父会话抛
+  `memory subagent completed without recording its result`）。dsh-mnemon 的写入/复核子代理是
+  「allow 白名单 + PTC」形态，工具面只有 `mnemon_*` + `mnemon_subagent_result`（4 个）；
+  闸门按默认层（2 = 按需）把它们全部 deny 掉 ⇒ 子代理一个可用工具都没有，记不了结果，
+  也无法用 `gate_load` 自救（不在它的白名单里）。
+  现在：被委派的子代理（`session.header.origin === "subagent"`）如果**本来只被授予个位数工具**
+  （去掉 agent 自己这一层的 own 工具后 ≤ `narrowPassThrough`，默认 12），直接跳过闸门 ——
+  在个位数工具面上藏东西省不到 token，却会剥掉委派协议的必需工具。
+  主会话与宽工具面子代理的行为完全不变（回归用例覆盖）。
+
+### Added
+- 策略键 `narrowPassThrough`（默认 12，`0` = 关闭豁免回到旧行为）；`gate.json` 与插件行 config 均可写，
+  文件里点名优先。
+- `gate_status` / `/api/dsh-gate/state` 增加 `passthrough`，一眼看出该 agent 是否走了豁免
+  （`gate_status` 的 `output.schema` 同步补键；`additionalProperties: false` 下漏键会让真机调用直接失败）。
+- UI 保存策略时不再抹掉 `narrowPassThrough`（`mergePolicy` 白名单补键）。
+
 ## [0.1.6] — 2026-10-30
 
 ### Fixed

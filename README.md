@@ -173,6 +173,7 @@ ln -s "$HOME_DIR/local-plugins/dsh-gate" "$PROFILE/node_modules/dsh-gate"   # Wi
   "sections": { "defaultTier": 1, "overrides": { "free-search:engines": 2 } },
   "skills":   { "tier": 1 },
   "catalog":  { "groupByPlugin": true, "maxDescriptionLength": 64 },
+  "narrowPassThrough": 12,
   "protected": []
 }
 ```
@@ -181,6 +182,12 @@ ln -s "$HOME_DIR/local-plugins/dsh-gate" "$PROFILE/node_modules/dsh-gate"   # Wi
 - `run_code`、四个 `gate_*`、以及 `protected` 里的名字**任何策略都动不了**（`restrict` 点名 `run_code` 会直接抛错）。
 - 策略文件读坏 / JSON 解析失败 → **fail-open**（全部常驻）：宁可没省 token，也不让会话崩。
 - 非法层值（`null` / `""` / `false`）按默认处理，不会被 `Number()` 静默转成 0 把工具关掉。
+- `narrowPassThrough`（默认 `12`，读法与 `skills.tier` 同：`gate.json` 点名 > 插件行 config > 内置默认）：
+  **被委派出去的子代理**（`session.header.origin === "subagent"`）如果本来只被授予个位数工具
+  （去掉 agent 自己这一层 own 工具后的可见数），闸门整体跳过它 —— 在个位数工具面上藏东西省不到 token，
+  却会把「委派协议的必需工具」一起剥光。`0` = 关闭豁免（子代理也照策略藏）。
+  典型受害者：`dsh-mnemon` 的写记忆子代理（白名单只有 `mnemon_*` + `mnemon_subagent_result`），
+  被藏掉后子代理只能纯文本收尾，父会话抛 `memory subagent completed without recording its result`。
 
 ### 语义边界（都是实测的宿主行为）
 
@@ -189,7 +196,7 @@ ln -s "$HOME_DIR/local-plugins/dsh-gate" "$PROFILE/node_modules/dsh-gate"   # Wi
 | 被隐藏的工具 | 不在 SDK 声明里，调用返回 `UNKNOWN_TOOL` |
 | `gate_load` 之后 | 当前会话内保持常驻，同一 agent 的后续步骤立即生效 |
 | `gate_call` | 临时撤限制 → 宿主完整执行管线（含 pre-execute 守卫）→ `finally` 立刻恢复 |
-| 子 agent | 继承同一套全局策略；闸门按 agent 分别记账 |
+| 子 agent | 继承同一套全局策略；闸门按 agent 分别记账。**例外**：`origin=subagent` 且授予工具数 ≤ `narrowPassThrough` 的子代理整台跳过闸门（见「策略文件」），`gate_status.passthrough` 可查 |
 | 工具热插拔 | 监听 `tools/change` 重算限制，不会留下过期 deny |
 | 插件卸载 | 所有 `restrict` 的 disposer 挂在插件 fiber 上，卸载即全部撤销 |
 
