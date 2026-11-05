@@ -7,8 +7,9 @@
     3) package.json 同时写：
          dsh.profile.bundles      += "dsh-gate"                          （决定被加载）
          dependencies["dsh-gate"]  = "link:../../local-plugins/dsh-gate"（决定可被管理）
-    4) profile 的 cordis.patch.yml 追加 - id: surface-gate + disabled: false，
-       让官方「设置 → 插件」的行级开关也能作用到它。
+    4) profile 的 cordis.patch.yml 追加 - insert: 块（- id: surface-gate / name: dsh-gate /
+       disabled: false），让官方「设置 → 插件」的行级开关也能作用到它。
+      顶层只能写 - insert:；裸 - id:/name: 是崩溃陷阱 #3。
 
   为什么不能只写 bundles：
     宿主判定"已安装"的唯一依据是 profile package.json 的 dependencies
@@ -89,7 +90,9 @@ if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
 }
 
 # 只把运行时需要的文件装进去（不装 test/、docs/、scripts/、node_modules）。
-$payload = @('package.json', 'lib', 'client', 'cordis.patch.yml', 'gate.example.json', 'README.md', 'LICENSE', 'CHANGELOG.md')
+# 这份清单必须与 package.json 的 files 一致：files 里没有的东西（例如 CHANGELOG.md）不进 npm 包，
+# 交付包里也就不存在，列进来只会让安装脚本白跑一遍（这里靠下面的 Test-Path 兜底跳过）。
+$payload = @('package.json', 'lib', 'client', 'cordis.patch.yml', 'gate.example.json', 'README.md', 'LICENSE')
 
 # ---- 进程检查：只拦"跑这个 profile 的 DSH"，不全局拦 *DeepSeek* ----
 # 旧实现 Get-Process -like '*DeepSeek*' 会把用户日常实例也算进来，于是只要用户开着 DSH
@@ -131,7 +134,7 @@ $hasDir = Test-Path $target
 $hasGate = Test-Path $gateJson
 $patchNote = ''
 if (Test-Path $patchFile) { $patchNote = ' 与 cordis.patch.yml' }
-$hasPatchRow = (Test-Path $patchFile) -and (Select-String -Path $patchFile -Pattern '(?m)^-\s*id:\s*surface-gate\s*$' -Quiet)
+$hasPatchRow = (Test-Path $patchFile) -and (Select-String -Path $patchFile -Pattern '(?m)^\s*-\s*id:\s*surface-gate\s*$' -Quiet)
 
 Write-Output "插件源码 : $source"
 Write-Output "安装位置 : $sourceDir (已存在 = $(Test-Path $sourceDir))"
@@ -146,12 +149,12 @@ if ($DryRun) {
   Write-Output ""
   Write-Output "[dry-run] 将执行："
   Write-Output "  1) 备份 package.json$patchNote -> $backupDir\*.$stamp"
-  Write-Output "  2) 复制插件源码（package.json/lib/client/cordis.patch.yml/gate.example.json/README/LICENSE/CHANGELOG）-> $sourceDir"
+  Write-Output "  2) 复制插件源码（package.json/lib/client/cordis.patch.yml/gate.example.json/README/LICENSE）-> $sourceDir"
   Write-Output "  3) 旧的 node_modules\dsh-gate 移入 $backupDir（junction 则只删链接）"
   Write-Output "  4) 建立 junction：$target -> $sourceDir"
   Write-Output "  5) 若无 gate.json，种入 gate.example.json -> $gateJson"
   Write-Output "  6) package.json：bundles += dsh-gate，dependencies.dsh-gate = $depSpec"
-  Write-Output "  7) cordis.patch.yml：追加 - id: surface-gate / disabled: false"
+  Write-Output "  7) cordis.patch.yml：追加 - insert: / - id: surface-gate / name: dsh-gate / disabled: false"
   Write-Output "  8) 回读校验：JSON 合法 / 无 BOM / bundles 含 / 依赖含 / junction 存在 / patch 行存在"
   if ($running.Count -gt 0) { Write-Output ""; Write-Output "注意：目标 profile($profileName) 的 DSH 正在运行（PID $runningIds），真装会被拒绝。" }
   exit 0
@@ -237,11 +240,14 @@ if ($code -ne 0) { throw "写入 package.json 失败（exit $code）" }
 # ---- 5) cordis.patch.yml：让行级开关可控 ----
 # 宿主先铺 bundles，再叠 profile 的 cordis.patch.yml；行上 disabled: false 才是官方 UI
 # "启用组件"开关落盘的位置（bundle 层 disabled 是内存态，boot 会重放）。
-# 注意：这里是给**已存在的行**打补丁，所以是裸顶层 - id:；新增行必须写成 - insert: 嵌套格式。
+# 形状必须与 scripts/check-spec.mjs 的断言一致：顶层行一律写成 - insert:，
+# id / name 缩进挂在 insert 下面。裸顶层 - id:/name: 是崩溃陷阱 #3，宿主解析直接炸。
 $nl = [string][char]10
 $row = @"
-- id: surface-gate
-  disabled: false
+- insert:
+    - id: surface-gate
+      name: dsh-gate
+      disabled: false
 "@
 $utf8 = New-Object System.Text.UTF8Encoding($false)
 if (-not (Test-Path $patchFile)) {
@@ -249,11 +255,27 @@ if (-not (Test-Path $patchFile)) {
   Write-Output "已创建 cordis.patch.yml 并写入 surface-gate 行"
 } else {
   $text = [System.IO.File]::ReadAllText($patchFile)
+  # 旧版本装过裸顶层 "- id: surface-gate"（崩溃陷阱 #3）：先整块摘掉，再按 insert 形状重写，
+  # 免得升级后 profile 里留着一条会把宿主解析炸掉的行。
+  if ($text -match '(?m)^- id: surface-gate\s*$') {
+    $kept = New-Object System.Collections.Generic.List[string]
+    $legacySkip = $false
+    foreach ($line in ($text -split $nl)) {
+      if ($line -match '^- id: surface-gate\s*$') { $legacySkip = $true; continue }
+      if ($legacySkip) {
+        if ($line -match '^\s+\S') { continue }
+        $legacySkip = $false
+      }
+      $kept.Add($line)
+    }
+    $text = ($kept -join $nl).TrimEnd($nl) + $nl
+    Write-Output "已把旧的裸顶层 surface-gate 行改写成 - insert: 形状"
+  }
   $trimmed = $text.Trim()
   if ($trimmed -eq '[]' -or $trimmed -eq '') {
     [System.IO.File]::WriteAllText($patchFile, $row + $nl, $utf8)
     Write-Output "cordis.patch.yml 原为空数组，已写入 surface-gate 行"
-  } elseif ($text -match '(?m)^-\s*id:\s*surface-gate\s*$') {
+  } elseif ($text -match '(?m)^\s*-\s*id:\s*surface-gate\s*$') {
     Write-Output "cordis.patch.yml 已有 surface-gate 行，保留不动"
   } else {
     $sep = ''
@@ -273,7 +295,7 @@ if (-not $depValue) { throw "回读校验失败：dependencies 里没有 dsh-gat
 if (-not (Test-Path $target)) { throw "回读校验失败：node_modules\dsh-gate 不存在" }
 $linkItem = Get-Item $target -Force
 if (-not $linkItem.LinkType) { throw "回读校验失败：node_modules\dsh-gate 不是链接（$($linkItem.LinkType)）" }
-if (-not (Select-String -Path $patchFile -Pattern '(?m)^-\s*id:\s*surface-gate\s*$' -Quiet)) { throw "回读校验失败：cordis.patch.yml 里没有 surface-gate 行" }
+if (-not (Select-String -Path $patchFile -Pattern '(?m)^\s*-\s*id:\s*surface-gate\s*$' -Quiet)) { throw "回读校验失败：cordis.patch.yml 里没有 surface-gate 行" }
 $patchBytes = [System.IO.File]::ReadAllBytes($patchFile)
 if ($patchBytes.Length -ge 3 -and $patchBytes[0] -eq 0xEF -and $patchBytes[1] -eq 0xBB -and $patchBytes[2] -eq 0xBF) { throw "cordis.patch.yml 被写成 BOM" }
 

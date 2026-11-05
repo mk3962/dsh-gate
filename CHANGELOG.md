@@ -2,6 +2,85 @@
 
 版本号遵循语义化版本；格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [0.1.8] — 2026-11-05
+
+### Fixed
+- **面板「关闭」计数永远是 0**（`/api/dsh-gate/state` 把 `off` 写成 `status.off.length`，而
+  `status.off` 本来就是数字 ⇒ 越过界得 `undefined`，`JSON.stringify` 直接把键丢掉）。
+  现在 `off` 由 `gate.snapshot()` 给出，服务端不再自己拼任何计量字段。
+- **委派收窄豁免的幂等短路恒假**（passthrough 分支写了 `denyKey` 却不写 `lift`，而短路条件
+  要求 `lift !== undefined` 或 `deny` 为空 ⇒ 每次重算都重新进一次 `applying`）。
+  判据改成显式的目标形状比较，由 `lib/restriction.js` 独占判断「不动 / 更换 / 撤销」。
+
+### Changed
+- **限制所有权收口**：新增 `lib/restriction.js`，一个 agent 的受限状态（模式 + 键 + lift 句柄 +
+  applying 标记）只由它持有；`gate` 只描述目标形状 `{ mode, deny }`，不再自己比较键或句柄。
+  顺带修掉自指陷阱：`narrowPassThroughFor` 原来遍历受限制影响的 `visibleOf(agent)`，
+  改遍历 `scopedViewOf(agent).knownNames`。
+- **状态形状单一真源**：新增 `gate.snapshot(agent)`（`STATUS_KEYS` 定键与序）与 `pickStatus()`，
+  面板、HTTP 快照、`gate_status`、`gate_search` 全部从它取；`proxy.js` 不再手抄 18 条 schema 属性。
+- **归层单出口**：`policy.resolveTier(policy, name, context)` 返回 `{ tier, bucket }`，
+  `planFor` 与面板层都从它派生，两者不可能不一致。
+- **策略键一张表**：`POLICY_KEYS` 描述每个顶层键（种类 / 合并方式 / 兜底模板），
+  `resolvePolicy`、`mergePolicyFile`、`emptyPolicyTemplate` 全部从表派生；
+  删掉 `server.js` 的手工白名单 if 链与第二份模板，删掉死键 `catalog.maxNameLength` 与 `catalog.hint`。
+- **gate 对外面投影**：公开面收缩为 14 个能力（`attach / listAgents / restrictionState / snapshot /
+  planSections / reapply / isApplying / load / callThrough / catalogFor / rememberSkills /
+  recordSections / release / releaseAll`）；不再交出 `entries` 裸 Map，也不再导出
+  `status / tierMap / visibleOf / planFor`。
+- **测试宿主单 seam**：新增 `test/host.mjs`（`makeHost`），`selftest` / `loadtest` /
+  `passthrough` 三份假宿主合一；新增 `restriction / snapshot / tier / policy / surface` 五个套件。
+- **插件开发文件平行**：安装 payload 与 `package.json` 的 `files` 对齐（去掉 `CHANGELOG.md`）、
+  patch 行一律写 `- insert:` 嵌套形状（并对旧裸行做自动迁移）、README 不再写死断言条数。
+
+### Notes
+- **不改变任何一步渲染出的提示词字节**：`gate_status` 的 `output.schema` 属性集与顺序仍由
+  `STATUS_KEYS` 逐字节确定（18 键），四个 `gate_*` 工具的 `name` / `description` /
+  `parameters` 一字未改；`gate-catalog` 段落文本格式未动。因此本次升级不引入新的前缀缓存断点。
+- 已装副本仍是 0.1.7，本次不重装；`~/.dsh/gate.json` 的任何取值未改。
+
+### 0.1.8 收尾时补的（审查发现）
+- **策略键优先级逐字段统一**：`catalog`（kind `object`）旧实现把插件行 config 最后的 `Object.assign`
+  放在文件之后 ⇒ 这一个键反向覆盖文件；`tools` / `sections`（kind `section`）旧实现把 `defaultTier`
+  一律取文件的，文件没写这个字段时就丢掉行 config 的值。现在所有键统一「逐字段：文件 > 行 config > 内置默认」。
+- **`gate.snapshot()` 改成只读**：以前对未挂载的 agent 取快照会顺手 `ensureEntry`（注册 scoped ctx
+  并施加限制），HTTP 层拿 `roots()` 兜底时会给别的会话建条目。
+- **没有施加手段时不再假装「限制着」**：`lib/restriction.js` 的 `apply()` 在拿不到 `restrict` 回调时
+  旧实现直接把状态置成 `limited` 却没有 lift 句柄 ⇒ 下一次同样的目标被幂等短路挡住，此后再也不尝试
+  （与 `restrict()` 抛错那条路径同一个坑）。现在一并退回 `none`，并加断言覆盖。
+- **删掉 `planSections().gated`**：全仓无读取者（`sections.js` 自带一份 `dropped`），是会漂的第二本账。
+- **`lib/prestep.js` 不再写裸 `1`**：改用 `policy.js` 的 `TIER_RESIDENT`，层值定义一改不会静默跟丢。
+- **两条验收项补上断言**：`test/surface.test.mjs` 扫描 `test/` 断言仓内只有一处 `view` / `restrict`
+  适配（票 01 的验收项此前没有断言守着）；`test/restriction.test.mjs` 覆盖「拿不到施加手段」这条路径。
+- **文档与实现对齐**：`docs/ARCHITECTURE.md` 里 policy.js 的优先级（原写成与实现相反的
+  「行 config > 文件」）与 prestep.js 的技能识别能力（原写成有文本特征回退，实际只认
+  `source.kind === "skill-catalog"`）两处已改正。
+
+### 0.1.8 收尾第三轮（code-review 双轴：硬违规 0 / 判断题 7 → 修 5）
+- **测试自己骗自己（三处）**：① `test/policy.test.mjs` 的每键往返用 `spec.fallback` 当提交值 ⇒
+  提交值恒等于现值，`mergePolicyFile` 写错也测不出；改成按 `kind` 造「与默认不同」的值并断言
+  `notDeepEqual` 真的改掉了该键。② `test/tier.test.mjs` 里 `if (!(name in tiers)) continue;`
+  让归层表漏掉 off 名字时静默跳过；改成 `assert.ok(name in tiers, …)`。③ `test/snapshot.test.mjs`
+  的段落种子写在 `gate.attach(agent)` 返回的 Promise 上（`attach` 早已只回 thenable）⇒ 种子被
+  静默吞掉、段落清单恒空也能绿；改走公开面 `recordSections` + `reapply`，并新增第 9 条断言
+  校验「被摘掉的段落进了段落清单」（名字 / chars / tokens / gated 四项）。
+- **`lib/gate.js` 不再写裸 `"none"`**：三态统一用 `lib/restriction.js` 导出的 `MODE_NONE`；
+  `pickStatus` 用的空回退对象收敛成模块级冻结常量 `NO_RESTRICTION`（原来 :411、:495 各造一份）。
+- **`lib/restriction.js` 内部 `release` 改名 `dropHandle`**：与 gate 公开的 `release(agent)`
+  （释放 agent 条目）同名异义，读代码时极易混淆。
+- **`lib/policy.js` 去重**：`normalizeThreshold` 与 `normalizeNumber` 逐字相同 ⇒ 合成
+  `normalizeCount`（注释写明 0 合法、非法回退默认）；删死分支 `case "names": return []`
+  （唯一调用方 `resolvePolicy` 在该 kind 直接 `continue` 丢弃返回值，protected 走合并循环）；
+  `isPlainObject` 收成一份并导出，`lib/server.js` 改具名 import。
+- **「段落行摘要恒空」落成书面已知限制**（规格 Out of Scope 声称「只记录不修」，但此前全仓
+  没有任何记录）：写进 `README.md` 的「兼容性与已知限制」、`docs/TROUBLESHOOTING.md` 的症状表、
+  `lib/gate.js` 的 `recordSections` 注释。修法会让 `<gate-catalog>` 字节变化 ⇒ 破前缀缓存，
+  因此仍然只记录不修。
+- **有意不改的两条判断题**：`lib/gate.js` 为打日志读 `restriction.state()` 自比 mode（比的是
+  模式不是键/句柄，不违反「调用方不得自己比较」）；无 agent 分支手写的 21 键是 snapshot 的完整
+  形状（比 `STATUS_KEYS` 多 `agent` / `tiers` / `skillEntries`），合并需要 builder 抽象。
+- 断言总数 108 → **109**（snapshot 8 → 9）。
+
 ## [0.1.7] — 2026-11-01
 
 ### Fixed

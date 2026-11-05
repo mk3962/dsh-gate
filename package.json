@@ -1,6 +1,6 @@
 {
   "name": "dsh-gate",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Two-tier prompt-surface gate for DeepSeek Harness: keep a small resident tool set declared, move every other tool / prompt section / skill catalog / MCP surface behind one on-demand catalog that the model can expand with gate_load, and manage it from a UI page.",
   "type": "module",
   "main": "lib/index.js",
@@ -18,10 +18,15 @@
     "LICENSE"
   ],
   "scripts": {
-    "test": "node --import ./test/stub-loader.mjs test/selftest.mjs && node --import ./test/stub-loader.mjs test/loadtest.mjs && node test/passthrough.test.mjs",
+    "test": "node --import ./test/stub-loader.mjs test/selftest.mjs && node --import ./test/stub-loader.mjs test/loadtest.mjs && node test/passthrough.test.mjs && node test/restriction.test.mjs && node test/snapshot.test.mjs && node test/tier.test.mjs && node test/policy.test.mjs && node test/surface.test.mjs",
     "test:selftest": "node --import ./test/stub-loader.mjs test/selftest.mjs",
     "test:loadtest": "node --import ./test/stub-loader.mjs test/loadtest.mjs",
     "test:passthrough": "node test/passthrough.test.mjs",
+    "test:restriction": "node test/restriction.test.mjs",
+    "test:snapshot": "node test/snapshot.test.mjs",
+    "test:tier": "node test/tier.test.mjs",
+    "test:policy": "node test/policy.test.mjs",
+    "test:surface": "node test/surface.test.mjs",
     "check": "node scripts/check-spec.mjs",
     "verify": "npm run check && npm test"
   },

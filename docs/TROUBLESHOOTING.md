@@ -29,8 +29,9 @@
 | PTC profile 里 `pwsh`/`read` 等"藏不起来" | PTC 模式下这些工具根本不存在（不是闸门管不到） | 正常现象，见 README「已知限制」 |
 | 技能列一直是空 | 宿主没注册 `skill` 工具（PTC profile） | 已知限制；非 PTC profile 会正常记录 |
 | 段落「摘除」后目录里也找不到它 | 0.1.5 前段落快照是覆盖写 | 升级到 0.1.5+（改并集合并 + 立刻重算） |
+| 目录里段落行只有名字、没有摘要 | 已知问题：`recordSections` 只记 `{name, chars, tokens}`，`renderCatalog` 却读 `entry.summary` | 正常现象，0.1.8 起记为已知限制（修它要改目录字节、破缓存前缀，另开票） |
 | `gate_call` 一次后工具表抖两下 | 0.1.1 前 `callThrough` 没置 `applying` | 升级到 0.1.2+ |
-| 真机调 `gate_status` 报 `ToolCallError: value.xxx is not a declared property` | `output.schema` 漏了 `status()` 的键（宿主 `additionalProperties: false`） | 升级到 0.1.5+；改 schema 时用 `npm test` 里的 schema 覆盖用例兜住 |
+| 真机调 `gate_status` 报 `ToolCallError: value.xxx is not a declared property` | `output.schema` 与 `STATUS_KEYS` 漂了（宿主 `additionalProperties: false`） | 升级到 0.1.5+；改 schema 时用 `npm test` 里的 schema 覆盖用例兜住 |
 
 ## 官方 UI 的「卸载」按钮失败
 

@@ -8,16 +8,15 @@
  *   "memory subagent completed without recording its result"。
  *
  * 结论：origin=subagent 且授予工具数 <= narrowPassThrough（默认 12）的 agent 跳过闸门。
+ * 宿主来自共享 seam（test/host.mjs）。
  * 用法：node test/passthrough.test.mjs
  */
-import os from "node:os";
 import fs from "node:fs";
+import os from "node:os";
 import { resolve as resolvePath } from "node:path";
-import { pathToFileURL } from "node:url";
-
-const LIB = new URL("../lib/", import.meta.url);
-const { createGate } = await import(new URL("gate.js", LIB).href);
-const { resolvePolicy } = await import(new URL("policy.js", LIB).href);
+import { createGate } from "../lib/gate.js";
+import { resolvePolicy } from "../lib/policy.js";
+import { makeHost } from "./host.mjs";
 
 const MNEMON_CHILD_TOOLS = [
   "mnemon_document_search",
@@ -29,60 +28,12 @@ const BASICS = ["read", "write", "edit", "grep", "glob", "pwsh", "web_search", "
 const ONDEMAND = ["mnemon_status", "mnemon_recall", "mnemon_remember", "univer_new", "univer_status", "ppt_create", "word_create", "excel_create"];
 // 这 4 个在真实宿主里是全局注册的（不在 agent 自己这一层），闸门管得到 —— 这正是事故前提。
 const GLOBAL = [...BASICS, ...ONDEMAND, ...MNEMON_CHILD_TOOLS];
-const OWN = ["run_code", "subagent", "list_subagent_models"];
-
-const definition = (name) => ({ name, description: "tool " + name });
-
-function makeView(names, own = []) {
-  const ownSet = new Set(own);
-  return {
-    visible: new Map(names.map((name) => [name, definition(name)])),
-    restrictableNames: new Set(names.filter((name) => !ownSet.has(name))),
-    knownNames: new Set([...names, ...own]),
-  };
-}
-
-function makeAgent({ id, origin, tools, own = [] }) {
-  const restrictCalls = [];
-  const agent = { id, restrictCalls, tools, own };
-  if (origin !== undefined) agent.session = { header: { origin } };
-  agent.ctx = {
-    plugin(config) {
-      const scoped = {
-        tools: {
-          view: () => makeView(tools, own),
-          restrict: (spec) => { restrictCalls.push(spec); return () => {}; },
-          execute: async () => ({}),
-        },
-      };
-      try { config.apply(scoped); } catch { /* 与宿主同：失败只降级 */ }
-      return { dispose() { /* noop */ } };
-    },
-  };
-  return agent;
-}
-
-function makeContext() {
-  const handlers = new Map();
-  const logs = [];
-  return {
-    logs,
-    tools: {
-      view: (agent) => (agent === undefined ? makeView(GLOBAL, OWN) : makeView(agent.tools, agent.own)),
-      restrict: () => () => {},
-      execute: async () => ({}),
-    },
-    logger: { info: (l) => logs.push(String(l)), warn: (l) => logs.push(String(l)), debug: (l) => logs.push(String(l)) },
-    on(name, handler) { handlers.set(name, handler); return () => {}; },
-    inject() {},
-    agents: { roots: () => [] },
-  };
-}
+const OWN = ["subagent", "list_subagent_models"];
 
 const policyDir = fs.mkdtempSync(resolvePath(os.tmpdir(), "gate-passthrough-"));
 
-async function run(agents, rawPolicy = {}) {
-  const policy = resolvePolicy(
+const policyOf = (rawPolicy = {}) =>
+  resolvePolicy(
     {
       tools: { defaultTier: 2, overrides: { read: 1, write: 1, edit: 1, grep: 1, glob: 1, pwsh: 1, web_search: 1, web_fetch: 1, skill: 1 } },
       sections: { defaultTier: 1 },
@@ -90,14 +41,26 @@ async function run(agents, rawPolicy = {}) {
     },
     { logger: undefined, dshHome: policyDir },
   );
-  const ctx = makeContext();
-  const gate = createGate({ ctx, logger: ctx.logger, policy });
+
+/** 建一个宿主：全员可见 GLOBAL 的注册面，每个 agent 单独带自己的工具面与自有层。 */
+function hostOf(specs) {
+  const host = makeHost({ names: GLOBAL, id: specs[0] ? specs[0].id : undefined });
+  const agents = specs.map((spec, index) => (index === 0
+    ? Object.assign(host.agent, { names: spec.names || GLOBAL, own: spec.own || [] }, spec.origin === undefined ? {} : { session: { header: { origin: spec.origin } } })
+    : host.addAgent(spec)));
+  return { host, agents };
+}
+
+async function run(specs, rawPolicy = {}) {
+  const { host, agents } = hostOf(specs);
+  const policy = policyOf(rawPolicy);
+  const gate = createGate({ ctx: host.rootCtx, logger: host.logger, policy });
   const out = [];
   for (const agent of agents) {
-    const entry = gate.attach(agent);
-    if (entry !== undefined) await entry.ready;
-    const deny = agent.restrictCalls.length > 0 ? (agent.restrictCalls[0].deny || []) : [];
-    out.push({ agent, entry, deny });
+    await gate.attach(agent);
+    const restrictCalls = host.restrictCalls(agent).filter((call) => call.kind === "restrict");
+    const deny = restrictCalls.length > 0 ? restrictCalls[0].deny : [];
+    out.push({ agent, deny, status: gate.snapshot(agent) });
   }
   await gate.releaseAll();
   return out;
@@ -109,23 +72,25 @@ const check = (name, ok, detail) => {
   console.log((ok ? "  ok    " : "  FAIL  ") + name + (detail ? " — " + detail : ""));
 };
 
-const rootAgent = makeAgent({ id: "session-root", origin: undefined, tools: GLOBAL, own: OWN });
-const wideChild = makeAgent({ id: "child-wide", origin: "subagent", tools: GLOBAL, own: OWN });
-// 真实 dsh-mnemon 子代理：白名单 4 个 mnemon_* + 自己这一层的 run_code/subagent（restrict 管不到）。
-const narrowChild = makeAgent({ id: "child-narrow", origin: "subagent", tools: [...MNEMON_CHILD_TOOLS, ...OWN], own: OWN });
-const narrowChild2 = makeAgent({ id: "child-narrow-2", origin: "subagent", tools: MNEMON_CHILD_TOOLS, own: [] });
+const specs = [
+  { id: "session-root", origin: undefined, names: GLOBAL, own: OWN },
+  { id: "child-wide", origin: "subagent", names: GLOBAL, own: OWN },
+  // 真实 dsh-mnemon 子代理：白名单 4 个 mnemon_* + 自己这一层的 subagent（restrict 管不到）。
+  { id: "child-narrow", origin: "subagent", names: [...MNEMON_CHILD_TOOLS, ...OWN], own: OWN },
+  { id: "child-narrow-2", origin: "subagent", names: MNEMON_CHILD_TOOLS, own: [] },
+];
 
-const [rootOut, wideOut, narrowOut, narrowOut2] = await run([rootAgent, wideChild, narrowChild, narrowChild2]);
+const [rootOut, wideOut, narrowOut, narrowOut2] = await run(specs);
 
 check("主会话仍被限制（deny 非空）", rootOut.deny.length > 0, "deny=" + rootOut.deny.length);
 check("主会话 deny 含按需工具 mnemon_status", rootOut.deny.includes("mnemon_status"));
 check("宽工具面子代理仍被限制（不白送 100+ 声明）", wideOut.deny.length > 0, "deny=" + wideOut.deny.length);
 check("收窄子代理不被剥空（mnemon 白名单形态）", narrowOut.deny.length === 0, "deny=" + JSON.stringify(narrowOut.deny.slice(0, 6)));
 check("收窄子代理（无 own 层）同样放行", narrowOut2.deny.length === 0, "deny=" + JSON.stringify(narrowOut2.deny.slice(0, 6)));
-check("豁免生效时 gate_status.passthrough 为 true", narrowOut.entry !== undefined && narrowOut.entry.passthrough === true);
+check("豁免生效时 gate_status.passthrough 为 true", narrowOut.status !== undefined && narrowOut.status.passthrough === true);
 
 // 开关：narrowPassThrough = 0 时恢复旧行为（仍按策略隐藏）
-const [knobOut] = await run([makeAgent({ id: "child-narrow-3", origin: "subagent", tools: [...MNEMON_CHILD_TOOLS, ...OWN], own: OWN })], { narrowPassThrough: 0 });
+const [knobOut] = await run([{ id: "child-narrow-3", origin: "subagent", names: [...MNEMON_CHILD_TOOLS, ...OWN], own: OWN }], { narrowPassThrough: 0 });
 check("narrowPassThrough=0 时回到旧行为（deny 非空）", knobOut.deny.length > 0, "deny=" + knobOut.deny.length);
 
 const failed = results.filter((r) => r.ok !== true);

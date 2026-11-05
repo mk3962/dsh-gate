@@ -6,7 +6,7 @@
 >
 > 实测（DSH 桌面版 + 137 个工具）：首轮请求 **48.6K → 31.7K token，省 34.8%**。
 
-MIT License · 需要 DSH ≥ 0.1.7-rc.1 · Node ≥ 20 · 离线可测（50 项断言）
+MIT License · 需要 DSH ≥ 0.1.7-rc.1 · Node ≥ 20 · 离线可测（自测 / 加载 / 委派收窄 / 限制对象 / 快照 / 归层 / 策略 / 对外面）
 
 [![CI](https://github.com/mk3962/dsh-gate/actions/workflows/ci.yml/badge.svg)](https://github.com/mk3962/dsh-gate/actions/workflows/ci.yml)
 
@@ -78,7 +78,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\install.ps1
 2. `<profile>\node_modules\dsh-gate` 建成 **junction** 指向它；
 3. `package.json` 同时写 `dsh.profile.bundles += "dsh-gate"`（决定被加载）与
    `dependencies["dsh-gate"] = "link:../../local-plugins/dsh-gate"`（决定可被管理）；
-4. profile 的 `cordis.patch.yml` 追加 `- id: surface-gate` + `disabled: false`，让官方行级开关能落到它头上。
+4. profile 的 `cordis.patch.yml` 追加 `- insert:` 块（内含 `- id: surface-gate` / `name: dsh-gate` / `disabled: false`），
+   让官方行级开关能落到它头上 —— 顶层必须写 `- insert:`，裸 `- id:` 会让宿主解析崩掉（崩溃陷阱 #3）。
 
 > 为什么必须写 `dependencies`：宿主判定「已安装」只看 profile `package.json` 的 dependencies
 > （`dsh-plugin-manager` → `installed = dependencies.includes(name)`），
@@ -163,7 +164,8 @@ ln -s "$HOME_DIR/local-plugins/dsh-gate" "$PROFILE/node_modules/dsh-gate"   # Wi
 
 ### 策略文件
 
-优先级：插件行 `config` > `<DSH_HOME>/gate.json` > 内置默认（`gate.example.json` 就是可直接用的默认策略）。
+优先级：`<DSH_HOME>/gate.json` > 插件行 `config` > 内置默认，**逐键**比较（`gate.example.json` 就是可直接用的默认策略）。
+文件里写了的键以文件为准；文件没写的键回落到插件行 config；两者都没有才用内置默认。
 
 ```json
 {
@@ -179,10 +181,12 @@ ln -s "$HOME_DIR/local-plugins/dsh-gate" "$PROFILE/node_modules/dsh-gate"   # Wi
 ```
 
 - `overrides` 的键支持 `*` / `?` 通配；多条命中取**最具体**的一条（去掉通配后字面量最长者胜），所以 `univer_sheet` 压过 `univer_*`。
+- 优先级**逐字段**一致：文件里写了的字段以文件为准，没写才回落到插件行 `config`，最后才是内置默认。
+  `tools` / `sections` 的 `overrides` 是两张表的并集，同名冲突时文件赢（0.1.7 里这一条对 `catalog` 恰好反着来，0.1.8 统一了）。
 - `run_code`、四个 `gate_*`、以及 `protected` 里的名字**任何策略都动不了**（`restrict` 点名 `run_code` 会直接抛错）。
 - 策略文件读坏 / JSON 解析失败 → **fail-open**（全部常驻）：宁可没省 token，也不让会话崩。
 - 非法层值（`null` / `""` / `false`）按默认处理，不会被 `Number()` 静默转成 0 把工具关掉。
-- `narrowPassThrough`（默认 `12`，读法与 `skills.tier` 同：`gate.json` 点名 > 插件行 config > 内置默认）：
+- `narrowPassThrough`（默认 `12`，读法与其它键一样逐键比较：`gate.json` 点名 > 插件行 config > 内置默认）：
   **被委派出去的子代理**（`session.header.origin === "subagent"`）如果本来只被授予个位数工具
   （去掉 agent 自己这一层 own 工具后的可见数），闸门整体跳过它 —— 在个位数工具面上藏东西省不到 token，
   却会把「委派协议的必需工具」一起剥光。`0` = 关闭豁免（子代理也照策略藏）。
@@ -236,6 +240,8 @@ ln -s "$HOME_DIR/local-plugins/dsh-gate" "$PROFILE/node_modules/dsh-gate"   # Wi
 - **`gate_load` 的粒度是「下一步」**：SDK 声明在每一步开始前渲染好，所以同一个 `run_code` 程序体内
   紧跟 `gate_load` 再调该工具仍会 `tools.<name> is not a function`（真机实测），下一步才可用。
 - 目录里每条描述按 `catalog.maxDescriptionLength`（默认 64 字）截断。
+- **段落行的说明永远是空的**（已知问题）：`recordSections` 只记 `{name, chars, tokens}`，目录渲染却读 `entry.summary`，
+  所以 `<gate-catalog>` 里段落行只有名字、没有那句摘要。修它会让目录字节变化 ⇒ 从那一段起前缀缓存失效，另开票处理。
 - 本地目录插件在「插件市场」的**更新**按钮不可用（没有 registry 版本可比）—— 升级走重新跑安装脚本 / 重新 `link:`。
 
 ---
@@ -243,14 +249,16 @@ ln -s "$HOME_DIR/local-plugins/dsh-gate" "$PROFILE/node_modules/dsh-gate"   # Wi
 ## 开发
 
 ```bash
-npm run check     # DSH 插件规范自检（15 项：入口文件、BOM、patch 格式、client externals…）
-npm test          # 55 项断言：selftest 45 + loadtest 10，离线跑，不碰真实宿主
+npm run check     # DSH 插件规范自检（入口文件、BOM、patch 格式、client externals…）
+npm test          # 全部套件（自测 / 加载 / 委派收窄 / 限制对象 / 快照 / 归层 / 策略 / 对外面），离线跑，不碰真实宿主
 npm run verify    # 上面两个一起
 ```
 
-测试用 `test/vendor/dsh-tools` 的替身复刻宿主 `view / restrict / execute / assemble` 的真实语义
-（含「`view()` 无 scope = 全局视图」这条关键区别），通过 `--import ./test/stub-loader.mjs` 解析裸包名，
-因此**不需要 `npm install`、不需要 DSH 在跑**。
+测试用一个共享宿主 seam `test/host.mjs`（`makeHost`）复刻宿主的 `view / restrict / execute / assemble /
+pre-step` 真实语义（含「`view()` 无 scope = 全局视图」与「preset 平面注册在 agent 祖先层」这两条关键区别）；
+需要宿主的七个套件（自测 / 加载 / 委派收窄 / 限制对象 / 快照 / 归层 / 对外面）全部从它取宿主，
+宿主演进只改这一处（策略表那套是纯函数，不需要宿主）。`test/vendor/dsh-tools` 只负责让裸包名 `@deepseek-ai/dsh-tools`
+能解析（`--import ./test/stub-loader.mjs`），因此**不需要 `npm install`、不需要 DSH 在跑**。
 
 ### 持续集成
 
@@ -273,7 +281,7 @@ client/index.js      web 侧：window.__ModuleLoader__ 手接的 cjs bundle，�
 cordis.patch.yml     插件自己的 bundle 层补丁（insert 一行 surface-gate）
 gate.example.json    默认可直接用的策略文件
 scripts/             安装 / 卸载 / 规范自检
-test/                离线测试 + dsh-tools 替身
+test/                离线测试；host.mjs 是共享宿主 seam，vendor/ 只解析裸包名
 docs/                架构、troubleshooting（见下）
 ```
 

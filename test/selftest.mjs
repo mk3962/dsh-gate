@@ -1,5 +1,5 @@
 /**
- * 沙盒自测：用一个假宿主复刻真实语义（view/restrict/execute/assemble），
+ * 沙盒自测：用共享测试宿主（test/host.mjs）复刻真实语义，
  * 验证闸门算出来的 deny 集、目录文本、按需加载、代理执行、段落摘除。
  * 不碰真实 DSH 实例。跑法：node test/selftest.mjs
  */
@@ -8,104 +8,18 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolvePolicy, tierForTool, TIER_RESIDENT, TIER_OFF } from "../lib/policy.js";
-import { createGate } from "../lib/gate.js";
+import { createGate, pickStatus } from "../lib/gate.js";
 import { mountSectionGate } from "../lib/sections.js";
 import { mountSkillGate } from "../lib/prestep.js";
 import { estimateTokens } from "../lib/catalog.js";
 import { registerGateTools } from "../lib/proxy.js";
 import { mountServer, hostAdmission, isTrustedRequest } from "../lib/server.js";
+import { makeHost } from "./host.mjs";
 import os from "node:os";
 import fsSync from "node:fs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "..");
-
-const desc = (name) => name + " 工具的说明文字。第二句不该出现。";
-const definitions = [];
-for (const name of [
-  "pwsh", "read", "write", "edit", "grep", "glob", "web_search", "web_fetch", "ws_mcp_call", "skill",
-  "univer_sheet", "univer_doc", "office_docx", "ssh_exec", "mnemon_recall", "todo_write", "terminal_open",
-  "gate_status", "gate_search", "gate_load", "gate_call",
-]) definitions.push({ name, description: desc(name), execute: async (args) => ({ content: [{ type: "text", text: name + " ok " + JSON.stringify(args) }] }) });
-
-/**
- * @param {{preset?: string[]}} [options] preset = 真实宿主的 agent preset 平面：
- * 这些名字只挂在 agent 祖先层，global 视图看不到（所以要把它们从 global 里搬走）。
- */
-function makeHost(options) {
-  const presetNames = new Set((options && options.preset) || []);
-  const global = new Map(definitions.filter((d) => !presetNames.has(d.name)).map((d) => [d.name, d]));
-  // preset 平面：只挂在 agent 的祖先层，global 视图看不到（真实宿主由 agent preset 注册）。
-  const preset = new Map(definitions.filter((d) => presetNames.has(d.name)).map((d) => [d.name, d]));
-  let restrictions = [];
-  const denied = (name) => restrictions.some((set) => set.has(name));
-  const visibleFor = () => {
-    const visible = new Map();
-    for (const [name, definition] of global) {
-      if (denied(name)) continue;
-      visible.set(name, definition);
-    }
-    for (const [name, definition] of preset) {
-      if (denied(name)) continue;
-      visible.set(name, definition);
-    }
-    visible.set("run_code", { name: "run_code", description: "ptc transport" });
-    return visible;
-  };
-  const tools = {
-    view(scope) {
-      // 真实宿主：view() 不带 scope = 全局视图，restriction 只对 agent scope 的 admits() 生效。
-      const visible = scope === undefined ? new Map(global) : visibleFor();
-      if (scope === undefined) visible.set("run_code", { name: "run_code", description: "ptc transport" });
-      // 真实宿主：run_code 只进 visible，不进 knownNames/restrictableNames（所以它算 own 层）。
-      const known = new Set([...global.keys(), ...preset.keys()]);
-      return { visible, restrictableNames: new Set(known), knownNames: known };
-    },
-    restrict(filter) {
-      const deny = new Set(filter.deny || []);
-      for (const name of deny) if (!global.has(name) && !preset.has(name)) throw new Error("tools.restrict() names unknown global tool " + name);
-      restrictions.push(deny);
-      return () => { restrictions = restrictions.filter((set) => set !== deny); };
-    },
-    register(definition) {
-      global.set(definition.name, definition);
-      return () => { global.delete(definition.name); };
-    },
-    async execute(input) {
-      const definition = visibleFor().get(input.name);
-      if (definition === undefined) throw new Error("UNKNOWN_TOOL: " + input.name);
-      return definition.execute(input.arguments, input);
-    },
-  };
-  const handlers = new Map();
-  const logger = { info() {}, warn() {}, debug() {} };
-  const agent = { id: "agent-1", ctx: undefined };
-  const rootCtx = {
-    tools,
-    logger,
-    agents: { roots: () => [agent] },
-    on(event, handler) {
-      if (!handlers.has(event)) handlers.set(event, []);
-      handlers.get(event).push(handler);
-      return () => { handlers.set(event, (handlers.get(event) || []).filter((h) => h !== handler)); };
-    },
-    inject(_deps, callback) { return callback(rootCtx); },
-    effect(callback) { return callback(); },
-  };
-  agent.ctx = {
-    tools,
-    on: rootCtx.on,
-    plugin(descriptor) {
-      descriptor.apply({ tools, on: rootCtx.on, effect: rootCtx.effect });
-      return { dispose() {} };
-    },
-  };
-  const addPreset = (name, definition) => {
-    preset.set(name, definition || { name, description: desc(name) });
-    return () => { preset.delete(name); };
-  };
-  return { tools, agent, rootCtx, logger, handlers, global, addPreset, preset, restrictions: () => restrictions };
-}
 
 const results = [];
 /**
@@ -122,8 +36,7 @@ const policy = resolvePolicy({}, { logger: host.logger });
 const example = JSON.parse(fs.readFileSync(path.join(root, "gate.example.json"), "utf8"));
 const examplePolicy = resolvePolicy(example, { logger: host.logger });
 const gate = createGate({ ctx: host.rootCtx, logger: host.logger, policy: examplePolicy });
-const entry = gate.attach(host.agent);
-await entry.ready;
+await gate.attach(host.agent);
 
 await check("默认策略：T1 十件套常驻", () => {
   for (const name of ["pwsh", "read", "write", "edit", "grep", "glob", "web_search", "web_fetch", "ws_mcp_call", "skill"]) {
@@ -141,7 +54,7 @@ await check("闸门自己的工具受保护", () => {
   }
 });
 await check("restrict 已生效：第二层工具从 view 消失", () => {
-  const visible = gate.visibleOf(host.agent);
+  const visible = host.visibleOf(host.agent);
   assert.equal(visible.has("univer_sheet"), false);
   assert.equal(visible.has("read"), true);
   assert.equal(visible.has("run_code"), true);
@@ -161,17 +74,17 @@ await check("目录文本包含第二层工具与用法提示", () => {
 });
 await check("目录比原始工具声明省得多", () => {
   const catalog = gate.catalogFor(host.agent);
-  const full = definitions.reduce((sum, d) => sum + estimateTokens(d.name + " " + d.description), 0);
+  const full = [...host.registry.values()].reduce((sum, d) => sum + estimateTokens(d.name + " " + d.description), 0);
   const saved = full - estimateTokens(catalog);
   assert.ok(saved > 0, "saved=" + saved);
 });
 
 await check("gate_load 之前 univer_sheet 不在可见工具表里", () => {
-  assert.equal(gate.visibleOf(host.agent).has("univer_sheet"), false);
+  assert.equal(host.visibleOf(host.agent).has("univer_sheet"), false);
 });
 await gate.load(host.agent, ["univer_sheet"]);
 await check("gate_load 生效", () => {
-  assert.equal(gate.visibleOf(host.agent).has("univer_sheet"), true);
+  assert.equal(host.visibleOf(host.agent).has("univer_sheet"), true);
   assert.equal(gate.catalogFor(host.agent).includes("univer_sheet"), false);
 });
 
@@ -180,14 +93,13 @@ await check("gate_call 能调到被隐藏的工具", () => {
   assert.equal(forwarded.content[0].text, "ssh_exec ok {\"command\":\"echo hi\"}");
 });
 await check("代理执行后限制自动恢复", () => {
-  assert.equal(gate.visibleOf(host.agent).has("ssh_exec"), false);
+  assert.equal(host.visibleOf(host.agent).has("ssh_exec"), false);
 });
 
 // 段落钩子
 const sectionPolicy = resolvePolicy({ sections: { defaultTier: 1, overrides: { "free-search:engines": 2 } } }, { logger: host.logger });
 const sectionGate = createGate({ ctx: host.rootCtx, logger: host.logger, policy: sectionPolicy });
 const disposeSection = mountSectionGate({ ctx: host.rootCtx, gate: sectionGate, logger: host.logger, policy: sectionPolicy });
-const assemble = host.handlers.get("system-prompt/assemble")[0];
 const assembly = {
   sections: [
     { name: "HARNESS_IDENTITY", text: "you are dsh" },
@@ -198,7 +110,7 @@ const assembly = {
   tools: [],
   variables: {},
 };
-const transformed = await assemble(assembly, { scope: host.agent }, async () => assembly);
+const transformed = await host.assemble(assembly, host.agent);
 await check("段落钩子摘掉了指定段落", () => {
   const names = transformed.sections.map((s) => s.name);
   assert.equal(names.includes("free-search:engines"), false);
@@ -209,14 +121,14 @@ await check("段落钩子插入了目录段", () => {
   assert.ok(names.includes("gate-catalog"));
 });
 await check("段落清单被记录（含 token 体积）", () => {
-  const status = sectionGate.status(host.agent);
+  const status = pickStatus(sectionGate.snapshot(host.agent));
   assert.ok(Array.isArray(status.sections));
   assert.ok(status.sections.some((s) => s.name === "free-search:engines" && s.tokens > 0));
 });
 await check("第一轮只插入一个目录段", () => {
   assert.equal(transformed.sections.filter((s) => s.name === "gate-catalog").length, 1);
 });
-const twice = await assemble(transformed, { scope: host.agent }, async () => transformed);
+const twice = await host.assemble(transformed, host.agent);
 await check("目录段不重复", () => {
   assert.equal(twice.sections.filter((s) => s.name === "gate-catalog").length, 1);
 });
@@ -230,14 +142,12 @@ const skillCatalogMessage = {
 const skillDecision = { kind: "enter", messages: [{ role: "user", source: { kind: "user" } }, skillCatalogMessage] };
 const residentSkillPolicy = resolvePolicy({ skills: { tier: 1 } }, { logger: host.logger });
 const residentSkillGate = createGate({ ctx: host.rootCtx, logger: host.logger, policy: residentSkillPolicy });
-const residentEntry = residentSkillGate.attach(host.agent);
-await residentEntry.ready;
+await residentSkillGate.attach(host.agent);
 const disposeResidentSkills = mountSkillGate({ ctx: host.rootCtx, gate: residentSkillGate, logger: host.logger, policy: residentSkillPolicy });
-const preStep = host.handlers.get("agent/pre-step").slice(-1)[0];
-const residentOut = await preStep({ agent: host.agent }, async () => skillDecision);
+const residentOut = await host.preStep(skillDecision, host.agent);
 await check("技能常驻（tier=1）时名单照样被记录（UI 才能改档）", () => {
-  const entryNow = residentSkillGate.entries.get(host.agent);
-  assert.deepEqual(entryNow.skills.map((s) => s.name).sort(), ["archify", "uni2pg"]);
+  const entries = residentSkillGate.snapshot(host.agent).skillEntries;
+  assert.deepEqual(entries.map((s) => s.name).sort(), ["archify", "uni2pg"]);
 });
 await check("技能常驻（tier=1）时不摘目录消息（零改动透传）", () => {
   assert.equal(residentOut.messages.length, skillDecision.messages.length);
@@ -246,11 +156,9 @@ disposeResidentSkills();
 
 const onDemandSkillPolicy = resolvePolicy({ skills: { tier: 2 } }, { logger: host.logger });
 const onDemandSkillGate = createGate({ ctx: host.rootCtx, logger: host.logger, policy: onDemandSkillPolicy });
-const onDemandEntry = onDemandSkillGate.attach(host.agent);
-await onDemandEntry.ready;
+await onDemandSkillGate.attach(host.agent);
 const disposeOnDemandSkills = mountSkillGate({ ctx: host.rootCtx, gate: onDemandSkillGate, logger: host.logger, policy: onDemandSkillPolicy });
-const preStep2 = host.handlers.get("agent/pre-step").slice(-1)[0];
-const onDemandOut = await preStep2({ agent: host.agent }, async () => ({ kind: "enter", messages: [{ role: "user", source: { kind: "user" } }, skillCatalogMessage] }));
+const onDemandOut = await host.preStep({ kind: "enter", messages: [{ role: "user", source: { kind: "user" } }, skillCatalogMessage] }, host.agent);
 await check("技能改按需时摘掉目录消息并记进目录", () => {
   assert.equal(onDemandOut.messages.length, 1);
   const catalog = onDemandSkillGate.catalogFor(host.agent);
@@ -292,11 +200,10 @@ await check("被摘掉的段落进目录", () => {
 
 // own 层（agent 自己注册、restrict 管不到的）工具：run_code 在假宿主里就是这一类。
 await check("own 层工具被识别，tierMap 归为常驻", () => {
-  const s = gate.status(host.agent);
+  const s = gate.snapshot(host.agent);
   assert.ok(s.ownNames.includes("run_code"), "ownNames=" + JSON.stringify(s.ownNames));
-  const map = gate.tierMap(host.agent);
-  assert.equal(map.tiers.run_code, TIER_RESIDENT);
-  assert.equal(map.tiers.univer_doc, 2);
+  assert.equal(s.tiers.run_code, TIER_RESIDENT);
+  assert.equal(s.tiers.univer_doc, 2);
 });
 
 // enabled:false 必须撤销已经建立的限制（否则“关闸门”关不掉已藏的工具）。
@@ -304,12 +211,11 @@ await check("策略 enabled:false 时撤销已有限制", async () => {
   const host2 = makeHost();
   const p2 = resolvePolicy({ tools: { defaultTier: 2, overrides: {} } }, { logger: host2.logger });
   const g2 = createGate({ ctx: host2.rootCtx, logger: host2.logger, policy: p2 });
-  const e2 = g2.attach(host2.agent);
-  await e2.ready;
-  assert.equal(g2.visibleOf(host2.agent).has("univer_doc"), false, "先确认限制生效");
+  await g2.attach(host2.agent);
+  assert.equal(host2.visibleOf(host2.agent).has("univer_doc"), false, "先确认限制生效");
   p2.enabled = false;
   g2.reapply(host2.agent);
-  assert.equal(g2.visibleOf(host2.agent).has("univer_doc"), true, "关闭策略后必须撤销限制");
+  assert.equal(host2.visibleOf(host2.agent).has("univer_doc"), true, "关闭策略后必须撤销限制");
   await g2.release(host2.agent);
 });
 
@@ -317,15 +223,15 @@ await check("策略 enabled:false 时撤销已有限制", async () => {
 // （loadtest 直调 execute 绕过宿主 schema 校验，所以它测不出这个 bug）。
 registerGateTools({ ctx: host.rootCtx, gate, policy: examplePolicy });
 await check("gate_status 声明的输出属性覆盖 status() 实际返回的全部键", () => {
-  const definition = host.global.get("gate_status");
+  const definition = host.tool("gate_status");
   assert.ok(definition, "gate_status 没注册上");
   const declared = new Set(Object.keys(definition.output.schema.properties));
-  const actual = Object.keys(gate.status(host.agent));
+  const actual = Object.keys(pickStatus(gate.snapshot(host.agent)));
   const missing = actual.filter((key) => !declared.has(key));
   assert.deepEqual(missing, [], "schema 缺少: " + missing.join(", "));
 });
 await check("gate_status 能真的执行并返回全部键", async () => {
-  const definition = host.global.get("gate_status");
+  const definition = host.tool("gate_status");
   const value = await definition.execute({}, { agent: host.agent });
   for (const key of Object.keys(definition.output.schema.properties)) {
     assert.ok(Object.prototype.hasOwnProperty.call(value, key), "缺少返回值键: " + key);
@@ -373,6 +279,13 @@ await check("宿主鉴权抛错时 fail-closed（记 403 而不是放行）", ()
 });
 
 // 端到端：真的跑 mountServer 注册出来的 handler
+/** 空快照：没有 agent 时 HTTP 层的默认形状（形状本身由 gate.snapshot 定义）。 */
+const blankSnapshot = () => ({
+  enabled: true, policyFile: "", agent: null, visible: 0, resident: 0, onDemand: 0, off: 0,
+  gated: 0, passthrough: false, loaded: [], catalogChars: 0, catalogTokens: 0,
+  residentNames: [], onDemandNames: [], offNames: [], ownNames: [], presetNames: [],
+  sections: [], skills: [], skillEntries: [], tiers: {},
+});
 const authCtx = (connection) => ({
   get(name) { return name === "connection" ? connection : undefined; },
   reflect: { get() { return undefined; } },
@@ -390,7 +303,7 @@ const runRoute = async (connection, routePath, reqOver, gateOverride) => {
   policyForServer.policyFile = path.join(os.tmpdir(), "dsh-gate-auth-test.json");
   mountServer({
     ctx,
-    gate: gateOverride || { entries: new Map() },
+    gate: gateOverride || { listAgents: () => [], snapshot: () => blankSnapshot() },
     policy: policyForServer,
     logger: host.logger,
     config: {},
@@ -430,18 +343,20 @@ await check("POST /policy：宿主判 403 时接口也 403", async () => {
   assert.equal(res.code, 403, "body=" + res.body);
 });
 
-// 多会话进程：entries 顺序 = 谁先挂上谁在前，/state 必须取“最近活过”的那个，
+// 多会话进程：/state 必须取「最近活过」的那个（gate.listAgents 按 touchedAt 排序），
 // 否则 UI 会把另一个恢复会话的分层当成当前会话（真事故：活跃会话的 loaded 永远显示 []）。
+// 这里用 stub 顶替 gate：只实现 HTTP 层真的会用到的三个成员（listAgents / snapshot / reapply）。
 const multiGate = () => {
   const oldAgent = { id: "session-old" };
   const liveAgent = { id: "session-live" };
   const shape = (id) => {
     const live = id === "session-live";
-    return {
+    return Object.assign(blankSnapshot(), {
+      agent: id,
       visible: live ? 127 : 102,
       resident: live ? 20 : 16,
       onDemand: live ? 107 : 86,
-      off: [],
+      off: live ? 0 : 0,
       residentNames: ["run_code"],
       onDemandNames: ["web_search"],
       offNames: [],
@@ -451,16 +366,15 @@ const multiGate = () => {
       catalogChars: 1,
       catalogTokens: 1,
       loaded: live ? ["advanced_search"] : [],
-      sections: [],
-    };
+    });
   };
+  // 只实现 HTTP 层真正会用到的三个成员：挑 agent / 出快照 / 重算。
   return {
-    entries: new Map([
-      [oldAgent, { touchedAt: 1000 }],
-      [liveAgent, { touchedAt: 2000 }],
-    ]),
-    status: (agent) => shape(String(agent.id || "")),
-    tierMap: () => ({ tiers: {}, ownNames: [] }),
+    listAgents: () => [
+      { id: "session-live", touchedAt: 2000, agent: liveAgent },
+      { id: "session-old", touchedAt: 1000, agent: oldAgent },
+    ],
+    snapshot: (agent) => (agent === undefined ? blankSnapshot() : shape(String(agent.id || ""))),
     reapply: () => undefined,
   };
 };
@@ -491,12 +405,11 @@ await check("GET /state?agent=<不存在>：404 并列出已知 agent", async ()
 const presetHost = makeHost({ preset: ["pwsh", "read", "write", "skill"] });
 const presetPolicy = resolvePolicy({ tools: { defaultTier: 2, overrides: { univer_sheet: 2 } } }, { logger: presetHost.logger });
 const presetGate = createGate({ ctx: presetHost.rootCtx, logger: presetHost.logger, policy: presetPolicy });
-const presetEntry = presetGate.attach(presetHost.agent);
-await presetEntry.ready;
+await presetGate.attach(presetHost.agent);
 presetGate.reapply(presetHost.agent);
 
 await check("preset 平面：默认不受管（常驻、不被 deny、不震荡）", () => {
-  const status = presetGate.status(presetHost.agent);
+  const status = presetGate.snapshot(presetHost.agent);
   assert.ok(status.residentNames.includes("pwsh"), "resident=" + JSON.stringify(status.residentNames));
   assert.ok(status.presetNames.includes("pwsh"), "preset=" + JSON.stringify(status.presetNames));
   assert.ok(!status.onDemandNames.includes("pwsh"));
@@ -508,10 +421,9 @@ await check("preset 平面：默认不受管（常驻、不被 deny、不震荡�
 await check("preset 平面：overrides 点名后真正受管（进按需 + 被 restrict 藏掉）", async () => {
   const named = resolvePolicy({ tools: { defaultTier: 2, overrides: { pwsh: 2, read: 1 } } }, { logger: presetHost.logger });
   const gate2 = createGate({ ctx: presetHost.rootCtx, logger: presetHost.logger, policy: named });
-  const entry2 = gate2.attach(presetHost.agent);
-  await entry2.ready;
+  await gate2.attach(presetHost.agent);
   gate2.reapply(presetHost.agent);
-  const status = gate2.status(presetHost.agent);
+  const status = gate2.snapshot(presetHost.agent);
   assert.ok(status.onDemandNames.includes("pwsh"), "onDemand=" + JSON.stringify(status.onDemandNames));
   assert.ok(status.residentNames.includes("read"), "read 显式常驻");
   assert.ok(status.gated > 0, "点名过的要真被藏掉");
@@ -528,15 +440,15 @@ await check("preset 平面：gate_load 能认领 preset 工具（不再报 unkno
   assert.deepEqual(loaded.loaded, ["pwsh"]);
 });
 await check("preset 平面：tierMap 把它算常驻并单独列出（UI 打标用）", () => {
-  const map = presetGate.tierMap(presetHost.agent);
-  assert.equal(map.tiers.pwsh, TIER_RESIDENT);
-  assert.ok(map.presetNames.includes("read"), "presetNames=" + JSON.stringify(map.presetNames));
+  const state = presetGate.snapshot(presetHost.agent);
+  assert.equal(state.tiers.pwsh, TIER_RESIDENT);
+  assert.ok(state.presetNames.includes("read"), "presetNames=" + JSON.stringify(state.presetNames));
 });
 await check("preset 平面：gate_status schema 覆盖 presetNames", async () => {
   registerGateTools({ ctx: presetHost.rootCtx, gate: presetGate, policy: presetPolicy });
-  const tool = presetHost.global.get("gate_status");
+  const tool = presetHost.tool("gate_status");
   assert.ok(tool, "gate_status 未注册");
-  const value = presetGate.status(presetHost.agent);
+  const value = pickStatus(presetGate.snapshot(presetHost.agent));
   const allowed = new Set(Object.keys(tool.output.schema.properties));
   for (const key of Object.keys(value)) assert.ok(allowed.has(key), "schema 缺键: " + key);
   assert.ok(allowed.has("presetNames"));
@@ -548,6 +460,6 @@ for (const result of results) {
 }
 console.log("");
 console.log("策略: " + (examplePolicy.policyFile || "(内置默认)"));
-console.log("可见工具 " + gate.status(host.agent).visible + " 个，隐藏 " + gate.status(host.agent).gated + " 个");
+console.log("可见工具 " + gate.snapshot(host.agent).visible + " 个，隐藏 " + gate.snapshot(host.agent).gated + " 个");
 console.log(failed.length === 0 ? "全部通过 (" + results.length + ")" : failed.length + " 项失败 / " + results.length);
 process.exitCode = failed.length === 0 ? 0 : 1;
