@@ -56,6 +56,20 @@
   「行 config > 文件」）与 prestep.js 的技能识别能力（原写成有文本特征回退，实际只认
   `source.kind === "skill-catalog"`）两处已改正。
 
+### 0.1.8 收尾第四轮（CI 首跑四连红 → 测试钩子补齐）
+- **现象**：GitHub Actions 四个矩阵（ubuntu / windows × node 20 / 22）同时炸在
+  `Error [ERR_MODULE_NOT_FOUND]: Cannot find package '@deepseek-ai/dsh-tools' imported from lib/proxy.js`。
+- **根因**：仓库既不 vendor 真实现也不要求 `npm install`，靠 `--import ./test/stub-loader.mjs`
+  把裸包名指到 `test/vendor` 的替身。0.1.8 新增的六个套件（passthrough / restriction /
+  snapshot / tier / policy / surface）在 `package.json` 里写成了裸 `node test/*.mjs` ⇒ 干净
+  checkout 上没有钩子就解析不到。本机之所以全绿，是因为仓库**上层**目录有个游离的
+  `node_modules/@deepseek-ai/dsh-tools`，Node 向上查找恰好能命中。
+- **修法**：`test` 与六个 `test:*` 脚本全部补 `--import ./test/stub-loader.mjs`；并新增第 16 项
+  规范自检——遍历 `manifest.scripts`，凡是以 `node ` 开头且含 `test/<x>.mjs` 的 `&&` 段都必须带钩子，
+  否则 FAIL 并列出违规段（反向验证：删掉一处钩子即 FAIL）。
+- **验证**：`npm run verify` 16/16 + 109 条全绿；另把源码复制到无 `node_modules` 的临时目录复跑，
+  同样全绿——即 CI 的真实环境。
+
 ### 0.1.8 收尾第三轮（code-review 双轴：硬违规 0 / 判断题 7 → 修 5）
 - **测试自己骗自己（三处）**：① `test/policy.test.mjs` 的每键往返用 `spec.fallback` 当提交值 ⇒
   提交值恒等于现值，`mergePolicyFile` 写错也测不出；改成按 `kind` 造「与默认不同」的值并断言

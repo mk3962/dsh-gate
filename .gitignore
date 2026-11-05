@@ -15,6 +15,9 @@ Thumbs.db
 .vscode/
 .idea/
 
+# 临时提交信息文件
+.commitmsg.tmp
+
 # release artifacts
 dist/
 *.zip

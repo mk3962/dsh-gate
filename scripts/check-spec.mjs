@@ -213,6 +213,26 @@ await check("host 入口导出 name / inject / apply", async () => {
   return "name=" + entry.name + ", inject=" + JSON.stringify(entry.inject);
 });
 
+// ---- 5b) 测试脚本必须带离线解析钩子 ----
+await check("每个跑 test/*.mjs 的 npm script 都带 --import ./test/stub-loader.mjs", () => {
+  // lib/proxy.js 导入裸包名 "@deepseek-ai/dsh-tools"，仓库不 vendor 真实现也不要求 npm install，
+  // 全靠这个钩子把它指到 test/vendor 的替身。少写一处，那条套件在 CI（干净 checkout、无 node_modules）
+  // 会以 ERR_MODULE_NOT_FOUND 直接死 —— 本机有 node_modules 时反而看不出来（2026-11-05 真踩过）。
+  const HINT = "--import ./test/stub-loader.mjs";
+  const offenders = [];
+  for (const [name, command] of Object.entries(manifest.scripts ?? {})) {
+    if (typeof command !== "string") continue;
+    for (const segment of command.split("&&")) {
+      const part = segment.trim();
+      if (!/^node\s/.test(part)) continue;
+      if (!/test\/[\w.-]+\.mjs/.test(part)) continue;
+      if (!part.includes(HINT)) offenders.push(name + " → " + part);
+    }
+  }
+  assert(offenders.length === 0, "这些 script 段缺 " + HINT + "（CI 上会 ERR_MODULE_NOT_FOUND）: " + offenders.join(" | "));
+  return "全部带钩子";
+});
+
 // ---- 6) 策略示例 ----
 await check("gate.example.json 是合法策略文件（无 BOM 且字段齐）", () => {
   const file = abs("gate.example.json");
