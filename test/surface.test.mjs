@@ -41,7 +41,9 @@ const check = async (label, fn) => {
 //   这一步尾部要追加什么（PTC 冻结） / 这个工具能不能转发（gate_invoke 的准入）。
 // 工单 14 加的四个技能口：refreshSkills（每步刷新名单）/ skillSections（常驻正文段落）/
 // renderSkill（pre-step 的 /name 注入，不记加载态）/ loadSkill（gate_load 的技能分支）。
-const ANY = new Set(["attach", "listAgents", "restrictionState", "snapshot", "capabilityView", "knownNames", "canInvoke", "loadedTextFor", "planSections", "reapply", "isApplying", "load", "callThrough", "catalogFor", "searchEntries", "rememberSkills", "recordSections", "refreshSkills", "skillSections", "renderSkill", "loadSkill", "release", "releaseAll"]);
+// 工单 15 加的三个 MCP 口：startMcp（启动自挂）/ reapplyAll（挂/卸后刷新全部 agent）/
+// mcpManager（HTTP 层读写服务器清单；manager 自己只暴露 mount/unmount/update/list/state/disposeAll）。
+const ANY = new Set(["attach", "listAgents", "restrictionState", "snapshot", "capabilityView", "knownNames", "canInvoke", "loadedTextFor", "planSections", "reapply", "reapplyAll", "isApplying", "load", "callThrough", "catalogFor", "searchEntries", "rememberSkills", "recordSections", "refreshSkills", "skillSections", "renderSkill", "loadSkill", "release", "releaseAll", "startMcp", "mcpManager"]);
 
 await check("公开面恰好是这组能力：内部表与内部函数一个都不外露", async () => {
   const host = makeHost({ names: NAMES });
