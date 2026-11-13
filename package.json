@@ -18,7 +18,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "test": "node --import ./test/stub-loader.mjs test/selftest.mjs && node --import ./test/stub-loader.mjs test/loadtest.mjs && node --import ./test/stub-loader.mjs test/passthrough.test.mjs && node --import ./test/stub-loader.mjs test/restriction.test.mjs && node --import ./test/stub-loader.mjs test/snapshot.test.mjs && node --import ./test/stub-loader.mjs test/tier.test.mjs && node --import ./test/stub-loader.mjs test/policy.test.mjs && node --import ./test/stub-loader.mjs test/migrate.test.mjs && node --import ./test/stub-loader.mjs test/capabilities.test.mjs && node --import ./test/stub-loader.mjs test/catalog.test.mjs && node --import ./test/stub-loader.mjs test/surface.test.mjs && node --import ./test/stub-loader.mjs test/tail.test.mjs && node --import ./test/stub-loader.mjs test/upstream.test.mjs",
+    "test": "node --import ./test/stub-loader.mjs test/selftest.mjs && node --import ./test/stub-loader.mjs test/loadtest.mjs && node --import ./test/stub-loader.mjs test/passthrough.test.mjs && node --import ./test/stub-loader.mjs test/restriction.test.mjs && node --import ./test/stub-loader.mjs test/snapshot.test.mjs && node --import ./test/stub-loader.mjs test/tier.test.mjs && node --import ./test/stub-loader.mjs test/policy.test.mjs && node --import ./test/stub-loader.mjs test/migrate.test.mjs && node --import ./test/stub-loader.mjs test/capabilities.test.mjs && node --import ./test/stub-loader.mjs test/catalog.test.mjs && node --import ./test/stub-loader.mjs test/surface.test.mjs && node --import ./test/stub-loader.mjs test/tail.test.mjs && node --import ./test/stub-loader.mjs test/upstream.test.mjs && node --import ./test/stub-loader.mjs test/mcp.test.mjs",
     "test:selftest": "node --import ./test/stub-loader.mjs test/selftest.mjs",
     "test:loadtest": "node --import ./test/stub-loader.mjs test/loadtest.mjs",
     "test:passthrough": "node --import ./test/stub-loader.mjs test/passthrough.test.mjs",
@@ -32,6 +32,7 @@
     "test:surface": "node --import ./test/stub-loader.mjs test/surface.test.mjs",
     "test:tail": "node --import ./test/stub-loader.mjs test/tail.test.mjs",
     "test:upstream": "node --import ./test/stub-loader.mjs test/upstream.test.mjs",
+    "test:mcp": "node --import ./test/stub-loader.mjs test/mcp.test.mjs",
     "check": "node scripts/check-spec.mjs",
     "verify": "npm run check && npm test"
   },
