@@ -2,6 +2,170 @@
 
 版本号遵循语义化版本；格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [0.3.0] — 未发布
+
+### Added — 技能接管（工单 14）
+- **策略 v3 新增 `skills`**：`{ takeover?: boolean, off?: string[], imports?: { id?, path }[] }`。
+  `takeover` 缺省 `true`；`off` 是永不注入的技能名清单；`imports` 把本地技能目录接进 gate。
+  已同步到 `POLICY_KEYS` / v3 规范化 / `mergePolicyFile` / v2→v3 迁移默认值 / `gate.example.json` /
+  `scripts/check-spec.mjs`。v2 的 `skills: { tier }` 仍被识别并迁移成 `defaults.skillpack`；
+  档位真源仍是 `defaults.skillpack`，v3 的 `skills` 里不再有 `tier`。
+- **新模块 `lib/skills.js`**（纯函数为主）：宿主技能列/取正文（`ctx.skills.list/get`，形状按 0.2.2-rc.1 源码）、
+  本地导入扫描（目录含 `SKILL.md` / 多子目录各一个 / 单文件 `*.md`，路径支持 `~/` 与策略文件相对）、
+  自写 frontmatter 解析（`name` / `description`，无新依赖）、宿主优先的同名合并（导入标 `shadowed` + 告警）、
+  统一的 `<skill_content name="…">` 渲染、常驻正文段落（`gate-skill:<name>`，单条上限 12000 字，超长截断告警）。
+- **能力 id 扩到单技能**：`skill:<name>` 压过 `skillpack:<provider>`，再落到 `defaults.skillpack`；
+  `resolveSkillDecision` 返回 `single` 与命中的 `capabilityEntry`，`/capabilities` 的 `skills` 行带
+  `origin` / `path` / `tier` / `shadowed`。
+- **接管**（`skills.takeover` 为真时，默认）：
+  - `planFor` 无条件 deny 宿主 `skill` 工具（哪怕策略把 `native:skill` 写成常驻），归层表把它标成 off，
+    能力视图标「由 gate 接管」（`takenOver` / `forcedTier`）；
+  - pre-step 按 `source.kind` 摘掉**所有**技能目录消息（含宿主在「无技能可用」时补发的 `entries=[]`
+    replacement）与用户 `/name` 显式调用的宿主正文；`/name` 改由 gate 用自己的技能表判档后重注入
+    （`off` / `shadowed` / 未知不注入；同一步重复跑不重复、复用同一条消息对象保 id 稳定）；
+  - 目录进 `<gate-catalog>` 的 `[技能]` 组（名字 + 描述首句 + 来源），`off` / `shadowed` 不列；
+  - 常驻正文进系统提示词独立段落 `gate-skill:<name>`（`interpolate: false`，同策略逐字节稳定），
+    不塞进目录行、不记进 UI 段落清单、不会被段落档位误摘；
+  - `gate_load(["skill:<name>"])` 由 gate 自己解析并返回正文（native / PTC 同一条路，不再转发宿主，
+    也不再追加尾部声明）；`off` 返回 denied、不存在返回 unknown；
+  - `gate_search` 的技能候选带真实档位（`技能·常驻 / 技能·按需 / 技能·关闭`）与描述首句。
+- **逃生门**：`"takeover": false` 完整退回 0.1.8 —— 宿主目录照旧注入、`skill` 工具照旧可见、
+  `gate_load(["skill:x"])` 照旧转发宿主 `skill` 工具。
+- `snapshot().skills` 改为 **gate 可见技能名单**（宿主 + 导入 − `off` − `shadowed`，键序/形状不变）；
+  `gate_status` 的 18 键一个没动、顺序不变。
+- 新测试套件 `test/skills.test.mjs`（8 条：目录/正文摘除、`/name` 重注入与幂等、常驻段落字节稳定与防误摘、
+  加载/off/未知、导入三种形态与同名冲突、档位优先级、`takeover=false` 回退）；
+  `selftest` / `surface` / `policy` / `migrate` / `catalog` / `tier` / `snapshot` 的既有断言按新语义更新
+  （每条都在注释里写明为什么改）。
+
+### Added — MCP 接管（工单 15）
+- **策略 v3 新增顶层 `mcp`**：`{ servers: { <name>: { transport?, command?, args?, env?, cwd?, url?, headers?, enabled? } } }`。
+  追加在 `POLICY_KEYS` 末尾，同步到 `V3_KEYS` / `normalizeV3Policy` / `mergePolicyFile` / `applyLayer` /
+  `gate.example.json` / `scripts/check-spec.mjs`。v2→v3 迁移补默认 `{ servers: {} }`。
+  - `normalizeMcpConfig`（`lib/migrate.js`）逐条复用 `lib/mcp.js` 的 `normalizeServerConfig` 校验
+    （`serverName` 限 `[A-Za-z0-9_-]{1,32}`、stdio 要 `command`、streamable-http 要 `url`）；
+    **单条非法只丢弃这一条并告警**，不让整份策略失败。servers 按名排序、字段序固定，落盘条目不带 `name`。
+  - 保存时 `mcp.servers` **整表替换**（提交了就换，删除真的生效）；没提交时保留旧表。
+- **`gate.startMcp()`**：从 `policy.mcp.servers` 取 `enabled !== false` 的条目 **并发** mount，返回
+  `{ mounted, failed }`；失败只 `warn`、不抛。只跑一次（幂等），插件 apply 时触发。
+- **`gate.reapplyAll()`**：挂/卸 MCP 后重算全部已挂 agent（新 `mcp__<name>__*` 工具进第二层，段落计划同步）。
+- **`gate.mcpManager`**：暴露 M1-core 的 manager（mount / unmount / update / list / state / disposeAll）。
+  插件卸载时 `disposeAll()` 断连（用 `ctx.effect` 注册清理）。
+- **HTTP**：新增 `GET/POST /api/dsh-gate/mcp`（沿用宿主 connection 鉴权与本地四道门回退）。
+  - GET 返回 `{ servers, warnings }`：`owned` + `external`（宿主 loader 行，只读）+
+    `stopped`（声明了但没挂上）；每行 `{ name, transport, target, state, enabled, owned, toolCount }`。
+  - POST 接受 `{ action: add|update|remove|enable|disable, name, server? }`：校验（非法 400）→
+    落 `gate.json`（复用 `/policy` 的保存路径，无 BOM）→ mount/update/unmount → `reapplyAll` → 返回最新清单。
+    重复 add / 闸门 `enabled=false` 返回 409，未知 server 404，非 JSON 415。
+- **外部 server 只读**：宿主 loader 行里已有的 mcp-client 只观察，绝不 `dispose`（`dispose` 会写回
+  `disabled:true`）；同 `serverName` / 同工具命名空间冲突时自挂拒绝。
+- **新测试套件 `test/mcp-int.test.mjs`**（12 条）：mcp 归一/告警、整表替换、v2 默认、`startMcp` 并发与
+  幂等与单条失败降级、`reapplyAll`、GET 三来源合并、POST 五个动作的写盘/manager/reapplyAll、
+  错误分支 400/404/409/415、gate_status 18 键不变。`npm run verify` 全绿（208 条测试 + 16 项规范自检）。
+- README 增「MCP 接管（0.3.0）」段与语义边界行；`gate.example.json` 增空 `mcp` 段。
+
+### Changed — 技能接管带来的语义变化
+- `defaults.skillpack=1`（常驻）不再「零改动透传」宿主目录：接管下常驻也摘，目录/正文都由 gate 出。
+- `gate_search` 的技能行不再统一写「技能」，改为带真实档位；`takeover=false` 时仍是「技能」。
+- `gate.example.json` 增 `skills`（`takeover: true` / `off: []` / `imports: []`），规范自检开始校验它的形状。
+
+### Fixed — 0.3.0 复核（2026-11-14，r4 报告 P0=1 / P1=3）
+- **P0 迁移放大**：v2 的 `skills.tier=1` 语义是「保留宿主目录」，0.3.0 接管后常驻变成正文注入。
+  本机真实技能库 53 个、渲染 294,632 字、gate 自估 ≈78.6k token/次；照字面迁移升级即触发。
+  现 v2/v3 旧 `skills.tier=1` 一律降为按需（2）并告警 `skills-tier-remapped`；
+  **组级/默认常驻也降级为按需**（`reason: resident-group`），常驻正文只接受显式
+  `capabilities["skill:<name>"]={tier:1}` —— 逐条确认才注入正文，避免整库灌入。
+- **P1 首步缺失**：宿主先 `assemble` 后 `pre-step`，第一轮没有技能目录/常驻正文，第二轮系统提示词
+  变字节、前缀缓存断。`sections.js` 装配前调用 `gate.ensureSkills()`，名单为空先刷一次。
+- **P1 正文缓存不失效**：每步 `refreshResidentBodies` 回查常驻技能正文，按 sha1 变化才换缓存；
+  `skillSections` 只读缓存，不再在装配路径回查宿主；改 `SKILL.md` 下一步生效。
+- **P1 权限边界**：尊重宿主 `invocation.modelInvocable/userInvocable`；模型不可调用的技能不进目录、
+  `gate_load` 返回 `not-invocable`；用户不可调用的技能不接 `/name` 手势。
+- **P2**：`gate_search` 不再列 `off` 技能；`skills.off` 只在 `resolveSkillDecision` 一处消费。
+- **/mcp 500**：`server.js` 三处 `savePolicyFile` 是 async 却未 `await`，add/remove/enable/disable
+  全部 500；已修并补测试覆盖。
+
+### Fixed — 0.3.0 复核 P2 批修（2026-11-14，r4 报告 P2=12）
+- **P1-4b 导入技能改正文不生效**：`rememberSkills` 的签名不含正文，改动只发生在 `content` 时直接
+  early-return，`entry.skills` 留着旧正文（而 `gate_load` 读新文件 ⇒ 同一技能两个版本）。
+  签名现已纳入 `content` 的 sha1 前 12 位。
+- **P2-6 不完整名单覆盖 last-good**：改用 `ctx.skills.snapshot()` 并检查 `complete`；宿主发现超时/被 abort
+  时沿用上一份名单并告警一次（否则技能先消失再回来 = 两次断缓存）。
+- **P2-7 装配不可取消**：`sections.js` 把 `context.signal` 传给 `gate.skillSections()`，装配期回查正文
+  可随 turn abort 取消。
+- **P2-8 正文瞬态失败抖动**：取不到正文时不再渲染「（这份技能没有正文。）」占位段（有旧缓存用旧值，
+  没有就跳过该段），避免下一轮又变回正文。
+- **P2-9 正文取不到被报成 unknown**：`gate_load("skill:x")` 只把「名字不存在」放 `unknown`；
+  名单里有但正文暂时取不到时给出「暂时取不到正文」说明，不再诱导模型改名重试。
+- **P2-11 非接管时技能列两遍**：`takeover=false` 且 `skillpack=1`（宿主目录没被摘）时，
+  `<gate-catalog>` 不再重复列技能。
+- **P2-12 导入技能不支持 `/name`**：新增 `collectSlashInvocations`，按「整条用户正文就是 `/技能名`」
+  的严格词法识别（包含式提到不算），命中 gate 技能表的按同一份 `resolveSkill` 渲染注入。
+- **P2-13 导入健壮性**：单文件超过 1 MiB 拒读并告警（`code=skill-too-large`，不静默截断正文）；
+  `dirEntries` 跟随符号链接（断链跳过）；frontmatter 支持 `|` / `>` 块标量；扫描缓存改 LRU（上限 32）。
+- **P2-14 每步空名单 reapply**：名单从空到空时不再触发 `reapply`。
+- **P2-5 旧会话残留**（文档级，不改历史）：README「技能接管」新增两条说明——旧会话历史里的
+  `skill-catalog` 消息无法被 `pre-step` 摘除，以 `<gate-catalog>` 为准。
+- **MCP 工具数恒 0**：`countTools` 改用注册名（`knownNames`）计数，restriction 只影响 `visible`；
+  没有活跃会话时面板不再把已挂载的 server 报成 0 工具。
+- **面板空态**：会话尚未产生过一次请求时（段落/技能清单还没装配），面板显式说明原因，
+  不再让两栏 `0` 看起来像坏了。
+
+## [0.2.0] — 2026-11-13
+
+### Added
+- **能力模型（`lib/capabilities.js`）**：开关单位从「单个工具 / 单个段落」换成**能力**（一个来源实例）。
+  能力 id 规则：`mcp:<server>`（工具 `mcp__<server>__*` + 段落 `mcp:<server>`）、`plugin:<包名>`、
+  `native:<tool>`（原生工具彼此独立，不并组）、`tool:<name>`（推不出来源：只标注，不合并、不隐藏）、
+  `section:<name>`、`glob:<pattern>`（v2 无命名空间的通配键）。
+- **v3 策略**：`POLICY_KEYS` 换成 `version / enabled / defaults / capabilities / sources / legacy / catalog /
+  protected / narrowPassThrough`；解析顺序 own → preset → protected → 显式 `sources` → 命名推断 → 能力档 →
+  例外 → `defaults`。一个能力档变化**同时**驱动 `tools` 与 `sections` 两条限制，两条限制同源。
+- **例外与偏离**：`capabilities[id].toolExceptions / sectionExceptions` 是唯一允许「同能力不同档」的地方，
+  只能显式设置；`capabilityState()` / `resolveToolDecision()` 读回带 `deviation`，UI 可单独提醒。
+  来源置信度 high / medium / low / unknown 逐成员给出（v2 的包前缀推断标 low，显式 `sources` 标 medium）。
+- **v2 → v3 自动迁移（`lib/migrate.js`）**：读 v2 文件/插件行 config 时自动迁移；先备份
+  `gate.json.v2.bak-<时间戳>`（同内容只留一份，原文件不改）。同能力档位冲突取**最宽松**
+  （resident < on-demand < off），其余成员写成例外；`ws_mcp_call` 这类悬空键进
+  `legacy.unknownOverrides` 并告警；同一输入迁两次逐字节一致；首次保存落盘 v3。
+- **上游隐藏先减**：`knownNames − visible − 自己已 apply 的 deny` 算出的名字只标注（`snapshot.upstreamHidden`）、
+  不进候选集、不可 `gate_load`，闸门不会把它们重新放出来。
+- **能力视图**：`gate.capabilityView(agent)` / `gate.knownNames(agent)` 与
+  `GET /api/dsh-gate/capabilities[?agent=]`。/`state` 与 `gate_status` 的固定形状不变。
+- **PTC 末尾注入 + `gate_invoke`（票 07）**：检测到 PTC 执行器（`PtcExecutor`，或 `describe().schemas`
+  恰好只有 `run_code`）后**冻结工具表**：`gate_load` 之后工具不进工具表，声明以一条 user 消息追加到
+  messages 末尾（已加载工具的退化签名 + 已加载段落正文），模型用新增的 `gate_invoke({ tool, arguments })`
+  执行。冻结从第一次加载**之前**生效，追加加载不改系统提示词 / `gate-catalog` 一个字节；
+  native 会话维持 0.1.8 行为（加载即进工具表、段落回提示词），尾部声明与 `gate_invoke` 不启用。
+  执行器认不出 → fail-open（按 native），原因记进 `snapshot.executor`。
+- 新策略键 `freezePtcToolset`（默认 `true`）：PTC 冻结的总开关；置 `false` 退回 0.1.8 的加载语义。
+  已进 `POLICY_KEYS` / `TOP_KEYS` / v3 规范化 / v2→v3 迁移 / `gate.example.json` / 规范自检。
+- 新测试套件 `test/capabilities.test.mjs`（来源推断 / 解析链 / 例外偏离 / 双限制同步 / 上游隐藏）、
+  `test/migrate.test.mjs`（迁移幂等 / 备份去重 / 冲突取最宽松 / 悬空键 / 首存写 v3）、
+  `test/tail.test.mjs`（21 条：PTC 判据 / 冻结前后 / 尾部声明顺序与幂等 / 同输入字节一致 /
+  native 行为 / 段落搬运 / `gate_invoke` 成功与错误）。
+
+### Changed
+- 空策略模板改为 v3：`defaults` 按需/常驻/按需 + 9 个基础原生工具显式常驻（`ws_mcp_call` 退休）。
+  `defaults.capability` 显式写入时不再保留模板里的隐式常驻（「全关」不再被 read/write 顶掉）。
+- `prestep` 的技能轴改读 `defaults.skillpack`（`skills.tier` 保留为只读别名）。
+- 0.1.8 面板的 v2 形状保存（`tools/sections/skills`）在服务端翻译成 v3 `defaults + capabilities` 补丁后落盘；
+  `client/` 未改（UI 工单 05 接能力视图）。注意：旧面板的**逐工具**操作会按能力归并 ——
+  点一个 `univer_*` 工具 = 关整个插件能力，点 `mcp:<server>` 段落 = 同时收该 server 的工具与段落。
+- `snapshot()` 增 `upstreamHidden / policyVersion / warnings` 三个字段，以及
+  `executor: { kind, reason }` 与 `frozen`（PTC 判据与冻结状态）；`STATUS_KEYS` 与
+  `gate_status` 的 18 键属性集、顺序**一字未改**（前缀缓存约束不变）。
+- 闸门工具 4 → 5：新增 `gate_invoke`；`gate_load` 的描述改成「PTC 下工具表冻结，加载后仍用
+  `gate_invoke` 执行；native 下下一步直接调用」。`gate_call` / `gate_load` 的执行改走
+  `ToolExecutionPipeline + executeToolBatch`（旧宿主没有这个导出时退回 `tools.execute` 单调用）。
+- `restriction.state()` 增只读 `deny` 数组（区分「自己藏的」与「上游藏的」）。
+
+### Notes
+- 升级后工具面可能变大：来源未知（`tool:<name>`）且没被策略点名的工具**不再**按默认层隐藏（fail-open）。
+  这是 docs 04 §2「unknown 只标注、不合并、不隐藏」的落地；要藏它请在 `capabilities` 里显式点名。
+- 回滚到 0.1.8：先停宿主，把 `gate.json.v2.bak-*` 复制回 `gate.json`（0.1.8 读不懂 v3 的 `capabilities`）。
+- `npm run verify` 全绿：规范自检 16/16 + 11 个测试套件（124 → 145 条断言）。
+
 ## [0.1.8] — 2026-11-05
 
 ### Fixed

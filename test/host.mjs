@@ -14,10 +14,29 @@
  *   const host = makeHost({ names: ["read"] });     // 自定义工具面
  *   const host = makeHost({ id: "a1", names: [...] }); // 指定首个 agent 的 id 与工具面
  *   const child = host.addAgent({ id: "c", origin: "subagent", names: [...], own: [...] });
+ *   host.setExecutor(agent, makePtcExecutor());   // 选中 PTC / native 执行器（工单 07）
  */
 
 /** PTC 传输：只进 visible，不进 restrictableNames（所以闸门把它算成自有层）。 */
 export const TRANSPORT = "run_code";
+
+/**
+ * 执行器替身（工单 07 的 PTC 判据）。
+ * 类名与真实 dist 一致：闸门先看 constructor.name。describe() 只投影 run_code 的是 PTC；
+ * 投影多条声明的是 native；什么都没给的是「认不出来」→ 闸门必须 fail-open。
+ */
+class PtcExecutor {
+  describe() { return { schemas: [{ name: TRANSPORT }] }; }
+}
+class NativeToolExecutor {
+  describe() { return { schemas: [{ name: "read" }, { name: "pwsh" }] }; }
+}
+class OpaqueExecutor {
+  describe() { return { schemas: [] }; }
+}
+export const makePtcExecutor = () => new PtcExecutor();
+export const makeNativeExecutor = () => new NativeToolExecutor();
+export const makeOpaqueExecutor = () => new OpaqueExecutor();
 
 export const DEFAULT_TOOL_NAMES = [
   "pwsh", "read", "write", "edit", "grep", "glob", "web_search", "web_fetch", "ws_mcp_call", "skill",
@@ -127,9 +146,15 @@ export function makeHost(options) {
     };
   };
 
+  // 选中执行器（宿主 tools.selectExecutor(agent)）：不设置 = 闸门判不出来，必须 fail-open。
+  const executors = new Map();
+
   const tools = {
     view(scope) {
       return scope === undefined ? globalView() : agentView(scope);
+    },
+    selectExecutor(scope) {
+      return executors.get(scope);
     },
     restrict(filter) {
       // 真实宿主：restrict 必须有 agent scope，根 ctx 上调会直接抛错。
@@ -219,6 +244,11 @@ export function makeHost(options) {
       presetNames.add(name);
       if (!registry.has(name)) registry.set(name, definition || definitionOf(name));
       return () => { presetNames.delete(name); };
+    },
+    setExecutor(agent, executor) {
+      if (executor === undefined) executors.delete(agent);
+      else executors.set(agent, executor);
+      return () => { executors.delete(agent); };
     },
     restrictions() {
       const out = [];

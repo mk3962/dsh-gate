@@ -31,22 +31,22 @@ const PRESET_NAMES = ["office_docx", "video_search"];
 // 关层：overrides 里点名 0。
 const OFF_NAMES = ["terminal_open", "schedule_create"];
 
+// v3：一个能力一个开关。defaults.capability=1 让原生工具常驻，点名的能力单独定档。
 const policy = resolvePolicy(
   {
-    tools: {
-      defaultTier: 1,
-      overrides: {
-        read: 1, write: 1, edit: 1, grep: 1, glob: 1, pwsh: 1, web_search: 1, web_fetch: 1, skill: 1,
-        // 点名的 preset 工具 → 受管，落按需。
-        video_search: 2,
-        // 关层。
-        terminal_open: 0,
-        schedule_create: 0,
-        // 按需。
-        univer_sheet: 2, univer_doc: 2, ssh_exec: 2, mnemon_recall: 2,
-      },
+    version: 3,
+    defaults: { capability: 1, section: 1, skillpack: 2 },
+    capabilities: {
+      // 点名的 preset 工具 → 受管，落按需。
+      "native:video_search": { tier: 2 },
+      // 关层。
+      "native:terminal_open": { tier: 0 },
+      "native:schedule_create": { tier: 0 },
+      // 按需：同一插件的工具一起走（能力级开关）。
+      "plugin:dsh-univer-office": { tier: 2 },
+      "plugin:@linxin666/dsh-ssh": { tier: 2 },
+      "plugin:dsh-mnemon": { tier: 2 },
     },
-    sections: { defaultTier: 1 },
   },
   { logger: undefined, dshHome: policyDir },
 );
@@ -122,7 +122,11 @@ check("preset 平面语义不变：全局不可见 且 未加载 且 无工具�
 
 check("受保护名字恒常驻，覆盖任何层级设置", () => {
   const guarded = resolvePolicy(
-    { tools: { defaultTier: 2, overrides: { gate_status: 0, run_code: 2 } }, sections: { defaultTier: 1 } },
+    {
+      version: 3,
+      defaults: { capability: 2, section: 1, skillpack: 2 },
+      capabilities: { "native:gate_status": { tier: 0 }, "native:run_code": { tier: 2 } },
+    },
     { logger: undefined, dshHome: policyDir },
   );
   for (const name of ["gate_status", "gate_search", "gate_load", "gate_call", "run_code"]) {
@@ -152,6 +156,17 @@ check("关层名字进 off 桶，且真的被藏掉", () => {
     assert.equal(tiers[name], TIER_OFF);
     assert.equal(host.visibleOf(agent).has(name), false, name + " 应当真的从工具面消失");
   }
+});
+
+check("v2 的插件行 config 仍能自动迁移（老用户升级不用改配置）", () => {
+  const legacy = resolvePolicy(
+    { tools: { defaultTier: 2, overrides: { read: 1, univer_sheet: 1, univer_doc: 0 } }, sections: { defaultTier: 1 } },
+    { logger: undefined, dshHome: policyDir },
+  );
+  assert.equal(legacy.version, 3, "行 config 里的 v2 形状必须迁成 v3");
+  assert.equal(resolveTier(legacy, "read", { globallyVisible: true }).tier, TIER_RESIDENT);
+  assert.equal(resolveTier(legacy, "univer_sheet", { globallyVisible: true }).tier, TIER_RESIDENT);
+  assert.equal(resolveTier(legacy, "univer_doc", { globallyVisible: true }).tier, TIER_OFF, "同能力内的偏离落成例外");
 });
 
 check("两处不再各写一遍归层规则", () => {

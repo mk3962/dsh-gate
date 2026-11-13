@@ -17,6 +17,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createGate, pickStatus, STATUS_KEYS } from "../lib/gate.js";
 import { resolvePolicy } from "../lib/policy.js";
+import { registerGateTools } from "../lib/proxy.js";
 import { makeHost } from "./host.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -36,7 +37,13 @@ const check = async (label, fn) => {
   catch (error) { results.push({ ok: false, label, error: String((error && error.message) || error) }); }
 };
 
-const ANY = new Set(["attach", "listAgents", "restrictionState", "snapshot", "planSections", "reapply", "isApplying", "load", "callThrough", "catalogFor", "rememberSkills", "recordSections", "release", "releaseAll"]);
+// loadedTextFor / canInvoke 是工单 07 加的两个「问得出口的问题」：
+//   这一步尾部要追加什么（PTC 冻结） / 这个工具能不能转发（gate_invoke 的准入）。
+// 工单 14 加的四个技能口：refreshSkills（每步刷新名单）/ skillSections（常驻正文段落）/
+// renderSkill（pre-step 的 /name 注入，不记加载态）/ loadSkill（gate_load 的技能分支）。
+// 工单 15 加的三个 MCP 口：startMcp（启动自挂）/ reapplyAll（挂/卸后刷新全部 agent）/
+// mcpManager（HTTP 层读写服务器清单；manager 自己只暴露 mount/unmount/update/list/state/disposeAll）。
+const ANY = new Set(["attach", "listAgents", "restrictionState", "snapshot", "capabilityView", "knownNames", "canInvoke", "loadedTextFor", "planSections", "reapply", "reapplyAll", "isApplying", "load", "callThrough", "catalogFor", "searchEntries", "rememberSkills", "recordSections", "refreshSkills", "ensureSkills", "skillSections", "renderSkill", "loadSkill", "release", "releaseAll", "startMcp", "mcpManager"]);
 
 await check("公开面恰好是这组能力：内部表与内部函数一个都不外露", async () => {
   const host = makeHost({ names: NAMES });
@@ -94,13 +101,38 @@ await check("内部条目里的字段不再被外部模块读到", async () => {
   assert.equal(/touchedAt\)/.test(server), false, "server.js 不该自己比较 touchedAt");
 });
 
-await check("四个闸门工具只从快照取字段", async () => {
+await check("闸门工具只从 gate 的公开面取字段（检索口带 description，不再拼名字数组）", async () => {
   const proxy = read("lib/proxy.js");
   assert.ok(proxy.includes("pickStatus(gate.snapshot("), "gate_status 必须从快照投影");
-  assert.ok(proxy.includes("gate.snapshot(exec.agent)"), "gate_search 必须从快照取清单");
-  assert.ok(/state\.skillEntries/.test(proxy), "技能候选应从快照的 skillEntries 取");
-  // 技能候选必须来自快照，不能来自内部条目。
+  // 0.2.0 缺陷批修 I5-1：候选池从 gate.searchEntries 取（带 description），
+  // 不再从快照的 residentNames/onDemandNames/offNames 三个名字数组拼池。
+  assert.ok(proxy.includes("gate.searchEntries(exec.agent)"), "gate_search 必须走 gate 的只读检索口");
+  assert.equal(/state\.skillEntries/.test(proxy), false, "gate_search 不该再从快照的 skillEntries 拼池");
   assert.equal(/entry\s*&&\s*Array\.isArray\(entry\.skills\)/.test(proxy), false, "gate_search 不该再读 entry.skills");
+});
+
+await check("gate_search：工具结果带真实描述首句，未知词返回空", async () => {
+  const host = makeHost({ names: NAMES });
+  const policy = policyOf(policyDir);
+  const gate = createGate({ ctx: host.rootCtx, logger: host.logger, policy });
+  registerGateTools({ ctx: host.rootCtx, gate, policy });
+  await gate.attach(host.agent);
+  gate.rememberSkills(host.agent, [{ name: "office-xlsx", description: "技能目录里的说明。第二句不该出现。", provider: "office" }]);
+  const search = host.tool("gate_search");
+  const found = await search.execute({ query: "univer_doc" }, { agent: host.agent, signal: undefined });
+  const hit = found.results.find((row) => row.name === "univer_doc");
+  assert.ok(hit, "gate_search 找不到 univer_doc：" + JSON.stringify(found.results));
+  assert.equal(hit.tier, "按需");
+  assert.equal(hit.description, "univer_doc 工具的说明文字", "工具描述必须是 definition.description 的首句");
+  const skillHit = (await search.execute({ query: "office-xlsx" }, { agent: host.agent, signal: undefined })).results
+    .find((row) => row.name === "skill:office-xlsx");
+  assert.ok(skillHit, "技能候选必须带 skill: 前缀");
+  // 0.3.0 接管：技能行带真实档位（常驻/按需/关闭），不再是笼统的「技能」。
+  assert.equal(skillHit.tier, "技能·按需", "技能应带真实档位（takeover 默认开）");
+  assert.equal(skillHit.description, "技能目录里的说明", "技能仍用 skillEntries.description 的首句");
+  const empty = await search.execute({ query: "zzz_no_such_tool" }, { agent: host.agent, signal: undefined });
+  assert.deepEqual(empty.results, [], "未知词不许兜底返回全部候选");
+  await gate.release(host.agent);
 });
 
 await check("gate_status 的输出键集仍然只由 STATUS_KEYS 决定（缓存约束不变）", async () => {

@@ -239,8 +239,31 @@ await check("gate.example.json 是合法策略文件（无 BOM 且字段齐）",
   assert(exists(file), "缺少 gate.example.json");
   assert(!hasBom(file), "gate.example.json 带 BOM");
   const policy = JSON.parse(read(file));
-  for (const key of ["version", "enabled", "tools", "sections", "skills"]) {
+  // v3（0.2.0）：能力 + 例外 + defaults；v2 的 tools / sections 不再是独立真源。
+  // 0.3.0：skills 回到顶层，但装的是技能接管配置（takeover / off / imports），不是 v2 的 { tier }。
+  for (const key of ["version", "enabled", "freezePtcToolset", "defaults", "capabilities", "sources", "legacy", "catalog", "narrowPassThrough", "protected", "skills", "mcp"]) {
     assert(key in policy, "gate.example.json 缺少 " + key);
+  }
+  assert(policy.version === 3, "gate.example.json 必须是 v3（version=3），实际 " + policy.version);
+  assert(!("tools" in policy) && !("sections" in policy), "gate.example.json 不许再带 v2 的 tools / sections");
+  const skills = policy.skills;
+  assert(skills && typeof skills === "object" && !Array.isArray(skills), "gate.example.json 的 skills 必须是对象");
+  assert(typeof skills.takeover === "boolean", "skills.takeover 必须是布尔（缺省 true）");
+  assert(Array.isArray(skills.off), "skills.off 必须是数组");
+  assert(Array.isArray(skills.imports), "skills.imports 必须是数组");
+  assert(!("tier" in skills), "skills 里不许再出现 v2 的 tier（档位真源是 defaults.skillpack）");
+  // 0.3.0 工单 15：MCP 接管声明 { servers: { <name>: {transport, command|url, ...} } }。
+  const mcp = policy.mcp;
+  assert(mcp && typeof mcp === "object" && !Array.isArray(mcp), "gate.example.json 的 mcp 必须是对象");
+  assert(mcp.servers && typeof mcp.servers === "object" && !Array.isArray(mcp.servers), "mcp.servers 必须是对象");
+  for (const [name, server] of Object.entries(mcp.servers)) {
+    assert(/^[A-Za-z0-9_-]{1,32}$/.test(name), "mcp.servers 的键必须是合法 serverName: " + name);
+    assert(server && typeof server === "object" && !Array.isArray(server), "mcp server " + name + " 必须是对象");
+    const transport = server.transport === undefined ? "stdio" : server.transport;
+    assert(transport === "stdio" || transport === "streamable-http", "mcp server " + name + " 的 transport 非法: " + transport);
+    if (transport === "stdio") assert(typeof server.command === "string" && server.command.length > 0, "stdio server " + name + " 需要 command");
+    else assert(typeof server.url === "string" && server.url.length > 0, "streamable-http server " + name + " 需要 url");
+    if (server.enabled !== undefined) assert(typeof server.enabled === "boolean", "mcp server " + name + " 的 enabled 必须是布尔");
   }
   return "version=" + policy.version + ", enabled=" + policy.enabled;
 });

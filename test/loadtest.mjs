@@ -3,6 +3,9 @@
  * 宿主来自共享 seam（test/host.mjs），@deepseek-ai/dsh-tools 由 node_modules 替身提供（离线，不碰真实宿主）。
  */
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { apply, name } from "../lib/index.js";
 import { makeHost } from "./host.mjs";
 
@@ -19,10 +22,13 @@ const check = (label, fn) => {
 };
 
 check("插件名", () => assert.equal(name, "dsh-gate"));
-const dispose = apply(host.rootCtx, { enabled: true });
+// 显式给临时 policyFile：绝不读真实 ~/.dsh/gate.json（那会把本机 v2 策略当成用例输入，
+// 迁移还会在用户 profile 里写备份 —— 测试不碰桌面 profile）。
+const policyFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "gate-loadtest-")), "gate.json");
+const dispose = apply(host.rootCtx, { enabled: true, policyFile });
 check("apply 返回卸载函数", () => assert.equal(typeof dispose, "function"));
-check("注册了 4 个闸门工具", () => {
-  for (const toolName of ["gate_status", "gate_search", "gate_load", "gate_call"]) {
+check("注册了 5 个闸门工具", () => {
+  for (const toolName of ["gate_status", "gate_search", "gate_load", "gate_invoke", "gate_call"]) {
     assert.ok(host.registry.has(toolName), toolName);
   }
 });

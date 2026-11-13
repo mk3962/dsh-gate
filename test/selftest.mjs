@@ -38,8 +38,8 @@ const examplePolicy = resolvePolicy(example, { logger: host.logger });
 const gate = createGate({ ctx: host.rootCtx, logger: host.logger, policy: examplePolicy });
 await gate.attach(host.agent);
 
-await check("默认策略：T1 十件套常驻", () => {
-  for (const name of ["pwsh", "read", "write", "edit", "grep", "glob", "web_search", "web_fetch", "ws_mcp_call", "skill"]) {
+await check("默认策略：T1 九件套常驻（ws_mcp_call 已退休，进 legacy 不再常驻）", () => {
+  for (const name of ["pwsh", "read", "write", "edit", "grep", "glob", "web_search", "web_fetch", "skill"]) {
     assert.equal(tierForTool(examplePolicy, name), TIER_RESIDENT, name);
   }
 });
@@ -49,7 +49,7 @@ await check("默认策略：插件工具按需", () => {
   }
 });
 await check("闸门自己的工具受保护", () => {
-  for (const name of ["gate_status", "gate_search", "gate_load", "gate_call"]) {
+  for (const name of ["gate_status", "gate_search", "gate_load", "gate_invoke", "gate_call"]) {
     assert.equal(tierForTool(examplePolicy, name), TIER_RESIDENT, name);
   }
 });
@@ -149,10 +149,26 @@ await check("技能常驻（tier=1）时名单照样被记录（UI 才能改档�
   const entries = residentSkillGate.snapshot(host.agent).skillEntries;
   assert.deepEqual(entries.map((s) => s.name).sort(), ["archify", "uni2pg"]);
 });
-await check("技能常驻（tier=1）时不摘目录消息（零改动透传）", () => {
-  assert.equal(residentOut.messages.length, skillDecision.messages.length);
+// 0.3.0 接管（工单 14）：常驻档也摘宿主目录 —— gate 自己的目录在 gate-catalog、正文在
+// gate-skill:<name> 段落，宿主那份目录再留着就会重复且不受 off 控制。
+// （0.1.8 的「常驻零改动透传」只在 skills.takeover=false 的逃生门下成立，见下一条。）
+await check("技能接管：常驻档也摘掉宿主目录（目录/正文由 gate 自己出）", () => {
+  assert.equal(residentOut.messages.length, 1);
 });
 disposeResidentSkills();
+
+// 逃生门：takeover=false 时完整退回 0.1.8 —— 常驻档不摘目录、名单从目录消息里读。
+// v3 里档位真源是 defaults.skillpack；skills 只装接管配置（tier 在这里是非法键，会被忽略）。
+const legacySkillPolicy = resolvePolicy({ defaults: { skillpack: 1 }, skills: { takeover: false } }, { logger: host.logger });
+const legacySkillGate = createGate({ ctx: host.rootCtx, logger: host.logger, policy: legacySkillPolicy });
+await legacySkillGate.attach(host.agent);
+const disposeLegacySkills = mountSkillGate({ ctx: host.rootCtx, gate: legacySkillGate, logger: host.logger, policy: legacySkillPolicy });
+const legacyOut = await host.preStep(skillDecision, host.agent);
+await check("技能接管关闭（takeover=false）+ 常驻档：零改动透传（0.1.8 行为）", () => {
+  assert.equal(legacyOut.messages.length, skillDecision.messages.length);
+  assert.deepEqual(legacySkillGate.snapshot(host.agent).skills.sort(), ["archify", "uni2pg"]);
+});
+disposeLegacySkills();
 
 const onDemandSkillPolicy = resolvePolicy({ skills: { tier: 2 } }, { logger: host.logger });
 const onDemandSkillGate = createGate({ ctx: host.rootCtx, logger: host.logger, policy: onDemandSkillPolicy });
@@ -414,9 +430,13 @@ await check("preset 平面：默认不受管（常驻、不被 deny、不震荡�
   assert.ok(status.presetNames.includes("pwsh"), "preset=" + JSON.stringify(status.presetNames));
   assert.ok(!status.onDemandNames.includes("pwsh"));
   // 全局工具按默认层（2）被藏是正常的；这里只要求 preset 平面不被 deny。
+  // 例外：宿主 skill 工具在 0.3.0 由 gate 接管（工单 14），接管开启时**无条件** deny，
+  // 哪怕它挂在 preset 平面 —— 不这么做的后果是宿主仍会注入技能目录/正文，与 gate 的 off 打架。
   for (const set of presetHost.restrictions()) {
-    assert.ok(!set.has("pwsh") && !set.has("write") && !set.has("skill"), "preset 工具不该被写进 deny: " + [...set].join(","));
+    assert.ok(!set.has("pwsh") && !set.has("write"), "preset 工具不该被写进 deny: " + [...set].join(","));
+    assert.ok(set.has("skill"), "接管开启时 skill 必须被 deny: " + [...set].join(","));
   }
+  assert.ok(status.offNames.includes("skill"), "skill 应落关闭桶: " + JSON.stringify(status.offNames));
 });
 await check("preset 平面：overrides 点名后真正受管（进按需 + 被 restrict 藏掉）", async () => {
   const named = resolvePolicy({ tools: { defaultTier: 2, overrides: { pwsh: 2, read: 1 } } }, { logger: presetHost.logger });

@@ -2,11 +2,12 @@
 
 > 给 [DeepSeek Harness](https://github.com/deepseek-ai)（DSH）用的插件：把提示词表面 —— **工具声明 / 系统提示词段落 / skill 目录** ——
 > 切成「常驻」和「按需」两层。按需那层不进工具表，只在 `<gate-catalog>` 目录里留一行；
-> 模型需要时用 `gate_load` 提上来，下一步就能直接调用。
+> 模型需要时用 `gate_load` 提上来：native 会话下一步直接可调；PTC 会话把声明追加到消息末尾、
+> 用 `gate_invoke` 执行，之后的追加加载不改系统提示词一个字节。
 >
 > 实测（DSH 桌面版 + 137 个工具）：首轮请求 **48.6K → 31.7K token，省 34.8%**。
 
-MIT License · 需要 DSH ≥ 0.1.7-rc.1 · Node ≥ 20 · 离线可测（自测 / 加载 / 委派收窄 / 限制对象 / 快照 / 归层 / 策略 / 对外面）
+MIT License · 需要 DSH ≥ 0.1.7-rc.1 · Node ≥ 20 · 离线可测（自测 / 加载 / 委派收窄 / 限制对象 / 快照 / 归层 / 策略 / 对外面 / 末尾注入）
 
 [![CI](https://github.com/mk3962/dsh-gate/actions/workflows/ci.yml/badge.svg)](https://github.com/mk3962/dsh-gate/actions/workflows/ci.yml)
 
@@ -37,14 +38,30 @@ PTC 的 SDK 声明段是按 `sdkSchemas(scope)` **现渲染**的，所以隐藏�
 | **T2** | 按需（on-demand） | 从工具表里 restrict 掉，只在 `<gate-catalog>` 里留「名字 — 一句话」 |
 | **T0** | 关闭（off） | 既不进工具表也不进目录 —— 放完全不该被模型看到的东西 |
 
-配套四个**永远常驻**的闸门工具：
+配套五个**永远常驻**的闸门工具：
 
 | 工具 | 作用 |
 |---|---|
 | `gate_status` | 看当前分层、目录体积、段落清单、已加载的工具 |
 | `gate_search <query>` | 在按需工具里按名字/描述检索 |
-| `gate_load <names>` | 把按需工具提到常驻（当前会话内保持） |
+| `gate_load <names>` | 把按需工具提到常驻（当前会话内保持）；`section:` 前缀把段落搬到末尾声明 |
+| `gate_invoke <tool> <arguments>` | PTC 冻结下的唯一执行口：走宿主完整执行管线执行一个已加载工具，不把声明加回工具表 |
 | `gate_call <name> <args>` | 临时撤限制 → 走宿主完整执行管线 → 立刻恢复，用于一次性的重型工具 |
+
+> `gate_call` 与 `gate_invoke` 的区别：前者按**任意已知工具**执行、不要求先 `gate_load`（一次性重型工具）；
+> 后者只执行**已加载 / 常驻**的工具（未知或上游隐藏的会被拒），是冻结下日常调用的口子。
+
+### 两种会话模式：native 与 PTC
+
+| 模式 | 怎么认出来 | `gate_load` 之后 |
+|---|---|---|
+| **native** | 执行器 `constructor.name` 是 `NativeToolExecutor`，或 `describe().schemas` 不止 `run_code` | 0.1.8 行为：下一步工具直接进工具表；加载的段落回系统提示词 |
+| **PTC** | 执行器 `constructor.name` 是 `PtcExecutor`，或 `describe().schemas` **恰好只有** `run_code` | **工具表冻结**：加载的工具不进工具表，声明以一条 user 消息追加到消息末尾，用 `gate_invoke` 执行 |
+
+判据拿不到执行器 / 认不出类型 → **fail-open**：按 native 处理（不冻结、不启用尾部声明）。
+判定结果在 `gate.snapshot()` / `GET /api/dsh-gate/state` 的 `executor: { kind, reason }` 与 `frozen` 里
+（`gate_status` 的 18 键形状是前缀缓存约束的一部分，**不**加这两个字段）。两种模式的目录、deny 集合、
+面板计数完全相同，差别只在「加载之后怎么用」。
 
 ## 效果（同一台机器、同一 profile、首轮只说「只回复两个字：收到」）
 
@@ -133,7 +150,7 @@ ln -s "$HOME_DIR/local-plugins/dsh-gate" "$PROFILE/node_modules/dsh-gate"   # Wi
   会把仓库拷进 `node_modules`，升级＝卸载后重装）。npm 包名暂时用不了：还没发布到 npm。
 - pnpm 会对 `link:` 依赖报一条 peerDependencies 警告（`@deepseek-ai/dsh-tools` 不从目标 node_modules 解析）——
   无害，该模块由宿主 loader 提供。
-- **不写 `gate.json` 也能用**：没有策略文件时按内置默认（工具默认按需 + 10 个常用常驻）；
+- **不写 `gate.json` 也能用**：没有策略文件时按内置默认（能力默认按需 + 9 个基础原生工具常驻）；
   第一次点「保存策略」才会在 `<DSH home>\gate.json` 落地。
 
 ### 装好之后
@@ -159,8 +176,11 @@ ln -s "$HOME_DIR/local-plugins/dsh-gate" "$PROFILE/node_modules/dsh-gate"   # Wi
 「保存策略」写回策略文件（按字节写无 BOM UTF-8），**下一轮生效**，不需要重启；
 段落/技能改动同样下一轮生效。
 
-> 归层以服务端权威表 `state.tiers` 为准。`run_code`、四个 `gate_*`、团队工具这类
+> 归层以服务端权威表 `state.tiers` 为准。`run_code`、五个 `gate_*`、团队工具这类
 > **agent 自身注册**的工具（`state.own`）标「自身层」：`restrict` 管不到它们，永远常驻，面板不给无效按钮。
+
+0.2.0 起另有 `GET /api/dsh-gate/capabilities`（能力视图：来源置信度 / 命中链 / 例外偏离 / 上游隐藏），
+面板暂时还是三列；按能力切换的 UI 在工单 05。
 
 ### 策略文件
 
@@ -169,21 +189,39 @@ ln -s "$HOME_DIR/local-plugins/dsh-gate" "$PROFILE/node_modules/dsh-gate"   # Wi
 
 ```json
 {
-  "version": 2,
+  "version": 3,
   "enabled": true,
-  "tools":    { "defaultTier": 2, "overrides": { "read": 1, "univer_*": 2, "ops_*": 0 } },
-  "sections": { "defaultTier": 1, "overrides": { "free-search:engines": 2 } },
-  "skills":   { "tier": 1 },
-  "catalog":  { "groupByPlugin": true, "maxDescriptionLength": 64 },
+  "freezePtcToolset": true,
+  "defaults": { "capability": 2, "section": 1, "skillpack": 2 },
+  "capabilities": {
+    "native:read": { "tier": 1 },
+    "plugin:dsh-univer-office": { "tier": 2 },
+    "mcp:context7": { "tier": 2, "toolExceptions": { "mcp__context7__resolve": 1 } }
+  },
+  "sources": { "plugin:dsh-gate": { "tools": ["gate_status", "gate_load"], "sections": ["gate-catalog"] } },
+  "legacy": { "unknownOverrides": { "ws_mcp_call": 1 } },
+  "catalog": { "groupByPlugin": true, "maxDescriptionLength": 64 },
   "narrowPassThrough": 12,
-  "protected": []
+  "protected": [],
+  "skills": { "takeover": true, "off": [], "imports": [{ "id": "local", "path": "~/skills" }] }
 }
 ```
 
-- `overrides` 的键支持 `*` / `?` 通配；多条命中取**最具体**的一条（去掉通配后字面量最长者胜），所以 `univer_sheet` 压过 `univer_*`。
+- 开关单位是**能力**（一个来源实例），不是单个工具：`mcp:<server>`（工具 `mcp__<server>__*` + 段落 `mcp:<server>`）、
+  `plugin:<包名>`、`native:<tool>`（原生工具彼此独立，不并组）、`tool:<name>`（推不出来源：只标注，不合并、不隐藏）、
+  `section:<name>`。改一个能力档 = 同时改工具与段落两条限制，不会留下「有工具没段落」的半截状态。
+- 例外 `toolExceptions` / `sectionExceptions` 是唯一允许「同能力不同档」的地方，只能显式写；读回自动标 `deviation`。
+  成员名支持 `*` / `?` 通配，多条命中取**最具体**的一条。
+- `sources` 是显式来源映射（键 = 能力 id，值 = 成员名，支持通配）：包前缀推断错了用它纠正，
+  推断出来的插件来源置信度是 low，UI 会提示。
+- 解析顺序：own → preset → protected → 显式 `sources` → 命名推断 → 能力档 → 例外 → `defaults`。
+- `legacy.unknownOverrides` 只展示告警、不参与解析（v2 里 `ws_mcp_call` 这类已经找不到对应能力的键落在那里）。
+- `version: 2` 的旧文件**自动迁移**：首次读取先在旁边写一份 `gate.json.v2.bak-<时间戳>`（原文件不改），
+  同能力档位冲突取最宽松、其余成员写成例外；首次保存时落盘 v3。回滚到 0.1.8 前先把备份复制回 `gate.json`。
 - 优先级**逐字段**一致：文件里写了的字段以文件为准，没写才回落到插件行 `config`，最后才是内置默认。
-  `tools` / `sections` 的 `overrides` 是两张表的并集，同名冲突时文件赢（0.1.7 里这一条对 `catalog` 恰好反着来，0.1.8 统一了）。
-- `run_code`、四个 `gate_*`、以及 `protected` 里的名字**任何策略都动不了**（`restrict` 点名 `run_code` 会直接抛错）。
+- `freezePtcToolset`（默认 `true`）：PTC 会话是否启用「工具表冻结 + 末尾声明」。设 `false` 退回 0.1.8 的加载语义
+  （`gate_load` 直接改工具表），用于调试或上游执行器判据不稳时；native 会话不受这个键影响。
+- `run_code`、五个 `gate_*`、以及 `protected` 里的名字**任何策略都动不了**（`restrict` 点名 `run_code` 会直接抛错）。
 - 策略文件读坏 / JSON 解析失败 → **fail-open**（全部常驻）：宁可没省 token，也不让会话崩。
 - 非法层值（`null` / `""` / `false`）按默认处理，不会被 `Number()` 静默转成 0 把工具关掉。
 - `narrowPassThrough`（默认 `12`，读法与其它键一样逐键比较：`gate.json` 点名 > 插件行 config > 内置默认）：
@@ -193,6 +231,88 @@ ln -s "$HOME_DIR/local-plugins/dsh-gate" "$PROFILE/node_modules/dsh-gate"   # Wi
   典型受害者：`dsh-mnemon` 的写记忆子代理（白名单只有 `mnemon_*` + `mnemon_subagent_result`），
   被藏掉后子代理只能纯文本收尾，父会话抛 `memory subagent completed without recording its result`。
 
+### 技能接管（0.3.0）
+
+0.3.0 起闸门把**技能注入**也收进自己手里（不再只靠宿主把目录塞进系统提示词）。默认开启，策略键：
+
+```json
+"skills": {
+  "takeover": true,
+  "off": ["某个不想让模型用的技能名"],
+  "imports": [{ "id": "local", "path": "~/skills" }]
+}
+```
+
+- `takeover`（默认 `true`）：宿主 `skill` 工具被**无条件 deny**（即使 `capabilities` 里把 `native:skill` 写成常驻），
+  宿主的技能目录消息（含它发现「没有技能可用」时补发的 `entries=[]` replacement）与 `/name` 显式调用正文
+  都按 `source.kind` 摘掉；目录由 `<gate-catalog>` 的 `[技能]` 组给（名字 + 描述首句 + 来源），
+  正文由 `gate_load(["skill:<name>"])` 返回。
+- 档位解析顺序：`skill:<name>`（单技能）→ `skillpack:<provider>`（同一来源的技能包）→ `defaults.skillpack`。
+  `0` = 关闭（不列目录、`gate_load` 返回 denied）、`1` = 常驻、`2` = 按需。
+  单技能条目永远压过技能包（「这一条单独关掉」是最具体的意图）。
+- **常驻（1）**：正文以 `<skill_content name="…">` 包装，作为独立段落 `gate-skill:<name>` 追加在系统提示词末尾，
+  `interpolate: false`，不进 `<gate-catalog>` 行。同一策略下逐字节稳定；单条超过 12000 字会截断并告警
+  （`skill-too-long`），全文随时可以 `gate_load`。
+  **常驻正文只接受显式单技能条目**（`capabilities["skill:<name>"]={tier:1}`）；组级/默认常驻
+  （`skillpack:<provider>=1` 或 `defaults.skillpack=1`）会降级为按需（`reason: resident-group`），
+  只列目录、不灌正文 —— 旧 v2 的 `skills.tier=1` 也是「保留目录」，迁移时同样降为 2 并告警。
+- **按需（2）**：只在目录里列一行，模型 `gate_load(["skill:<name>"])` 才拿到正文（native / PTC 都一样，
+  正文走工具结果，不再追加尾部块）。
+- **关闭（0）**：不列、不加载；用户 `/name` 显式点名也不会注入正文。`gate_search` 也不列它
+  （想恢复就去面板能力视图找 `skill:<name>` 那一行改档）。
+- `imports` 让闸门把**本地技能目录**也接进来（不依赖宿主注册）：目录含 `SKILL.md` 算一个技能；
+  目录下多个子目录各含 `SKILL.md` 算多个；单文件 `*.md` 也支持；符号链接目录照常跟随（断链跳过）。
+  frontmatter 的 `name` / `description` 自解（支持 `|` / `>` 块标量），正文是 frontmatter 之后的部分。
+  单个技能文件超过 1 MiB 拒绝读取并告警（不静默截断正文）。相对路径以策略文件所在目录为基准，
+  `~/` 展开到家目录。
+- **`/name` 手势**：宿主技能与导入技能都支持——导入技能宿主不认识，闸门会按「整条正文就是一个 `/技能名`」
+  的严格词法自行识别（只是正文里提到 `/xxx` 不算）。
+- **同名冲突**：宿主优先。同名导入条目标 `shadowed`（`/api/dsh-gate/capabilities` 的 `skills` 行带
+  `origin` / `path` / `tier` / `shadowed`），并 warn 一次；导入之间同名也是先声明的赢。
+- **逃生门**：`"takeover": false` 完整退回 0.1.8 —— 宿主照常注入目录、`skill` 工具照常可见、
+  `gate_load(["skill:x"])` 照旧转发宿主 `skill` 工具，闸门只按 `defaults.skillpack` 决定要不要摘目录。
+- **不完整名单**：宿主 `skills.snapshot()` 返回 `complete: false`（provider 发现超时/被 abort）时，
+  闸门沿用上一份可用名单并告警一次，不拿部分名单覆盖（否则技能会先消失再回来，两次改字节 = 两次断缓存）。
+- **旧会话残留**：升级前就存在的会话里，历史中的旧技能目录消息（`source.kind=skill-catalog`）已经写进
+  durable 事件，`pre-step` 只过滤本轮消息、改不了历史。这类会话恢复后可能同时看到旧目录与
+  `<gate-catalog>`；**以 `<gate-catalog>` 为准**（旧目录是历史记录，不再更新）。
+- 与宿主 UI 的边界：宿主自己的技能面板/按钮只认宿主注册的技能，看不到 `imports` 进来的条目；
+  闸门面板的技能列（`/api/dsh-gate/state` 的 `skills`）是**gate 可见名单**（宿主 + 导入 − `off` − `shadowed`），
+  能力视图 `/api/dsh-gate/capabilities` 才带来源、路径与被遮信息。改 `skills` 策略后下一轮生效。
+
+### MCP 接管（0.3.0）
+
+0.3.0 起闸门可以**自己挂 MCP server**：在 `gate.json` 里声明，gate 启动时用宿主同款
+`mcp-client` 插件逐台挂载；工具照旧走 `mcp__<serverName>__*` 命名空间，也照旧受能力档
+（`mcp:<serverName>`）管理 —— 默认为「按需」，被藏进第二层后由 `gate_load` / `gate_invoke` 打开。
+
+```json
+"mcp": {
+  "servers": {
+    "files": { "transport": "stdio", "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "."] },
+    "remote": { "transport": "streamable-http", "url": "https://mcp.example.com/mcp", "headers": { "Authorization": "Bearer …" } }
+  }
+}
+```
+
+- **声明即接管**：`enabled`（默认 `true`）为假的条目不挂；其余在插件 apply 时由 gate 并发挂载。
+  连接失败只降级成 `unavailable` 并 warn，**不阻塞宿主启动、不抛到 gate 主链路**（`failOnStartupError` 恒 `false`，
+  mcp-client 自己重连；工具出现后状态自动翻成 `owned`）。
+- **一条坏配置不拖垮整份策略**：`mcp.servers` 逐项用 `lib/mcp.js` 的 `normalizeServerConfig` 校验
+  （`serverName` 限 `[A-Za-z0-9_-]{1,32}`，stdio 要 `command`，streamable-http 要 `url`）；非法条目丢弃并告警。
+- **保存语义**：POST 提交了 `mcp.servers` 就**整表替换**（删除真的生效），不逐项拼。gate.json 永不写 BOM。
+- **外部 server 只读**：宿主 `loader` 行里已经有的 mcp-client（比如用户在插件市场装的）只**观察**，
+  列进清单并标 `external` / `owned:false`；gate 绝不 dispose 或改它的配置（`dispose` 会写回 `disabled:true`）。
+  同 `serverName` 或同 `mcp__<name>__*` 命名空间已被占用时，自挂直接拒绝（`conflict`）。
+- **UI / API**：`GET /api/dsh-gate/mcp` 返回 `{ servers, warnings }`，每行
+  `{ name, transport, target, state, enabled, owned, toolCount }`；`state` 为 `owned`（gate 挂着）/
+  `unavailable`（挂了但没工具/重连中）/ `external`（宿主托管）/ `stopped`（声明了但没挂）。
+  `POST /api/dsh-gate/mcp` 接受 `{ action: "add" | "update" | "remove" | "enable" | "disable", name, server? }`：
+  校验通过后先写 `gate.json`（复用 `/policy` 的保存路径），再 mount / update / unmount，最后重算全部 agent 的限制。
+- **限制**：挂载会 `await` 初始连接（多个 server 并发，不会串行叠加等待）；`update` 是「先卸再挂」，
+  新配置启动失败不会回滚旧实例；loader 行识别依赖包名 `dsh-mcp-client`；宿主没有连接状态 API，
+  「有没有工具」是唯一的连接证据。
+
 ### 语义边界（都是实测的宿主行为）
 
 | 事项 | 行为 |
@@ -200,6 +320,12 @@ ln -s "$HOME_DIR/local-plugins/dsh-gate" "$PROFILE/node_modules/dsh-gate"   # Wi
 | 被隐藏的工具 | 不在 SDK 声明里，调用返回 `UNKNOWN_TOOL` |
 | `gate_load` 之后 | 当前会话内保持常驻，同一 agent 的后续步骤立即生效 |
 | `gate_call` | 临时撤限制 → 宿主完整执行管线（含 pre-execute 守卫）→ `finally` 立刻恢复 |
+| PTC 会话的 `gate_load` | 工具表冻结：名字仍在 deny 集、工具表字节不变；声明追加为**最后一条 user 消息**（`<gate-loaded>` / `<gate-section>`），已有消息不改、不重排 |
+| `gate_invoke` | 冻结下的日常执行口：临时撤限制 → 宿主完整管线（含 `defineTool` 参数校验）→ `finally` 恢复；宿主侧错误以 `{ isError: true }` 返回 |
+| 追加加载段落（PTC） | 系统提示词**逐字节不变**；段落正文搬进末尾声明；`<gate-catalog>` 也继续保留该段落 |
+| 尾部声明的位置与幂等 | 每步重算：内容不变就复用同一个消息对象（不新建数组）；用户发了新消息就把同一条尾块搬到末尾（id 不变） |
+| 技能（0.3.0 接管） | 宿主 `skill` 工具进 deny；目录消息与 `/name` 正文按 `source.kind` 摘掉后由闸门重出（常驻进系统提示词独立段落、按需进 `<gate-catalog>`、正文走 `gate_load`）；`off` 的技能不列不载，`/name` 也不注入 |
+| MCP server（0.3.0 接管） | `gate.json` 的 `mcp.servers` 由 gate 自挂（`ctx.plugin(mcp-client)`）；宿主 loader 行里已有的只观察、不 dispose；工具照旧按 `mcp:<server>` 能力档归层 |
 | 子 agent | 继承同一套全局策略；闸门按 agent 分别记账。**例外**：`origin=subagent` 且授予工具数 ≤ `narrowPassThrough` 的子代理整台跳过闸门（见「策略文件」），`gate_status.passthrough` 可查 |
 | 工具热插拔 | 监听 `tools/change` 重算限制，不会留下过期 deny |
 | 插件卸载 | 所有 `restrict` 的 disposer 挂在插件 fiber 上，卸载即全部撤销 |
@@ -235,10 +361,19 @@ ln -s "$HOME_DIR/local-plugins/dsh-gate" "$PROFILE/node_modules/dsh-gate"   # Wi
     于是"看不见、管不到"，`gate.json` 给它们写的层像个死键 —— 旧文档据此误写成"根本不存在"。
     v0.1.6 起它们进候选集，但**默认不受管**（保持常驻、不写 deny）：只有你在 `overrides` 里点名
     （例如 `"read": 2` 把它贬成按需），闸门才真正对它们生效。UI 上这类工具带「预设层」标记。
-  - 技能面同理：`skill` 工具存在且可点名受管；面板技能列只有在宿主真的把技能目录注入给 `skill` 工具后才非空。
+  - 技能面同理：`skill` 工具存在且可点名受管。0.3.0 起默认由闸门**接管**（`skills.takeover`，见「技能接管」）：
+    宿主工具被 deny、目录/正文由闸门出；`takeover: false` 时退回 0.1.8（面板技能列只在宿主真的注入目录后非空）。
 - **段落面**依赖宿主每轮 assemble 的真实快照；宿主大版本改段落渲染时可能读不到（会 fail-open）。
 - **`gate_load` 的粒度是「下一步」**：SDK 声明在每一步开始前渲染好，所以同一个 `run_code` 程序体内
   紧跟 `gate_load` 再调该工具仍会 `tools.<name> is not a function`（真机实测），下一步才可用。
+  PTC 冻结下同一程序体内**立即可以** `gate_invoke`（它不依赖工具表，走的是执行管线）。
+- **PTC 冻结的已知代价**：`gate_invoke` 每次调用会临时 `suspend` 再 `reapply`（发出两次 `tools/change`；
+  `applying` 窗口内不重算，但订阅者会收到事件）。尾部声明的函数签名是**退化渲染** ——
+  复杂 schema 只到 `array<object>` / `object` / `any`，参数校验仍由宿主的 `defineTool` 负责，
+  参数不对会得到 `{ isError: true, text: "Error: … should be string" }` 而不是崩溃。
+- **PTC 判据依赖执行器实现**：`constructor.name` 是 dist 里的实现细节，宿主演进后认不出会 fail-open
+  （不冻结、不启用尾部声明），原因在 HTTP 快照的 `executor.reason`；语义判据 `describe().schemas` 是第二道保险。
+- **反复 `gate_load` 无副作用**：PTC 下已加载的工具不会再进目录，声明只按当前清单重渲染。
 - 目录里每条描述按 `catalog.maxDescriptionLength`（默认 64 字）截断。
 - **段落行的说明永远是空的**（已知问题）：`recordSections` 只记 `{name, chars, tokens}`，目录渲染却读 `entry.summary`，
   所以 `<gate-catalog>` 里段落行只有名字、没有那句摘要。修它会让目录字节变化 ⇒ 从那一段起前缀缓存失效，另开票处理。
@@ -250,13 +385,13 @@ ln -s "$HOME_DIR/local-plugins/dsh-gate" "$PROFILE/node_modules/dsh-gate"   # Wi
 
 ```bash
 npm run check     # DSH 插件规范自检（入口文件、BOM、patch 格式、client externals…）
-npm test          # 全部套件（自测 / 加载 / 委派收窄 / 限制对象 / 快照 / 归层 / 策略 / 对外面），离线跑，不碰真实宿主
+npm test          # 全部套件（自测 / 加载 / 委派收窄 / 限制对象 / 快照 / 归层 / 策略 / 迁移 / 能力 / 对外面 / 末尾注入），离线跑，不碰真实宿主
 npm run verify    # 上面两个一起
 ```
 
 测试用一个共享宿主 seam `test/host.mjs`（`makeHost`）复刻宿主的 `view / restrict / execute / assemble /
 pre-step` 真实语义（含「`view()` 无 scope = 全局视图」与「preset 平面注册在 agent 祖先层」这两条关键区别）；
-需要宿主的七个套件（自测 / 加载 / 委派收窄 / 限制对象 / 快照 / 归层 / 对外面）全部从它取宿主，
+需要宿主的八个套件（自测 / 加载 / 委派收窄 / 限制对象 / 快照 / 归层 / 对外面 / 末尾注入）全部从它取宿主，
 宿主演进只改这一处（策略表那套是纯函数，不需要宿主）。`test/vendor/dsh-tools` 只负责让裸包名 `@deepseek-ai/dsh-tools`
 能解析（`--import ./test/stub-loader.mjs`），因此**不需要 `npm install`、不需要 DSH 在跑**。
 
