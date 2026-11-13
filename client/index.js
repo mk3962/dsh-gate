@@ -93,7 +93,45 @@ window.__ModuleLoader__.load({
       ".dshg-workList b{color:var(--dshg-label)}",
       ".dshg-code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;background:var(--dshg-layer);border-radius:4px;padding:0 4px}",
       ".dshg-spacer{height:2px}",
-      "@media (max-width:720px){.dshg-seg button{padding:3px 7px}.dshg-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.dshg-input{flex-basis:100%}}",
+      ".dshg-tabs{display:flex;gap:4px;flex-wrap:wrap;align-items:center;border-bottom:1px solid var(--dshg-border);padding-bottom:6px}",
+      ".dshg-tabBody{display:flex;flex-direction:column;gap:12px}",
+      ".dshg-sectionHead{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;font-weight:600;font-size:11.5px;margin-top:2px}",
+      ".dshg-tab{border:1px solid transparent;background:transparent;color:var(--dshg-sub);border-radius:8px;padding:4px 10px;font-size:12px;cursor:pointer;font-family:inherit;white-space:nowrap}",
+      ".dshg-tab:hover{background:var(--dshg-hover)}",
+      ".dshg-tab.is-active{color:var(--dshg-label);border-color:var(--dshg-border2);background:var(--dshg-hover);font-weight:650}",
+      ".dshg-tabCount{color:var(--dshg-faint);font-size:10.5px;margin-left:4px}",
+      ".dshg-switch{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--dshg-border2);border-radius:999px;padding:2px 9px 2px 7px;background:transparent;color:var(--dshg-sub);cursor:pointer;font-family:inherit;font-size:11.5px;white-space:nowrap}",
+      ".dshg-switch i{width:9px;height:9px;border-radius:50%;background:var(--dshg-faint);display:block;flex:0 0 auto}",
+      ".dshg-switch[data-on=true]{border-color:var(--dshg-success);color:var(--dshg-success)}",
+      ".dshg-switch[data-on=true] i{background:var(--dshg-success)}",
+      ".dshg-switch[data-on=false]{border-color:var(--dshg-error);color:var(--dshg-error)}",
+      ".dshg-switch[data-on=false] i{background:var(--dshg-error)}",
+      ".dshg-switch:hover:not(:disabled){background:var(--dshg-hover)}",
+      ".dshg-switch:disabled{opacity:.5;cursor:default}",
+      ".dshg-tableWrap{overflow:auto;max-height:560px;border:1px solid var(--dshg-border);border-radius:10px}",
+      ".dshg-table{width:100%;border-collapse:collapse;font-size:11.5px}",
+      ".dshg-table th{text-align:left;font-weight:600;color:var(--dshg-sub);padding:6px 8px;border-bottom:1px solid var(--dshg-border2);white-space:nowrap;position:sticky;top:0;z-index:1;background:var(--dsw-alias-bg-base,var(--dshg-layer))}",
+      ".dshg-table td{padding:6px 8px;border-top:1px solid var(--dshg-border);vertical-align:top}",
+      ".dshg-table tbody tr:hover{background:var(--dshg-hover)}",
+      ".dshg-mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;word-break:break-all}",
+      ".dshg-cellDesc{color:var(--dshg-sub);font-size:11px;max-width:360px;word-break:break-word}",
+      ".dshg-cellActions{display:flex;gap:4px;align-items:center;flex-wrap:wrap}",
+      ".dshg-step.is-win{color:var(--dsw-alias-label-primary-foreground,#fff);border-color:transparent;background:var(--dsw-alias-button-info-fill,var(--dshg-business));font-weight:700}",
+      ".dshg-badge[data-kind=skillpack]{color:#8e5cd9;border-color:#8e5cd9}",
+      ".dshg-badge[data-kind=skill]{color:#c05bd9;border-color:#c05bd9}",
+      ".dshg-badge[data-state=owned]{color:var(--dshg-success);border-color:var(--dshg-success)}",
+      ".dshg-badge[data-state=external]{color:var(--dshg-business);border-color:var(--dshg-business)}",
+      ".dshg-badge[data-state=stopped]{color:var(--dshg-warn);border-color:var(--dshg-warn)}",
+      ".dshg-badge[data-state=unavailable]{color:var(--dshg-error);border-color:var(--dshg-error)}",
+      ".dshg-badge[data-origin=import]{color:#8e5cd9;border-color:#8e5cd9}",
+      ".dshg-badge[data-origin=host]{color:var(--dshg-sub);border-color:var(--dshg-border2)}",
+      ".dshg-importRow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:5px 0;border-top:1px dashed var(--dshg-border)}",
+      ".dshg-importRow:first-child{border-top:0}",
+      ".dshg-importPath{flex:1 1 260px;min-width:150px}",
+      ".dshg-topRight{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}",
+      ".dshg-stats2{display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:8px}",
+      "@media (max-width:720px){.dshg-seg button{padding:3px 7px}.dshg-stats,.dshg-stats2{grid-template-columns:repeat(2,minmax(0,1fr))}.dshg-input{flex-basis:100%}.dshg-hideSm{display:none}.dshg-tableWrap{max-height:none}.dshg-table th{position:static}.dshg-cellDesc{max-width:200px}.dshg-tabs{overflow-x:auto;flex-wrap:nowrap}}",
+      "@media (max-width:720px){.dshg-topRight{justify-content:flex-start}}",
     ].join("");
 
     let styled = false;
@@ -111,18 +149,28 @@ window.__ModuleLoader__.load({
     const TIER_ONDEMAND = 2;
     const TIER_LABEL = { 0: "关闭", 1: "常驻", 2: "按需" };
     const TIER_ORDER = [TIER_RESIDENT, TIER_ONDEMAND, TIER_OFF];
-    const KIND_ORDER = { mcp: 0, plugin: 1, skill: 2, native: 3, unknown: 4, section: 5, glob: 6 };
-    const KIND_LABEL = { mcp: "mcp", plugin: "plugin", skill: "skill", native: "native", unknown: "unknown", section: "section", glob: "glob" };
+    const KIND_ORDER = { mcp: 0, plugin: 1, skillpack: 2, skill: 3, native: 4, section: 5, glob: 6, unknown: 7 };
+    const KIND_LABEL = { mcp: "mcp", plugin: "plugin", skillpack: "技能包", skill: "技能", native: "原生", section: "段落", glob: "通配", unknown: "未知" };
     const KIND_FILTERS = [
       { value: "all", label: "全部来源" },
       { value: "mcp", label: "MCP" },
       { value: "plugin", label: "插件" },
-      { value: "skill", label: "技能包" },
+      { value: "skillpack", label: "技能包（provider）" },
+      { value: "skill", label: "单技能" },
       { value: "native", label: "原生" },
-      { value: "unknown", label: "未知来源" },
       { value: "section", label: "段落" },
       { value: "glob", label: "通配" },
+      { value: "unknown", label: "未知来源" },
     ];
+    const TABS = [
+      { value: "caps", label: "能力" },
+      { value: "skills", label: "技能" },
+      { value: "mcp", label: "MCP" },
+      { value: "json", label: "策略 JSON" },
+    ];
+    const ORIGIN_LABEL = { host: "宿主", import: "导入" };
+    const MCP_STATE_LABEL = { owned: "gate 托管", external: "宿主托管", stopped: "已停止", unavailable: "不可用" };
+    const SKILL_TIER_NOTE = "常驻=正文直接注入系统提示词；按需=只列进 gate-catalog，模型 gate_load(\"skill:名字\") 才取正文；关闭=不列目录且 gate_load 拒绝。";
     const STATUS_FILTERS = [
       { value: "all", label: "全部档位" },
       { value: "1", label: "常驻" },
@@ -139,6 +187,8 @@ window.__ModuleLoader__.load({
       unknown: "来源未知 · 只标注不隐藏",
       exception: "例外 · 显式偏离",
       capability: "能力档",
+      skill: "单技能档（skill:<名字>）",
+      takeover: "takeover · 闸门接管（宿主 skill 工具被 deny）",
       defaults: "defaults · 默认档",
       declared: "sources 声明，当前表面没有",
     };
@@ -147,6 +197,8 @@ window.__ModuleLoader__.load({
       naming: "命名约定",
       prefix: "包前缀推断",
       native: "原生清单",
+      provider: "provider 声明",
+      name: "技能名",
       unknown: "推不出来源",
     };
     const CONF_LABEL = { high: "高", medium: "中", low: "低", unknown: "未知" };
@@ -168,7 +220,9 @@ window.__ModuleLoader__.load({
     const kindOf = (id) => {
       const text = String(id || "");
       if (text.startsWith("mcp:")) return "mcp";
-      if (text.startsWith("skillpack:")) return "skill";
+      if (text.startsWith("skillpack:")) return "skillpack";
+      // 单技能条目（0.3.0 工单 14）：skill:<名字>，比 provider 组更具体。
+      if (text.startsWith("skill:") && text.length > "skill:".length) return "skill";
       if (text.startsWith("plugin:")) return "plugin";
       if (text.startsWith("native:")) return "native";
       if (text.startsWith("section:")) return "section";
@@ -182,8 +236,14 @@ window.__ModuleLoader__.load({
       try { return JSON.stringify(warning); } catch { return String(warning); }
     };
 
-    const api = async (path, options) => {
-      const response = await fetch(path, Object.assign({ headers: { "content-type": "application/json" } }, options || {}));
+    /** 不抛错的请求：调用方自己决定哪个状态码算降级（/mcp 的 404 就是「还没接入」）。 */
+    const request = async (path, options) => {
+      let response;
+      try {
+        response = await fetch(path, Object.assign({ headers: { "content-type": "application/json" } }, options || {}));
+      } catch (failure) {
+        return { ok: false, status: 0, body: null, error: String((failure && failure.message) || failure) };
+      }
       const text = await response.text();
       let body = null;
       if (text.length > 0) {
@@ -191,9 +251,15 @@ window.__ModuleLoader__.load({
       }
       if (!response.ok) {
         const detail = body && (body.message || body.error) ? (body.message || body.error) : "HTTP " + response.status;
-        throw new Error(String(detail));
+        return { ok: false, status: response.status, body: body, error: String(detail) };
       }
-      return body;
+      return { ok: true, status: response.status, body: body, error: "" };
+    };
+
+    const api = async (path, options) => {
+      const result = await request(path, options);
+      if (!result.ok) throw new Error(result.error);
+      return result.body;
     };
 
     const fallbackTemplate = () => ({
@@ -240,24 +306,57 @@ window.__ModuleLoader__.load({
       const [jsonNotice, setJsonNotice] = react.useState(null);
       const [jsonConfirm, setJsonConfirm] = react.useState(null);
       const [workOpen, setWorkOpen] = react.useState(false);
+      // 0.3.0 面板：四个 Tab（能力 / 技能 / MCP / 策略 JSON）
+      const [tab, setTab] = react.useState("caps");
+      const [skillsData, setSkillsData] = react.useState(null);
+      const [skillsError, setSkillsError] = react.useState("");
+      const [mcpData, setMcpData] = react.useState(null);
+      const [mcpStatus, setMcpStatus] = react.useState("unknown");
+      const [pendingSkills, setPendingSkills] = react.useState({});
+      const [pendingImports, setPendingImports] = react.useState(null);
+      const [pendingTakeover, setPendingTakeover] = react.useState(undefined);
+      const [importDraft, setImportDraft] = react.useState("");
+      const [importConfirm, setImportConfirm] = react.useState(null);
+      const [skillQuery, setSkillQuery] = react.useState("");
+      const [skillsNotice, setSkillsNotice] = react.useState(null);
+      const [skillsSaving, setSkillsSaving] = react.useState(false);
+      const [mcpNotice, setMcpNotice] = react.useState(null);
+      const [mcpConfirm, setMcpConfirm] = react.useState(null);
+      const [enabledConfirm, setEnabledConfirm] = react.useState(false);
 
       const reload = react.useCallback(async (message) => {
         setLoading(true);
         try {
-          const results = await Promise.all([
-            api("/api/dsh-gate/state"),
-            api("/api/dsh-gate/capabilities"),
-            api("/api/dsh-gate/policy"),
+          // /mcp 在票 15 之前一定是 404：它是「还没接入」而不是「读失败」，不能把整块面板拖进错误态。
+          const [stateResult, viewResult, policyResult, skillsResult, mcpResult] = await Promise.all([
+            request("/api/dsh-gate/state"),
+            request("/api/dsh-gate/capabilities"),
+            request("/api/dsh-gate/policy"),
+            request("/api/dsh-gate/skills"),
+            request("/api/dsh-gate/mcp"),
           ]);
-          setData({ state: results[0] || {}, view: results[1] || {}, policy: results[2] || {} });
+          if (!stateResult.ok) throw new Error(stateResult.error);
+          if (!viewResult.ok) throw new Error(viewResult.error);
+          if (!policyResult.ok) throw new Error(policyResult.error);
+          setData({ state: stateResult.body || {}, view: viewResult.body || {}, policy: policyResult.body || {} });
+          setSkillsData(skillsResult.ok ? (skillsResult.body || {}) : null);
+          setSkillsError(skillsResult.ok ? "" : skillsResult.error);
+          setMcpData(mcpResult.ok ? (mcpResult.body || {}) : null);
+          setMcpStatus(mcpResult.ok ? "ok" : (mcpResult.status === 404 ? "missing" : "error"));
           setError("");
           setPendingCaps({});
           setPendingExceptions({});
           setPendingSkillpack(undefined);
+          setPendingSkills({});
+          setPendingImports(null);
+          setPendingTakeover(undefined);
+          setImportConfirm(null);
+          setMcpConfirm(null);
           setConfirm(null);
           setReloadConfirm(false);
           setJsonDirty(false);
           setNotice(message ? { tone: "ok", text: message } : null);
+          setSkillsNotice(null);
         } catch (failure) {
           setError(String((failure && failure.message) || failure));
         } finally {
@@ -302,7 +401,16 @@ window.__ModuleLoader__.load({
 
       const makeMember = (name, kindKey) => {
         const decision = kindKey === "section" ? sectionDecisions[name] : toolDecisions[name];
-        if (decision) return Object.assign({}, decision, { name: name, kind: kindKey });
+        if (decision) {
+          // takenOver / forcedTier（0.3.0 工单 14）：宿主 skill 工具被闸门接管时，档位是强制的，
+          // 策略怎么写都改不了 —— UI 必须能解释「为什么它显示关闭却不在工具表」。
+          return Object.assign({}, decision, {
+            name: name,
+            kind: kindKey,
+            takenOver: decision.takenOver === true,
+            forcedTier: decision.forcedTier === undefined ? null : tierOf(decision.forcedTier, null),
+          });
+        }
         return {
           name: name,
           kind: kindKey,
@@ -333,6 +441,9 @@ window.__ModuleLoader__.load({
           phantom: phantom === true,
           synthetic: false,
           skills: [],
+          // 来源徽章（0.3.0 工单 08）：行级来源由能力 id 前缀决定，不拿成员投票。
+          provenance: isObject(raw.provenance) ? raw.provenance : undefined,
+          upstreamHidden: listOf(raw.upstreamHidden),
         };
       };
 
@@ -377,6 +488,8 @@ window.__ModuleLoader__.load({
           phantom: false,
           synthetic: true,
           skills: skillNames,
+          provenance: { source: "skillpack", confidence: "high", via: "provider" },
+          upstreamHidden: [],
         });
       }
 
@@ -667,6 +780,23 @@ window.__ModuleLoader__.load({
         }
       };
 
+      /** enabled 总开关：走 /policy 的合并保存（只提交 enabled，不动其它键）。 */
+      const toggleEnabled = async () => {
+        const target = state.enabled === false;
+        setEnabledConfirm(false);
+        setSaving(true);
+        setNotice(null);
+        try {
+          const result = await api("/api/dsh-gate/policy", { method: "POST", body: JSON.stringify({ enabled: target }) });
+          if (result && result.ok) await reload(target ? "闸门已启用，已重算" : "闸门已禁用：所有工具常驻、不摘段落");
+          else setNotice({ tone: "error", text: "切换失败：" + ((result && result.message) || "未知原因") });
+        } catch (failure) {
+          setNotice({ tone: "error", text: "切换失败：" + String((failure && failure.message) || failure) });
+        } finally {
+          setSaving(false);
+        }
+      };
+
       const parseJsonText = () => {
         try {
           const value = JSON.parse(jsonText);
@@ -735,6 +865,121 @@ window.__ModuleLoader__.load({
         setJsonNotice({ tone: "warn", text: "已载入内置默认（尚未保存）；点「保存 JSON」整份替换后生效，面板里未保存的改动会被丢弃。" });
       };
 
+      /* ── 技能 Tab（0.3.0 工单 16）：档位走 capabilities["skill:<名字>"] ────────── */
+
+      const skillRowsRaw = listOf(skillsData && skillsData.skills);
+      const skillImportsBase = listOf(skillsData && skillsData.imports)
+        .map((item) => {
+          if (!item || typeof item.path !== "string") return null;
+          return typeof item.id === "string" && item.id.length > 0 ? { id: item.id, path: item.path } : { path: item.path };
+        })
+        .filter((item) => item !== null);
+      const skillImports = pendingImports === null ? skillImportsBase : pendingImports;
+      const takeoverBase = skillsData !== null && skillsData !== undefined && skillsData.takeover === true;
+      const takeoverValue = pendingTakeover === undefined ? takeoverBase : pendingTakeover;
+      const skillsDefaultTier = tierOf(skillsData && skillsData.defaults && skillsData.defaults.skillpack, defaultsSkill);
+      const skillTierOf = (row) => (hasOwn(pendingSkills, row.name) ? pendingSkills[row.name] : tierOf(row.tier, skillsDefaultTier));
+      const skillsDirty = pendingImports !== null || pendingTakeover !== undefined || Object.keys(pendingSkills).length > 0;
+      const skillQueryText = skillQuery.trim().toLowerCase();
+      const filteredSkills = skillRowsRaw.filter((row) => {
+        if (skillQueryText.length === 0) return true;
+        const haystack = [row.name, row.provider, row.path, row.description, row.capability].filter((value) => typeof value === "string").join(" ").toLowerCase();
+        return haystack.indexOf(skillQueryText) >= 0;
+      });
+      const skillOffList = listOf(skillsData && skillsData.off);
+      const stageSkillTier = (row, tier) => {
+        const base = tierOf(row.tier, skillsDefaultTier);
+        setPendingSkills((previous) => {
+          const next = Object.assign({}, previous);
+          if (tier === base) delete next[row.name];
+          else next[row.name] = tier;
+          return next;
+        });
+        setSkillsNotice(null);
+      };
+      const stageImportAdd = () => {
+        const text = importDraft.trim();
+        if (text.length === 0) {
+          setSkillsNotice({ tone: "warn", text: "先在输入框里填一个技能目录（含 SKILL.md）" });
+          return;
+        }
+        if (skillImports.some((item) => item.path === text)) {
+          setSkillsNotice({ tone: "warn", text: "这个目录已经在导入清单里：" + text });
+          return;
+        }
+        setPendingImports(skillImports.concat([{ path: text }]));
+        setImportDraft("");
+        setSkillsNotice({ tone: "ok", text: "已加入草稿（点「保存技能配置」才写盘；服务端会校验目录存在且有 SKILL.md/*.md）" });
+      };
+      const stageImportRemove = (index) => {
+        setPendingImports(skillImports.filter((_item, position) => position !== index));
+        setImportConfirm(null);
+        setSkillsNotice({ tone: "ok", text: "已从草稿里移除（不会动原目录里的任何文件）" });
+      };
+      const discardSkills = () => {
+        setPendingSkills({});
+        setPendingImports(null);
+        setPendingTakeover(undefined);
+        setImportConfirm(null);
+        setSkillsNotice({ tone: "ok", text: "已放弃技能页未保存的改动" });
+      };
+      const saveSkills = async () => {
+        if (!skillsDirty) {
+          setSkillsNotice({ tone: "warn", text: "没有待保存改动" });
+          return;
+        }
+        setSkillsSaving(true);
+        setSkillsNotice(null);
+        try {
+          const posts = [];
+          if (pendingImports !== null) {
+            posts.push({ action: "imports", imports: pendingImports.map((item) => (item.id ? { id: item.id, path: item.path } : { path: item.path })) });
+          }
+          if (pendingTakeover !== undefined) posts.push({ action: "takeover", value: pendingTakeover });
+          for (const name of Object.keys(pendingSkills)) posts.push({ action: "tier", name: name, tier: pendingSkills[name] });
+          let warnings = [];
+          for (const body of posts) {
+            const result = await api("/api/dsh-gate/skills", { method: "POST", body: JSON.stringify(body) });
+            if (result && Array.isArray(result.warnings)) warnings = warnings.concat(result.warnings);
+          }
+          const extra = warnings.length > 0 ? "（服务端告警：" + warnings.map((row) => row.message || row.code).join("；") + "）" : "";
+          await reload("技能配置已保存，已重拉 /state、/capabilities、/skills、/mcp" + extra);
+        } catch (failure) {
+          setSkillsNotice({ tone: "error", text: "保存失败：" + String((failure && failure.message) || failure) });
+        } finally {
+          setSkillsSaving(false);
+        }
+      };
+
+      /* ── MCP Tab（票 15 之前 GET /mcp 恒 404）────────────────────────────── */
+
+      const mcpServers = listOf(mcpData && (mcpData.servers || mcpData.mcp));
+      const mcpWritable = mcpData !== null && mcpData !== undefined && mcpData.writable === true;
+      const mcpOwnedCount = mcpServers.filter((row) => row && row.state === "owned").length;
+      const mcpExternalCount = mcpServers.filter((row) => row && row.state === "external").length;
+      const mcpTransportOf = (row) => (typeof row.transport === "string" ? row.transport : row.command ? "stdio" : row.url ? "http" : "—");
+      const mcpTargetOf = (row) => {
+        if (typeof row.target === "string" && row.target.length > 0) return row.target;
+        if (typeof row.command === "string") return row.command + (Array.isArray(row.args) ? " " + row.args.join(" ") : "");
+        if (typeof row.url === "string") return row.url;
+        return "—";
+      };
+      const mcpToolCountOf = (row) => {
+        if (typeof row.toolCount === "number") return row.toolCount;
+        if (Array.isArray(row.tools)) return row.tools.length;
+        return 0;
+      };
+      const mcpAction = async (action, name) => {
+        setMcpNotice(null);
+        try {
+          const result = await api("/api/dsh-gate/mcp", { method: "POST", body: JSON.stringify({ action: action, name: name }) });
+          if (result && result.ok === false) throw new Error(result.message || "操作失败");
+          await reload("MCP " + action + " 已完成，已重拉状态");
+        } catch (failure) {
+          setMcpNotice({ tone: "error", text: "操作失败：" + String((failure && failure.message) || failure) });
+        }
+      };
+
       const stat = (value, label, tone) => h("div", { className: "dshg-stat" + (tone ? " is-" + tone : "") },
         h("b", null, String(value)),
         h("span", null, label));
@@ -766,17 +1011,24 @@ window.__ModuleLoader__.load({
           ["defaults", "defaults"],
         ];
         const nodes = [];
+        // 赢家 = 这条链上**第一个命中的规则**（顺序即优先级）。成员各自的 reason 已经写了它停在哪一步，
+        // 这里再给整行一个总口径：为什么这一行会是现在这个档位。
+        let winnerKey = "";
+        for (const entry of order) if (counts[entry[0]] > 0) { winnerKey = entry[0]; break; }
         for (let index = 0; index < order.length; index += 1) {
           const key = order[index][0];
           const label = order[index][1];
           if (index > 0) nodes.push(h("span", { key: "sep:" + key, className: "dshg-arrow" }, "→"));
+          const isWin = key === winnerKey;
           nodes.push(h("span", {
             key: key,
-            className: "dshg-step" + (counts[key] > 0 ? " is-hit" : ""),
-            title: "命中 " + counts[key] + " 个成员",
-          }, label + (counts[key] > 0 ? " " + counts[key] : "")));
+            className: "dshg-step" + (counts[key] > 0 ? " is-hit" : "") + (isWin ? " is-win" : ""),
+            title: (isWin ? "赢家：" : "") + "命中 " + counts[key] + " 个成员",
+          }, label + (counts[key] > 0 ? " " + counts[key] : "") + (isWin ? " · 赢家" : "")));
         }
-        nodes.push(h("span", { key: "chainHint", className: "dshg-hint" }, "档位判定到 defaults 为止；sources / 推断是来源判定，单独计数"));
+        nodes.push(h("span", { key: "chainHint", className: "dshg-hint" }, winnerKey === ""
+          ? "这一行没有成员命中任何规则：档位完全来自能力条目 / defaults。"
+          : "档位判定到 defaults 为止；sources / 推断是来源判定，单独计数。"));
         return h("div", { className: "dshg-chain" }, nodes);
       };
 
@@ -793,6 +1045,10 @@ window.__ModuleLoader__.load({
           member.missing
             ? h("span", { className: "dshg-chip", key: "missing" }, "当前表面没有")
             : h("span", { className: "dshg-chip", key: "tier", "data-tier": String(current) }, tierLabel(current)),
+          member.takenOver ? h("span", { className: "dshg-tag is-business", key: "takenOver", title: "宿主 skill 工具被闸门 deny，技能目录/正文由 gate 自己出（takeover）" }, "闸门接管") : null,
+          member.forcedTier !== null && member.forcedTier !== undefined
+            ? h("span", { className: "dshg-tag is-warn", key: "forced", title: "强制档：策略改不了它（takenOver）" }, "强制 " + tierLabel(member.forcedTier))
+            : null,
           showProjected ? h("span", { className: "dshg-arrow", key: "arrow" }, "→") : null,
           showProjected ? h("span", { className: "dshg-chip", key: "proj", "data-tier": String(projected) }, tierLabel(projected)) : null,
           h("span", { className: "dshg-reason", key: "reason" }, REASON_LABEL[member.reason] || member.reason || "—"),
@@ -800,9 +1056,11 @@ window.__ModuleLoader__.load({
           member.missing ? null : h("select", {
             key: "exception",
             className: "dshg-select dshg-selectSm",
-            disabled: member.reason === "own" || member.reason === "protected" || member.reason === "loaded",
+            disabled: member.reason === "own" || member.reason === "protected" || member.reason === "loaded" || member.takenOver === true,
             title: member.reason === "own" || member.reason === "protected" || member.reason === "loaded"
               ? "这个成员被 own / protected / loaded 锁定，例外不会改变它的实际档位"
+              : member.takenOver === true
+                ? "这个工具被闸门接管（强制关闭），例外不会改变它的实际档位"
               : "给这个成员设例外（toolExceptions / sectionExceptions）；切能力档不会动例外",
             value: selectValue,
             onChange: (event) => stageException(row, kindKey, member.name, event.target.value === "" ? null : Number(event.target.value)),
@@ -831,6 +1089,14 @@ window.__ModuleLoader__.load({
         if (confidence === "low") markers.push({ text: "低置信", tone: "warn" });
         if (confidence === "unknown") markers.push({ text: "来源未知", tone: "warn" });
         if (loaded > 0) markers.push({ text: "已加载 " + loaded, tone: "ok" });
+        // 来源徽章 / 上游隐藏 / 接管（0.2.0 来源标注 + 0.3.0 技能接管的行级信号）
+        if (row.provenance && typeof row.provenance.source === "string" && row.provenance.source.length > 0) {
+          const confidence = row.provenance.confidence === "high" ? "" : row.provenance.confidence === "medium" ? "warn" : "warn";
+          markers.push({ text: "来源 " + row.provenance.source + (row.provenance.via && row.provenance.via !== "unknown" ? " · " + (VIA_LABEL[row.provenance.via] || row.provenance.via) : ""), tone: confidence === "" ? "business" : confidence });
+        }
+        if (row.upstreamHidden.length > 0) markers.push({ text: "上游隐藏 " + row.upstreamHidden.length, tone: "warn" });
+        const takenOverMembers = row.tools.concat(row.sections).filter((member) => member.takenOver === true).length;
+        if (takenOverMembers > 0) markers.push({ text: "接管 " + takenOverMembers, tone: "business" });
         const meta = [];
         if (row.synthetic) meta.push(listOf(row.skills).length + " 个技能");
         else meta.push(row.tools.length + " 工具 · " + row.sections.length + " 段落");
@@ -965,42 +1231,219 @@ window.__ModuleLoader__.load({
         const alertCount = alerts.filter((node) => node && node.props && (node.props["data-tone"] === "warn" || node.props["data-tone"] === "error")).length;
 
       const jsonLineCount = jsonText.length === 0 ? 0 : jsonText.split(String.fromCharCode(10)).length;
-      const workItems = [
-        ["一个能力 = 一个开关", "开关单位是来源实例：mcp:<server> / plugin:<包> / skillpack:<provider> / native:<tool> / tool:<name> / section:<name>。切一个能力档会同时改工具与段落两条限制，不会留下「有工具没段落」的半截状态。"],
-        ["三层档位", "常驻写进工具表；按需进 gate-catalog，模型用 gate_load 提货后本会话常驻；关闭完全不声明。段落同源：按需/关闭的段落从系统提示词里摘掉。"],
-        ["例外是同能力不同档的唯一入口", "toolExceptions / sectionExceptions 只能显式设置；切能力档不会动例外。例外与能力档不同时，读回会标「偏离」，面板也会提示。"],
-        ["为什么在这一层", "解析顺序 own → preset → loaded → protected → sources → 命名推断 → 能力档 → 例外 → defaults；档位判定命中即停，来源判定单独计数。展开每一行可以看到成员各自停在哪一步，以及来源置信度。"],
-        ["动不了的东西", "agent 自己注册的 own 层（run_code、gate_* 等）与 protected 名单永远常驻；上游已经隐藏的工具只标注、不放出，也不会被闸门重新声明。"],
-        ["生效时机", "保存写入策略文件，下一轮 assemble 生效；本会话已经被 gate_load 认领的工具保持常驻。旧 v2 文件读取时只读迁移，首次保存落 v3。"],
-        ["技能目录", "技能轴当前由 defaults.skillpack 统一控制（顶部有聚合行）。服务端还没有 provider 级 skillpack 成员表，策略里出现 skillpack:<provider> 时会按能力行显示。"],
-        ["原始 JSON", "编辑器直接读写 /api/dsh-gate/policy；保存是整份替换（不是合并），会丢弃面板里未保存的改动。v2 形状提交会被服务端翻译成 v3。"],
-      ];
+      const formatStamp = (ms) => {
+        if (typeof ms !== "number" || !Number.isFinite(ms) || ms <= 0) return "—";
+        try { return new Date(ms).toLocaleString(); } catch { return "—"; }
+      };
+      const savedAtText = formatStamp(policy.mtime);
+      const enabledValue = state.enabled !== false;
+      const executorKind = state.executor && typeof state.executor.kind === "string" ? state.executor.kind : "unknown";
+      const frozen = state.frozen === true;
+      const skillsDirtyCount = Object.keys(pendingSkills).length + (pendingImports === null ? 0 : 1) + (pendingTakeover === undefined ? 0 : 1);
+      const visibleSkillCount = skillRowsRaw.length;
 
-      return h("div", { className: "dshg-wrap" },
-        h("div", { className: "dshg-top" },
-          h("div", { className: "dshg-grow" },
-            h("div", { className: "dshg-title" }, "工具闸门 · 能力面板"),
-            h("div", { className: "dshg-sub" },
-              "策略 v" + versionNumber + " · " + (state.enabled === false ? "闸门已禁用" : "已启用") + " · " + (state.passthrough ? "子代理豁免中" : "会话 " + (state.agent || "无活跃 agent")) + (state.policyFile ? " · " + state.policyFile : ""))),
-          h("div", { className: "dshg-foot" },
-            h("button", { className: "dshg-btn", onClick: requestReload, disabled: loading || saving }, loading ? "读取中…" : "重新读取"),
+      const renderSkillRow = (row) => {
+        const tier = skillTierOf(row);
+        const base = tierOf(row.tier, skillsDefaultTier);
+        const staged = hasOwn(pendingSkills, row.name);
+        return h("tr", { key: row.name },
+          h("td", null,
+            h("div", { className: "dshg-mono", title: row.name }, row.name),
+            row.path ? h("div", { className: "dshg-hint dshg-mono", title: row.path }, row.path) : null),
+          h("td", null, h("span", { className: "dshg-badge", "data-origin": row.origin }, ORIGIN_LABEL[row.origin] || row.origin)),
+          h("td", { className: "dshg-hideSm" }, h("span", { className: "dshg-hint" }, row.provider || "—")),
+          h("td", null,
+            row.shadowed
+              ? h("span", { className: "dshg-tag is-warn", title: "被宿主或先声明的同名导入技能遮住：不列目录、gate_load 拒绝" }, "shadowed · 不可用")
+              : h("div", { className: "dshg-seg", role: "group", "aria-label": "切换技能档位" },
+                  TIER_ORDER.map((value) => h("button", {
+                    key: value,
+                    type: "button",
+                    "data-tier": String(value),
+                    className: value === tier ? "is-active" : "",
+                    title: "把 " + row.name + " 切到「" + tierLabel(value) + "」",
+                    onClick: () => stageSkillTier(row, value),
+                  }, TIER_LABEL[value]))),
+            staged ? h("span", { className: "dshg-tag is-warn", title: "待保存" }, tierLabel(base) + " → " + tierLabel(tier)) : null),
+          h("td", { className: "dshg-hideSm" }, h("div", { className: "dshg-cellDesc" }, row.description || "（无描述）")),
+          h("td", null, h("span", { className: "dshg-hint" }, row.shadowed ? "不可用" : row.capability || "—")));
+      };
+
+      const renderSkillsTab = () => {
+        if (skillsError) {
+          return h("div", { className: "dshg-card" },
+            h("div", { className: "dshg-cardHead" }, h("span", null, "技能")),
+            h("div", { className: "dshg-cardBody" },
+              h("div", { className: "dshg-alert", "data-tone": "error" }, "读不到技能接口（GET /api/dsh-gate/skills）：" + skillsError),
+              h("div", { className: "dshg-hint" }, "技能接管的服务端面来自 0.3.0 工单 14；那条分支没合进来时，这里只能看到「能力」页里按 provider 聚合的技能行。")));
+        }
+        if (skillsData === null) return h("div", { className: "dshg-empty" }, "技能表载入中…");
+        return h("div", { className: "dshg-card" },
+          h("div", { className: "dshg-cardHead" },
+            h("span", null, "技能（" + filteredSkills.length + " / " + visibleSkillCount + "）"),
+            h("span", { className: "dshg-note" }, skillsDirty ? "有未保存改动" : "与策略文件同步"),
+            h("button", { className: "dshg-btn", onClick: discardSkills, disabled: !skillsDirty || skillsSaving }, "放弃改动"),
             h("button", {
               className: "dshg-btn is-primary",
-              onClick: save,
-              disabled: saving || !hasChanges || jsonDirty,
-              title: jsonDirty ? "JSON 编辑器有未保存修改，请先保存或撤销" : "把面板改动写入策略文件",
-            }, saving ? "保存中…" : "保存改动" + (pendingTotal > 0 ? " (" + pendingTotal + ")" : "")))),
-        h("div", { className: "dshg-stats" },
-          stat(visibleCount, "可见工具"),
-          stat(residentNames.length, "常驻"),
-          stat(onDemandNames.length, "按需"),
-          stat(offNames.length, "关闭"),
-          stat(upstreamHidden.length, "上游隐藏", upstreamHidden.length > 0 ? "warn" : ""),
-          stat(sectionRows.length, "段落"),
-          stat(skillNames.length, "技能"),
-          stat("v" + versionNumber, "策略版本"),
-          stat(alertCount, "告警", alertCount > 0 ? "warn" : "")),
-        alerts.length > 0 ? h("div", { className: "dshg-alerts" }, alerts) : null,
+              onClick: saveSkills,
+              disabled: !skillsDirty || skillsSaving,
+            }, skillsSaving ? "保存中…" : "保存技能配置" + (skillsDirty ? " (" + skillsDirtyCount + ")" : ""))),
+          h("div", { className: "dshg-cardBody" },
+            h("div", { className: "dshg-filters" },
+              h("button", {
+                className: "dshg-switch",
+                "data-on": takeoverValue ? "true" : "false",
+                onClick: () => { setPendingTakeover(!takeoverValue); setSkillsNotice(null); },
+                title: "skills.takeover：开启后 gate deny 宿主 skill 工具，技能目录与正文全由 gate 出",
+              }, h("i", null), "技能接管 " + (takeoverValue ? "开" : "关")),
+              h("span", { className: "dshg-hint" }, takeoverValue
+                ? "gate 接管：宿主 skill 工具被 deny，目录与正文由 gate 自己出。"
+                : "接管关闭：宿主 skill 工具与目录照旧生效，下面的档位只影响 gate 自己的目录与 gate_load。")),
+            h("div", { className: "dshg-note" }, "档位效果：" + SKILL_TIER_NOTE),
+            skillOffList.length > 0
+              ? h("div", { className: "dshg-hint" }, "skills.off 旧关闭清单（0.1.8 口径；0.3.0 起「关闭」写成能力条目 skill:<名字>）：" + skillOffList.join("、"))
+              : null,
+            h("div", { className: "dshg-sectionHead" }, h("span", null, "导入目录（skills.imports）"), h("span", { className: "dshg-hint" }, "相对路径以策略文件所在目录为基准；移除导入不会动原目录里的任何文件。")),
+            h("div", { className: "dshg-hint" }, "扫描规则：目录里有 SKILL.md 算一个技能；否则看一层子目录各自的 SKILL.md；再否则目录下直接放的 *.md 各算一个。同名时宿主优先，导入的那份标 shadowed。"),
+            skillImports.length === 0
+              ? h("div", { className: "dshg-hint" }, "还没有导入目录。")
+              : h("div", null, skillImports.map((item, index) => {
+                const saved = listOf(skillsData.imports).find((row) => row && row.path === item.path);
+                let stateNode;
+                if (!saved) stateNode = h("span", { className: "dshg-tag is-business", key: "st" }, "待保存");
+                else if (!saved.exists) stateNode = h("span", { className: "dshg-tag is-error", key: "st" }, "目录不存在");
+                else if (!saved.hasSkills) stateNode = h("span", { className: "dshg-tag is-warn", key: "st" }, "目录里没有 SKILL.md/*.md");
+                else stateNode = h("span", { className: "dshg-tag is-ok", key: "st" }, "已扫描到技能");
+                return h("div", { className: "dshg-importRow", key: item.path + ":" + index },
+                  h("span", { className: "dshg-importPath dshg-mono", title: item.path }, item.path),
+                  item.id ? h("span", { className: "dshg-tag", key: "id" }, "id " + item.id) : null,
+                  stateNode,
+                  importConfirm === index
+                    ? h("span", { className: "dshg-cellActions", key: "act" },
+                        h("button", { className: "dshg-btn is-danger", onClick: () => stageImportRemove(index) }, "确认移除"),
+                        h("button", { className: "dshg-btn", onClick: () => setImportConfirm(null) }, "取消"))
+                    : h("button", { className: "dshg-btn", key: "act", onClick: () => { setImportConfirm(index); setSkillsNotice(null); } }, "移除"));
+              })),
+            h("div", { className: "dshg-filters" },
+              h("input", {
+                className: "dshg-input",
+                placeholder: "技能目录路径（绝对路径，或相对策略文件目录）…",
+                value: importDraft,
+                onChange: (event) => setImportDraft(event.target.value),
+              }),
+              h("button", { className: "dshg-btn", onClick: stageImportAdd }, "加入草稿")),
+            h("div", { className: "dshg-filters" },
+              h("input", {
+                className: "dshg-input",
+                placeholder: "搜索技能名、provider、路径或描述…",
+                value: skillQuery,
+                onChange: (event) => setSkillQuery(event.target.value),
+              }),
+              h("button", { className: "dshg-btn", onClick: () => setSkillQuery(""), disabled: skillQuery.length === 0 }, "清除筛选")),
+            filteredSkills.length === 0
+              ? h("div", { className: "dshg-empty" }, visibleSkillCount === 0 ? "还没有技能：gate 没拿到宿主技能，也没有导入目录。" : "没有匹配的技能。")
+              : h("div", { className: "dshg-tableWrap" },
+                  h("table", { className: "dshg-table" },
+                    h("thead", null, h("tr", null,
+                      h("th", null, "技能"),
+                      h("th", null, "来源"),
+                      h("th", { className: "dshg-hideSm" }, "provider"),
+                      h("th", null, "档位"),
+                      h("th", { className: "dshg-hideSm" }, "描述"),
+                      h("th", null, "能力"))),
+                    h("tbody", null, filteredSkills.map(renderSkillRow)))),
+            skillsDirty
+              ? h("div", { className: "dshg-preview" },
+                  Object.keys(pendingSkills).map((name) => {
+                    const row = skillRowsRaw.find((item) => item.name === name);
+                    const from = tierOf(row && row.tier, skillsDefaultTier);
+                    return h("div", { className: "dshg-previewRow", key: "sk:" + name },
+                      h("span", { className: "dshg-code" }, "skill:" + name),
+                      h("span", null, tierLabel(from) + " → " + tierLabel(pendingSkills[name])));
+                  }),
+                  pendingTakeover !== undefined
+                    ? h("div", { className: "dshg-previewRow", key: "takeover" },
+                        h("span", { className: "dshg-code" }, "skills.takeover"),
+                        h("span", null, (takeoverBase ? "开" : "关") + " → " + (pendingTakeover ? "开" : "关")))
+                    : null,
+                  pendingImports !== null
+                    ? h("div", { className: "dshg-previewRow", key: "imports" },
+                        h("span", { className: "dshg-code" }, "skills.imports"),
+                        h("span", null, skillImportsBase.length + " → " + pendingImports.length + " 个目录"))
+                    : null)
+              : null,
+            skillsNotice ? h("div", { className: "dshg-alert", "data-tone": skillsNotice.tone || undefined }, skillsNotice.text) : null,
+            h("div", { className: "dshg-hint" }, "保存后立刻重算并重拉 /state、/capabilities、/skills、/mcp；单技能档位写在能力条目 skill:<名字> 上，优先于 skillpack:<provider> 组与 defaults.skillpack。")));
+      };
+
+      const renderMcpRow = (row) => {
+        const name = String(row && row.name ? row.name : "");
+        const stateName = row && typeof row.state === "string" ? row.state : "unavailable";
+        const owned = stateName === "owned" || stateName === "stopped";
+        const enabled = row && row.enabled !== false;
+        const stopAction = stateName === "stopped" ? "start" : "stop";
+        return h("tr", { key: name },
+          h("td", null, h("div", { className: "dshg-mono" }, name)),
+          h("td", null, h("span", { className: "dshg-hint" }, mcpTransportOf(row))),
+          h("td", { className: "dshg-hideSm" }, h("div", { className: "dshg-cellDesc dshg-mono" }, mcpTargetOf(row))),
+          h("td", null, h("span", { className: "dshg-badge", "data-state": stateName }, MCP_STATE_LABEL[stateName] || stateName)),
+          h("td", null, h("span", { className: "dshg-hint" }, enabled ? "启用" : "禁用")),
+          h("td", null, String(mcpToolCountOf(row))),
+          h("td", null, owned
+            ? h("div", { className: "dshg-cellActions" },
+                h("button", {
+                  className: "dshg-btn",
+                  disabled: !mcpWritable,
+                  title: mcpWritable ? "" : "M1 的 POST /api/dsh-gate/mcp 尚未接入",
+                  onClick: () => { void mcpAction(stopAction, name); },
+                }, stateName === "stopped" ? "启动" : "停止"),
+                mcpConfirm === name
+                  ? h("span", { className: "dshg-cellActions", key: "del" },
+                      h("button", { className: "dshg-btn is-danger", onClick: () => { setMcpConfirm(null); void mcpAction("remove", name); } }, "确认删除"),
+                      h("button", { className: "dshg-btn", onClick: () => setMcpConfirm(null) }, "取消"))
+                  : h("button", { className: "dshg-btn", key: "del", disabled: !mcpWritable, onClick: () => setMcpConfirm(name) }, "删除"))
+            : h("span", { className: "dshg-hint" }, "宿主配置，gate 只能观察")));
+      };
+
+      const renderMcpTab = () => {
+        if (mcpStatus === "missing") {
+          return h("div", { className: "dshg-card" },
+            h("div", { className: "dshg-cardHead" }, h("span", null, "MCP server")),
+            h("div", { className: "dshg-cardBody" },
+              h("div", { className: "dshg-alert", "data-tone": "warn" }, "MCP 接管尚未接入（票 15）"),
+              h("div", { className: "dshg-note" }, "服务端还没有 GET /api/dsh-gate/mcp（返回 404），所以这里显示「未接入」而不是报错。M1 接入后这一页会列出 gate 托管（owned）与宿主托管（external）的 server、连接状态、启用开关与工具数；owned 可启停/删除，external 只读。"),
+              h("div", { className: "dshg-hint" }, "在那之前，MCP 的开关仍在「能力」页：一个 mcp:<server> 能力 = 一个档位开关，工具与说明书一起动。")));
+        }
+        if (mcpStatus === "error") {
+          return h("div", { className: "dshg-card" },
+            h("div", { className: "dshg-cardHead" }, h("span", null, "MCP server")),
+            h("div", { className: "dshg-cardBody" },
+              h("div", { className: "dshg-alert", "data-tone": "error" }, "读 MCP 清单失败：MCP 接口返回了非 404 的错误。"),
+              h("button", { className: "dshg-btn", onClick: () => { void reload(""); } }, "重试")));
+        }
+        return h("div", { className: "dshg-card" },
+          h("div", { className: "dshg-cardHead" },
+            h("span", null, "MCP server（" + mcpServers.length + "）"),
+            h("span", { className: "dshg-note" }, "owned = gate 托管（可改）；external = 宿主配置（只读）"),
+            mcpNotice ? h("span", { className: "dshg-hint" }, mcpNotice.text) : null),
+          h("div", { className: "dshg-cardBody" },
+            mcpServers.length === 0
+              ? h("div", { className: "dshg-empty" }, "还没有 MCP server。新增表单在 M1 接入 /mcp 的写接口后开放。")
+              : h("div", { className: "dshg-tableWrap" },
+                  h("table", { className: "dshg-table" },
+                    h("thead", null, h("tr", null,
+                      h("th", null, "name"),
+                      h("th", null, "transport"),
+                      h("th", { className: "dshg-hideSm" }, "目标"),
+                      h("th", null, "状态"),
+                      h("th", null, "enabled"),
+                      h("th", null, "工具数"),
+                      h("th", null, "操作"))),
+                    h("tbody", null, mcpServers.map(renderMcpRow)))),
+            h("div", { className: "dshg-hint" }, "连接态（连上/超时）由宿主 MCP 客户端给；gate 只观察，不谎报。")));
+      };
+
+      const renderCapsTab = () => h("div", { className: "dshg-tabBody" },
         h("div", { className: "dshg-card" },
           h("div", { className: "dshg-cardHead" },
             h("span", null, "能力（" + filteredRows.length + " / " + rows.length + "）"),
@@ -1032,41 +1475,8 @@ window.__ModuleLoader__.load({
           h("div", { className: "dshg-cardBody" },
             hasChanges
               ? h("div", { className: "dshg-preview" }, previewNodes)
-              : h("div", { className: "dshg-hint" }, "面板改动只改内存草稿；点「保存改动」后写入策略文件，下一轮生效。"),
-            reloadConfirm ? h("div", { className: "dshg-confirm" },
-              h("div", { className: "dshg-grow" }, "有未保存改动（或 JSON 编辑器有草稿），重新读取会丢弃它们。"),
-              h("button", { className: "dshg-btn is-primary", onClick: commitReload }, "确认重新读取"),
-              h("button", { className: "dshg-btn", onClick: () => setReloadConfirm(false) }, "取消")) : null,
+              : h("div", { className: "dshg-hint" }, "面板改动只改内存草稿；点「保存能力改动」后写入策略文件，下一轮生效。"),
             h("div", { className: "dshg-note" }, "保存按服务端 v3 规范化后落盘（UTF-8 无 BOM）；本会话已经加载的工具保持常驻。"))),
-        h("div", { className: "dshg-card" },
-          h("div", { className: "dshg-cardHead" },
-            h("span", null, "原始策略 JSON（v3）"),
-            h("span", { className: "dshg-note" }, jsonDirty ? "有未保存修改" : "与文件同步"),
-            h("button", { className: "dshg-btn", onClick: () => setEditorOpen(!editorOpen) }, editorOpen ? "收起编辑" : "展开编辑")),
-          editorOpen ? h("div", { className: "dshg-cardBody" },
-            h("div", { className: "dshg-hint" }, "直接读写 /api/dsh-gate/policy。保存是整份替换（不是合并），会丢弃面板里未保存的改动；v2 形状提交由服务端自动翻译成 v3。"),
-            pendingTotal > 0 ? h("div", { className: "dshg-alert", "data-tone": "warn" }, "面板里还有 " + pendingTotal + " 项未保存改动；保存 JSON 会丢弃它们。") : null,
-            h("textarea", {
-              className: "dshg-json",
-              spellCheck: false,
-              value: jsonText,
-              onChange: (event) => { setJsonText(event.target.value); setJsonDirty(true); setJsonConfirm(null); },
-            }),
-            h("div", { className: "dshg-jsonMeta" },
-              h("span", { className: "dshg-hint" }, bytesOf(jsonText) + " 字节 · " + jsonLineCount + " 行"),
-              h("button", { className: "dshg-btn", onClick: validateJson }, "校验"),
-              h("button", { className: "dshg-btn", onClick: formatJson }, "格式化"),
-              h("button", { className: "dshg-btn is-danger", onClick: () => { setJsonConfirm("default"); setJsonNotice(null); } }, "恢复默认"),
-              h("button", { className: "dshg-btn is-primary", onClick: requestJsonSave, disabled: saving }, "保存 JSON")),
-            jsonNotice ? h("div", { className: "dshg-alert", "data-tone": jsonNotice.tone || undefined }, jsonNotice.text) : null,
-            jsonConfirm === "save" ? h("div", { className: "dshg-confirm" },
-              h("div", { className: "dshg-grow" }, "确认整份替换策略文件？这会按编辑器内容重写（不是合并），并丢弃面板里未保存的改动。"),
-              h("button", { className: "dshg-btn is-primary", onClick: commitJsonSave, disabled: saving }, saving ? "保存中…" : "确认保存"),
-              h("button", { className: "dshg-btn", onClick: () => setJsonConfirm(null) }, "取消")) : null,
-            jsonConfirm === "default" ? h("div", { className: "dshg-confirm" },
-              h("div", { className: "dshg-grow" }, "载入内置默认？会覆盖编辑器内容（尚未写盘）；面板里未保存的改动不会自动清掉，但保存 JSON 时会丢弃。"),
-              h("button", { className: "dshg-btn is-primary", onClick: commitRestoreDefault }, "载入默认"),
-              h("button", { className: "dshg-btn", onClick: () => setJsonConfirm(null) }, "取消")) : null) : null),
         h("div", { className: "dshg-card" },
           h("div", { className: "dshg-cardHead" },
             h("span", null, "工作原理 · 解析链与生效时机"),
@@ -1075,7 +1485,105 @@ window.__ModuleLoader__.load({
             h("ul", { className: "dshg-workList" },
               workItems.map((item, index) => h("li", { key: "work" + index },
                 h("b", null, item[0] + "："),
-                item[1])))) : null),
+                item[1])))) : null));
+
+      const renderJsonTab = () => h("div", { className: "dshg-card" },
+        h("div", { className: "dshg-cardHead" },
+          h("span", null, "原始策略 JSON（v3）"),
+          h("span", { className: "dshg-note" }, jsonDirty ? "有未保存修改" : "与文件同步"),
+          h("button", { className: "dshg-btn", onClick: () => setEditorOpen(!editorOpen) }, editorOpen ? "收起编辑" : "展开编辑")),
+        editorOpen ? h("div", { className: "dshg-cardBody" },
+          h("div", { className: "dshg-hint" }, "直接读写 /api/dsh-gate/policy。保存是整份替换（不是合并），会丢弃面板里未保存的改动；v2 形状提交由服务端自动翻译成 v3。skills 接管配置也会原样保留。"),
+          pendingTotal > 0 || skillsDirty ? h("div", { className: "dshg-alert", "data-tone": "warn" }, "面板里还有未保存改动（能力 " + pendingTotal + " 项、技能 " + skillsDirtyCount + " 项）；保存 JSON 会丢弃它们。") : null,
+          h("textarea", {
+            className: "dshg-json",
+            spellCheck: false,
+            value: jsonText,
+            onChange: (event) => { setJsonText(event.target.value); setJsonDirty(true); setJsonConfirm(null); },
+          }),
+          h("div", { className: "dshg-jsonMeta" },
+            h("span", { className: "dshg-hint" }, bytesOf(jsonText) + " 字节 · " + jsonLineCount + " 行"),
+            h("button", { className: "dshg-btn", onClick: validateJson }, "校验"),
+            h("button", { className: "dshg-btn", onClick: formatJson }, "格式化"),
+            h("button", { className: "dshg-btn is-danger", onClick: () => { setJsonConfirm("default"); setJsonNotice(null); } }, "恢复默认"),
+            h("button", { className: "dshg-btn is-primary", onClick: requestJsonSave, disabled: saving }, "保存 JSON")),
+          jsonNotice ? h("div", { className: "dshg-alert", "data-tone": jsonNotice.tone || undefined }, jsonNotice.text) : null,
+          jsonConfirm === "save" ? h("div", { className: "dshg-confirm" },
+            h("div", { className: "dshg-grow" }, "确认整份替换策略文件？这会按编辑器内容重写（不是合并），并丢弃面板里未保存的改动。"),
+            h("button", { className: "dshg-btn is-primary", onClick: commitJsonSave, disabled: saving }, saving ? "保存中…" : "确认保存"),
+            h("button", { className: "dshg-btn", onClick: () => setJsonConfirm(null) }, "取消")) : null,
+          jsonConfirm === "default" ? h("div", { className: "dshg-confirm" },
+            h("div", { className: "dshg-grow" }, "载入内置默认？会覆盖编辑器内容（尚未写盘）；面板里未保存的改动不会自动清掉，但保存 JSON 时会丢弃。"),
+            h("button", { className: "dshg-btn is-primary", onClick: commitRestoreDefault }, "载入默认"),
+            h("button", { className: "dshg-btn", onClick: () => setJsonConfirm(null) }, "取消")) : null) : null);
+
+      return h("div", { className: "dshg-wrap" },
+        h("div", { className: "dshg-top" },
+          h("div", { className: "dshg-grow" },
+            h("div", { className: "dshg-title" }, "工具闸门 · 能力面板"),
+            h("div", { className: "dshg-sub" },
+              "策略 v" + versionNumber + " · " + (enabledValue ? "已启用" : "已禁用") + " · " + (state.passthrough ? "子代理豁免中" : "会话 " + (state.agent || "无活跃 agent")) + (state.policyFile ? " · " + state.policyFile : ""))),
+          h("div", { className: "dshg-topRight" },
+            h("button", {
+              className: "dshg-switch",
+              "data-on": enabledValue ? "true" : "false",
+              onClick: () => setEnabledConfirm(true),
+              disabled: loading || saving,
+              title: enabledValue ? "点一下可禁用闸门（全部常驻、不摘段落）" : "点一下重新启用闸门",
+            }, h("i", null), enabledValue ? "闸门已启用" : "闸门已禁用"),
+            h("button", { className: "dshg-btn", onClick: requestReload, disabled: loading || saving }, loading ? "读取中…" : "重新读取"),
+            h("button", {
+              className: "dshg-btn is-primary",
+              onClick: save,
+              disabled: saving || !hasChanges || jsonDirty,
+              title: jsonDirty ? "JSON 编辑器有未保存修改，请先保存或撤销" : "把能力页改动写入策略文件",
+            }, saving ? "保存中…" : "保存能力改动" + (pendingTotal > 0 ? " (" + pendingTotal + ")" : "")))),
+        enabledConfirm ? h("div", { className: "dshg-confirm" },
+          h("div", { className: "dshg-grow" },
+            enabledValue
+              ? "确认禁用闸门？所有工具常驻、不摘段落，技能接管也会一起退回宿主行为。"
+              : "确认重新启用闸门？会立刻按策略重算所有会话。"),
+          h("button", { className: "dshg-btn is-primary", onClick: toggleEnabled }, enabledValue ? "确认禁用" : "确认启用"),
+          h("button", { className: "dshg-btn", onClick: () => setEnabledConfirm(false) }, "取消")) : null,
+        h("div", { className: "dshg-stats" },
+          stat(visibleCount, "可见工具"),
+          stat(residentNames.length, "常驻"),
+          stat(onDemandNames.length, "按需"),
+          stat(offNames.length, "关闭"),
+          stat(upstreamHidden.length, "上游隐藏", upstreamHidden.length > 0 ? "warn" : ""),
+          stat(sectionRows.length, "段落"),
+          stat(visibleSkillCount, "技能"),
+          stat("v" + versionNumber, "策略版本"),
+          stat(alertCount, "告警", alertCount > 0 ? "warn" : "")),
+        h("div", { className: "dshg-stats2" },
+          stat(mcpOwnedCount, "MCP 托管", mcpOwnedCount > 0 ? "" : ""),
+          stat(mcpExternalCount, "MCP 外部"),
+          stat(executorKind + (frozen ? " · 冻结" : ""), "PTC 执行器"),
+          stat(savedAtText, "最后保存"),
+          stat(policy.migrated ? "v" + (policy.fromVersion || 2) + " → v3" : "v3", "策略文件版本")),
+        alerts.length > 0 ? h("div", { className: "dshg-alerts" }, alerts) : null,
+        h("div", { className: "dshg-tabs", role: "tablist" },
+          TABS.map((item) => h("button", {
+            key: item.value,
+            type: "button",
+            role: "tab",
+            "aria-selected": tab === item.value,
+            className: "dshg-tab" + (tab === item.value ? " is-active" : ""),
+            onClick: () => setTab(item.value),
+          }, item.label,
+            h("span", { className: "dshg-tabCount" },
+              item.value === "caps" ? String(rows.length)
+                : item.value === "skills" ? String(visibleSkillCount)
+                  : item.value === "mcp" ? (mcpStatus === "ok" ? String(mcpServers.length) : "—")
+                    : jsonDirty ? "•" : "")))),
+        reloadConfirm ? h("div", { className: "dshg-confirm" },
+          h("div", { className: "dshg-grow" }, "有未保存改动（能力 " + pendingTotal + " 项、技能 " + skillsDirtyCount + " 项，或 JSON 编辑器有草稿），重新读取会丢弃它们。"),
+          h("button", { className: "dshg-btn is-primary", onClick: commitReload }, "确认重新读取"),
+          h("button", { className: "dshg-btn", onClick: () => setReloadConfirm(false) }, "取消")) : null,
+        tab === "caps" ? renderCapsTab() : null,
+        tab === "skills" ? renderSkillsTab() : null,
+        tab === "mcp" ? renderMcpTab() : null,
+        tab === "json" ? renderJsonTab() : null,
         h("div", { className: "dshg-foot" },
           h("span", { className: "dshg-note" }, policy.file ? "策略文件：" + policy.file : "策略文件：未配置（保存会失败）"),
           h("span", { className: "dshg-hint" }, "面板不发起任何外部请求；只读写本机 /api/dsh-gate/*。")));
