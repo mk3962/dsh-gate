@@ -253,6 +253,9 @@ ln -s "$HOME_DIR/local-plugins/dsh-gate" "$PROFILE/node_modules/dsh-gate"   # Wi
 - **常驻（1）**：正文以 `<skill_content name="…">` 包装，作为独立段落 `gate-skill:<name>` 追加在系统提示词末尾，
   `interpolate: false`，不进 `<gate-catalog>` 行。同一策略下逐字节稳定；单条超过 12000 字会截断并告警
   （`skill-too-long`），全文随时可以 `gate_load`。
+  **常驻正文只接受显式单技能条目**（`capabilities["skill:<name>"]={tier:1}`）；组级/默认常驻
+  （`skillpack:<provider>=1` 或 `defaults.skillpack=1`）会降级为按需（`reason: resident-group`），
+  只列目录、不灌正文 —— 旧 v2 的 `skills.tier=1` 也是「保留目录」，迁移时同样降为 2 并告警。
 - **按需（2）**：只在目录里列一行，模型 `gate_load(["skill:<name>"])` 才拿到正文（native / PTC 都一样，
   正文走工具结果，不再追加尾部块）。
 - **关闭（0）**：不列、不加载；用户 `/name` 显式点名也不会注入正文。

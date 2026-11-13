@@ -69,6 +69,22 @@
 - `gate_search` 的技能行不再统一写「技能」，改为带真实档位；`takeover=false` 时仍是「技能」。
 - `gate.example.json` 增 `skills`（`takeover: true` / `off: []` / `imports: []`），规范自检开始校验它的形状。
 
+### Fixed — 0.3.0 复核（2026-11-14，r4 报告 P0=1 / P1=3）
+- **P0 迁移放大**：v2 的 `skills.tier=1` 语义是「保留宿主目录」，0.3.0 接管后常驻变成正文注入。
+  本机真实技能库 53 个、渲染 294,632 字、gate 自估 ≈78.6k token/次；照字面迁移升级即触发。
+  现 v2/v3 旧 `skills.tier=1` 一律降为按需（2）并告警 `skills-tier-remapped`；
+  **组级/默认常驻也降级为按需**（`reason: resident-group`），常驻正文只接受显式
+  `capabilities["skill:<name>"]={tier:1}` —— 逐条确认才注入正文，避免整库灌入。
+- **P1 首步缺失**：宿主先 `assemble` 后 `pre-step`，第一轮没有技能目录/常驻正文，第二轮系统提示词
+  变字节、前缀缓存断。`sections.js` 装配前调用 `gate.ensureSkills()`，名单为空先刷一次。
+- **P1 正文缓存不失效**：每步 `refreshResidentBodies` 回查常驻技能正文，按 sha1 变化才换缓存；
+  `skillSections` 只读缓存，不再在装配路径回查宿主；改 `SKILL.md` 下一步生效。
+- **P1 权限边界**：尊重宿主 `invocation.modelInvocable/userInvocable`；模型不可调用的技能不进目录、
+  `gate_load` 返回 `not-invocable`；用户不可调用的技能不接 `/name` 手势。
+- **P2**：`gate_search` 不再列 `off` 技能；`skills.off` 只在 `resolveSkillDecision` 一处消费。
+- **/mcp 500**：`server.js` 三处 `savePolicyFile` 是 async 却未 `await`，add/remove/enable/disable
+  全部 500；已修并补测试覆盖。
+
 ## [0.2.0] — 2026-11-13
 
 ### Added
