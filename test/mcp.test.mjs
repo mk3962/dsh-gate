@@ -317,6 +317,29 @@ const makeFakeHost = (options) => {
   assert.equal(manager.list()[0].state, "owned");
   assert.equal(manager.list()[0].toolCount, 1);
   ok("mount：挂上但无工具 → ok:true/state=unavailable/带 warning，登记保留；重连后自动翻 owned");
+
+  // 工具数不能只看 visible：没有活跃会话/被 restriction 藏起来时，registered（knownNames）
+  // 仍然证明服务器已连上。真机事故：面板 MCP 行显示已挂载但工具数恒 0。
+  const known = new Set();
+  const hiddenCtx = {
+    tools: {
+      view() { return { visible: new Map(), knownNames: known }; },
+      register() { return () => {}; },
+    },
+    loader: {
+      import() { return Promise.resolve({ apply() {} }); },
+      entries() { return []; },
+    },
+    plugin() { return { dispose: async () => {} }; },
+  };
+  const hiddenManager = createMcpManager({ ctx: hiddenCtx });
+  const hiddenMount = await hiddenManager.mount("hidden", { command: "x" });
+  assert.equal(hiddenMount.state, "unavailable", "刚挂上还没有工具 → unavailable");
+  known.add("mcp__hidden__probe");
+  const hiddenRow = hiddenManager.list()[0];
+  assert.equal(hiddenRow.toolCount, 1, "visible 为空但 knownNames 有 mcp__hidden__* → 工具数仍是 1");
+  assert.equal(hiddenRow.state, "owned", "注册过工具就翻成 owned，不受 restriction 影响");
+  ok("toolCount：visible 被隐藏时退回 knownNames 计数（面板不再恒 0）");
 }
 
 // ── 9. mount：启动抛错 / ctx.plugin 抛错 → 降级 + 清理，不 throw ───────────────

@@ -1365,7 +1365,7 @@ window.__ModuleLoader__.load({
               }),
               h("button", { className: "dshg-btn", onClick: () => setSkillQuery(""), disabled: skillQuery.length === 0 }, "清除筛选")),
             filteredSkills.length === 0
-              ? h("div", { className: "dshg-empty" }, visibleSkillCount === 0 ? "还没有技能：gate 没拿到宿主技能，也没有导入目录。" : "没有匹配的技能。")
+              ? h("div", { className: "dshg-empty" }, visibleSkillCount === 0 ? (state.agent ? "本会话还没有装配过一次：技能清单在第一次请求后出现。" : "还没有技能：gate 没拿到宿主技能，也没有导入目录。") : "没有匹配的技能。")
               : h("div", { className: "dshg-tableWrap" },
                   h("table", { className: "dshg-table" },
                     h("thead", null, h("tr", null,
@@ -1625,6 +1625,9 @@ window.__ModuleLoader__.load({
           stat(savedAtText, "最后保存"),
           stat(policy.migrated ? "v" + (policy.fromVersion || 2) + " → v3" : "v3", "策略文件版本")),
         alerts.length > 0 ? h("div", { className: "dshg-alerts" }, alerts) : null,
+        state.agent && sectionRows.length === 0 && visibleSkillCount === 0
+          ? h("div", { className: "dshg-note" }, "本会话还没有产生过一次请求：段落与技能清单要等第一次装配后才出现，工具档位与告警已按策略生效。")
+          : null,
         h("div", { className: "dshg-tabs", role: "tablist" },
           TABS.map((item) => h("button", {
             key: item.value,
