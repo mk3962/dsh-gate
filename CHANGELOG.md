@@ -38,6 +38,32 @@
   `selftest` / `surface` / `policy` / `migrate` / `catalog` / `tier` / `snapshot` 的既有断言按新语义更新
   （每条都在注释里写明为什么改）。
 
+### Added — MCP 接管（工单 15）
+- **策略 v3 新增顶层 `mcp`**：`{ servers: { <name>: { transport?, command?, args?, env?, cwd?, url?, headers?, enabled? } } }`。
+  追加在 `POLICY_KEYS` 末尾，同步到 `V3_KEYS` / `normalizeV3Policy` / `mergePolicyFile` / `applyLayer` /
+  `gate.example.json` / `scripts/check-spec.mjs`。v2→v3 迁移补默认 `{ servers: {} }`。
+  - `normalizeMcpConfig`（`lib/migrate.js`）逐条复用 `lib/mcp.js` 的 `normalizeServerConfig` 校验
+    （`serverName` 限 `[A-Za-z0-9_-]{1,32}`、stdio 要 `command`、streamable-http 要 `url`）；
+    **单条非法只丢弃这一条并告警**，不让整份策略失败。servers 按名排序、字段序固定，落盘条目不带 `name`。
+  - 保存时 `mcp.servers` **整表替换**（提交了就换，删除真的生效）；没提交时保留旧表。
+- **`gate.startMcp()`**：从 `policy.mcp.servers` 取 `enabled !== false` 的条目 **并发** mount，返回
+  `{ mounted, failed }`；失败只 `warn`、不抛。只跑一次（幂等），插件 apply 时触发。
+- **`gate.reapplyAll()`**：挂/卸 MCP 后重算全部已挂 agent（新 `mcp__<name>__*` 工具进第二层，段落计划同步）。
+- **`gate.mcpManager`**：暴露 M1-core 的 manager（mount / unmount / update / list / state / disposeAll）。
+  插件卸载时 `disposeAll()` 断连（用 `ctx.effect` 注册清理）。
+- **HTTP**：新增 `GET/POST /api/dsh-gate/mcp`（沿用宿主 connection 鉴权与本地四道门回退）。
+  - GET 返回 `{ servers, warnings }`：`owned` + `external`（宿主 loader 行，只读）+
+    `stopped`（声明了但没挂上）；每行 `{ name, transport, target, state, enabled, owned, toolCount }`。
+  - POST 接受 `{ action: add|update|remove|enable|disable, name, server? }`：校验（非法 400）→
+    落 `gate.json`（复用 `/policy` 的保存路径，无 BOM）→ mount/update/unmount → `reapplyAll` → 返回最新清单。
+    重复 add / 闸门 `enabled=false` 返回 409，未知 server 404，非 JSON 415。
+- **外部 server 只读**：宿主 loader 行里已有的 mcp-client 只观察，绝不 `dispose`（`dispose` 会写回
+  `disabled:true`）；同 `serverName` / 同工具命名空间冲突时自挂拒绝。
+- **新测试套件 `test/mcp-int.test.mjs`**（12 条）：mcp 归一/告警、整表替换、v2 默认、`startMcp` 并发与
+  幂等与单条失败降级、`reapplyAll`、GET 三来源合并、POST 五个动作的写盘/manager/reapplyAll、
+  错误分支 400/404/409/415、gate_status 18 键不变。`npm run verify` 全绿（208 条测试 + 16 项规范自检）。
+- README 增「MCP 接管（0.3.0）」段与语义边界行；`gate.example.json` 增空 `mcp` 段。
+
 ### Changed — 技能接管带来的语义变化
 - `defaults.skillpack=1`（常驻）不再「零改动透传」宿主目录：接管下常驻也摘，目录/正文都由 gate 出。
 - `gate_search` 的技能行不再统一写「技能」，改为带真实档位；`takeover=false` 时仍是「技能」。

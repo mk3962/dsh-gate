@@ -267,6 +267,39 @@ ln -s "$HOME_DIR/local-plugins/dsh-gate" "$PROFILE/node_modules/dsh-gate"   # Wi
   闸门面板的技能列（`/api/dsh-gate/state` 的 `skills`）是**gate 可见名单**（宿主 + 导入 − `off` − `shadowed`），
   能力视图 `/api/dsh-gate/capabilities` 才带来源、路径与被遮信息。改 `skills` 策略后下一轮生效。
 
+### MCP 接管（0.3.0）
+
+0.3.0 起闸门可以**自己挂 MCP server**：在 `gate.json` 里声明，gate 启动时用宿主同款
+`mcp-client` 插件逐台挂载；工具照旧走 `mcp__<serverName>__*` 命名空间，也照旧受能力档
+（`mcp:<serverName>`）管理 —— 默认为「按需」，被藏进第二层后由 `gate_load` / `gate_invoke` 打开。
+
+```json
+"mcp": {
+  "servers": {
+    "files": { "transport": "stdio", "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "."] },
+    "remote": { "transport": "streamable-http", "url": "https://mcp.example.com/mcp", "headers": { "Authorization": "Bearer …" } }
+  }
+}
+```
+
+- **声明即接管**：`enabled`（默认 `true`）为假的条目不挂；其余在插件 apply 时由 gate 并发挂载。
+  连接失败只降级成 `unavailable` 并 warn，**不阻塞宿主启动、不抛到 gate 主链路**（`failOnStartupError` 恒 `false`，
+  mcp-client 自己重连；工具出现后状态自动翻成 `owned`）。
+- **一条坏配置不拖垮整份策略**：`mcp.servers` 逐项用 `lib/mcp.js` 的 `normalizeServerConfig` 校验
+  （`serverName` 限 `[A-Za-z0-9_-]{1,32}`，stdio 要 `command`，streamable-http 要 `url`）；非法条目丢弃并告警。
+- **保存语义**：POST 提交了 `mcp.servers` 就**整表替换**（删除真的生效），不逐项拼。gate.json 永不写 BOM。
+- **外部 server 只读**：宿主 `loader` 行里已经有的 mcp-client（比如用户在插件市场装的）只**观察**，
+  列进清单并标 `external` / `owned:false`；gate 绝不 dispose 或改它的配置（`dispose` 会写回 `disabled:true`）。
+  同 `serverName` 或同 `mcp__<name>__*` 命名空间已被占用时，自挂直接拒绝（`conflict`）。
+- **UI / API**：`GET /api/dsh-gate/mcp` 返回 `{ servers, warnings }`，每行
+  `{ name, transport, target, state, enabled, owned, toolCount }`；`state` 为 `owned`（gate 挂着）/
+  `unavailable`（挂了但没工具/重连中）/ `external`（宿主托管）/ `stopped`（声明了但没挂）。
+  `POST /api/dsh-gate/mcp` 接受 `{ action: "add" | "update" | "remove" | "enable" | "disable", name, server? }`：
+  校验通过后先写 `gate.json`（复用 `/policy` 的保存路径），再 mount / update / unmount，最后重算全部 agent 的限制。
+- **限制**：挂载会 `await` 初始连接（多个 server 并发，不会串行叠加等待）；`update` 是「先卸再挂」，
+  新配置启动失败不会回滚旧实例；loader 行识别依赖包名 `dsh-mcp-client`；宿主没有连接状态 API，
+  「有没有工具」是唯一的连接证据。
+
 ### 语义边界（都是实测的宿主行为）
 
 | 事项 | 行为 |
@@ -279,6 +312,7 @@ ln -s "$HOME_DIR/local-plugins/dsh-gate" "$PROFILE/node_modules/dsh-gate"   # Wi
 | 追加加载段落（PTC） | 系统提示词**逐字节不变**；段落正文搬进末尾声明；`<gate-catalog>` 也继续保留该段落 |
 | 尾部声明的位置与幂等 | 每步重算：内容不变就复用同一个消息对象（不新建数组）；用户发了新消息就把同一条尾块搬到末尾（id 不变） |
 | 技能（0.3.0 接管） | 宿主 `skill` 工具进 deny；目录消息与 `/name` 正文按 `source.kind` 摘掉后由闸门重出（常驻进系统提示词独立段落、按需进 `<gate-catalog>`、正文走 `gate_load`）；`off` 的技能不列不载，`/name` 也不注入 |
+| MCP server（0.3.0 接管） | `gate.json` 的 `mcp.servers` 由 gate 自挂（`ctx.plugin(mcp-client)`）；宿主 loader 行里已有的只观察、不 dispose；工具照旧按 `mcp:<server>` 能力档归层 |
 | 子 agent | 继承同一套全局策略；闸门按 agent 分别记账。**例外**：`origin=subagent` 且授予工具数 ≤ `narrowPassThrough` 的子代理整台跳过闸门（见「策略文件」），`gate_status.passthrough` 可查 |
 | 工具热插拔 | 监听 `tools/change` 重算限制，不会留下过期 deny |
 | 插件卸载 | 所有 `restrict` 的 disposer 挂在插件 fiber 上，卸载即全部撤销 |

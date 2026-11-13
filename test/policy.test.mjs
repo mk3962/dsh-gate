@@ -43,7 +43,8 @@ const tmpDir = () => fs.mkdtempSync(path.join(os.tmpdir(), "gate-policy-"));
   // v3 的键集是定稿的：v2 的 tools / sections / skills.tier 不再是独立真源。
   // 0.3.0 起 skills 回到顶层，但装的是接管配置（takeover/off/imports），档位真源仍是 defaults.skillpack；
   // v2 只写 { tier } 的老文件由 isV2SkillsShape 识别后迁移，不会当成 v3 配置。
-  assert.deepEqual([...tableKeys].sort(), ["capabilities", "catalog", "defaults", "enabled", "freezePtcToolset", "legacy", "narrowPassThrough", "protected", "skills", "sources", "version"]);
+  // 0.3.0 工单 15：mcp 成为顶层键（MCP 接管声明），键集断言同步加一项。
+  assert.deepEqual([...tableKeys].sort(), ["capabilities", "catalog", "defaults", "enabled", "freezePtcToolset", "legacy", "mcp", "narrowPassThrough", "protected", "skills", "sources", "version"]);
   for (const spec of POLICY_KEYS) {
     assert.equal(typeof spec.kind, "string", spec.key + " 缺 kind");
     assert.equal(typeof spec.merge, "string", spec.key + " 缺 merge");
@@ -194,6 +195,8 @@ const tmpDir = () => fs.mkdtempSync(path.join(os.tmpdir(), "gate-policy-"));
       case "names": return ["mutated-name"];
       // 0.3.0 新增的 kind：技能接管配置（takeover 覆盖、off/imports 整条替换）。
       case "skills": return { takeover: false, off: ["mutated-skill"], imports: [{ id: "mut", path: "./skills/mut" }] };
+      // 0.3.0 工单 15：MCP 声明 —— servers 整表替换（提交了就换，不逐项拼）。
+      case "mcp": return { servers: { mutated: { transport: "stdio", command: "npx" } } };
       default: throw new Error("未知 kind: " + spec.kind);
     }
   };
