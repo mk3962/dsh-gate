@@ -68,7 +68,9 @@ const readJson = (file) => JSON.parse(fs.readFileSync(file, "utf8"));
   const migrated = migrateV2ToV3(V2, {});
   const policy = migrated.policy;
   assert.equal(policy.version, 3);
-  assert.deepEqual(policy.defaults, { capability: 2, section: 1, skillpack: 1 }, "三轴默认分别来自 tools / sections / skills");
+  // v2 的 skills.tier=1 是「保留宿主目录」；0.3.0 接管后常驻=正文注入，迁移必须降为按需（P0-1）。
+  assert.deepEqual(policy.defaults, { capability: 2, section: 1, skillpack: 2 }, "三轴默认分别来自 tools / sections / skills（skills 1 降为 2）");
+  assert.equal(migrated.warnings.filter((row) => row.code === "skills-tier-remapped").length, 1, "降档必须留一条告警");
   // univer_*:0 与 univer_sheet:1 同能力冲突 → 能力档取最宽松 1，两条都写成例外保序。
   assert.equal(policy.capabilities["plugin:dsh-univer-office"].tier, TIER_RESIDENT);
   assert.deepEqual(policy.capabilities["plugin:dsh-univer-office"].toolExceptions, { "univer_*": 0, univer_sheet: 1 });

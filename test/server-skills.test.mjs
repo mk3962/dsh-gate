@@ -110,7 +110,8 @@ const ok = (label) => { passed += 1; console.log("  ok    " + label); };
   assert.equal(beta.origin, "import");
   assert.equal(beta.path, "D:\\skills\\beta\\SKILL.md");
   assert.equal(beta.shadowed, true, "shadowed 必须原样给 UI（只标注、不隐藏）");
-  assert.equal(body.takeover, false, "0.2.0 基线没有接管配置时如实报 false");
+  // 0.3.0 的默认就是接管（takeover=true）：策略文件不存在时 resolvePolicy 补的就是接管配置。
+  assert.equal(body.takeover, true, "没有显式 skills 配置时按 0.3.0 默认接管 true");
   assert.deepEqual(body.off, []);
   assert.deepEqual(body.imports, []);
   ok("GET /skills：行带 provider/origin/path/tier/shadowed/capability，description 来自快照");
@@ -228,7 +229,7 @@ const ok = (label) => { passed += 1; console.log("  ok    " + label); };
   ok("POST /skills：tier/off/imports/takeover 落盘并返回最新 state；非法参数 400、禁用 409、/policy 整份替换保留 skills");
 }
 
-/* ── 3. 未注册 skills 路由时的降级由 UI 负责（这里只确认没有 /mcp 路由）───────── */
+/* ── 3. 票 15 之后服务端注册 /mcp；UI 的 404 降级只留给旧版宿主 ──────────────── */
 {
   const dir = tmpDir();
   const file = path.join(dir, "gate.json");
@@ -237,9 +238,9 @@ const ok = (label) => { passed += 1; console.log("  ok    " + label); };
   const gate = createGate({ ctx: host.rootCtx, logger: host.logger, policy });
   await gate.attach(host.agent);
   const { routes } = mountRoutes({ gate, policy, logger: host.logger, config: { policyFile: file } });
-  assert.equal(routes.some((row) => row.path === "/api/dsh-gate/mcp"), false, "票 15 之前不许注册 /mcp");
+  assert.equal(routes.some((row) => row.path === "/api/dsh-gate/mcp"), true, "票 15 之后 /mcp 必须注册");
   await gate.release(host.agent);
-  ok("服务端不注册 /mcp（UI 按 404 降级）");
+  ok("服务端注册 /mcp（UI 对旧宿主仍按 404 降级）");
 }
 
 console.log("\n全部通过 (" + passed + ")");

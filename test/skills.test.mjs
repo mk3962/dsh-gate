@@ -210,6 +210,20 @@ await checkAsync("gate_load：常驻/按需都能取到正文并记账，off 与
   await rig.dispose();
 });
 
+// ── 4b. skills.off：按名字直接关（优先于能力解析链），目录/加载/快照三处一致 ──
+await checkAsync("skills.off：名单里的技能不列目录、拒载、快照不可见，能力视图 tier=0", async () => {
+  const rig = makeRig({ ...BASE, skills: { takeover: true, off: ["beta"] } });
+  const agent = await rig.attach();
+  await rig.gate.refreshSkills(agent);
+  assert.equal(rig.gate.snapshot(agent).skills.includes("beta"), false, "快照不能列出被 off 的技能");
+  assert.equal((await rig.gate.loadSkill(agent, "beta")).reason, "off", "off 名单里的技能拒载");
+  const row = rig.gate.capabilityView(agent).skills.find((item) => item.name === "beta");
+  assert.equal(row.tier, TIER_OFF, "能力视图要显示 0 档");
+  assert.equal(row.reason, "skills.off", "要能解释是 skills.off 关的");
+  assert.ok(!rig.gate.catalogFor(agent).includes("[技能] beta"), "目录不列 off 技能");
+  await rig.dispose();
+});
+
 // ── 5. 导入：目录/多子目录/单文件三种形态；同名宿主优先并告警 ──
 await checkAsync("导入扫描：三种目录形态都能发现；同名宿主优先，导入标 shadowed 并告警", async () => {
   const singleRoot = tmpDir("import-single");
