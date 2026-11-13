@@ -2,6 +2,47 @@
 
 版本号遵循语义化版本；格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [0.2.0] — 2026-11-13
+
+### Added
+- **能力模型（`lib/capabilities.js`）**：开关单位从「单个工具 / 单个段落」换成**能力**（一个来源实例）。
+  能力 id 规则：`mcp:<server>`（工具 `mcp__<server>__*` + 段落 `mcp:<server>`）、`plugin:<包名>`、
+  `native:<tool>`（原生工具彼此独立，不并组）、`tool:<name>`（推不出来源：只标注，不合并、不隐藏）、
+  `section:<name>`、`glob:<pattern>`（v2 无命名空间的通配键）。
+- **v3 策略**：`POLICY_KEYS` 换成 `version / enabled / defaults / capabilities / sources / legacy / catalog /
+  protected / narrowPassThrough`；解析顺序 own → preset → protected → 显式 `sources` → 命名推断 → 能力档 →
+  例外 → `defaults`。一个能力档变化**同时**驱动 `tools` 与 `sections` 两条限制，两条限制同源。
+- **例外与偏离**：`capabilities[id].toolExceptions / sectionExceptions` 是唯一允许「同能力不同档」的地方，
+  只能显式设置；`capabilityState()` / `resolveToolDecision()` 读回带 `deviation`，UI 可单独提醒。
+  来源置信度 high / medium / low / unknown 逐成员给出（v2 的包前缀推断标 low，显式 `sources` 标 medium）。
+- **v2 → v3 自动迁移（`lib/migrate.js`）**：读 v2 文件/插件行 config 时自动迁移；先备份
+  `gate.json.v2.bak-<时间戳>`（同内容只留一份，原文件不改）。同能力档位冲突取**最宽松**
+  （resident < on-demand < off），其余成员写成例外；`ws_mcp_call` 这类悬空键进
+  `legacy.unknownOverrides` 并告警；同一输入迁两次逐字节一致；首次保存落盘 v3。
+- **上游隐藏先减**：`knownNames − visible − 自己已 apply 的 deny` 算出的名字只标注（`snapshot.upstreamHidden`）、
+  不进候选集、不可 `gate_load`，闸门不会把它们重新放出来。
+- **能力视图**：`gate.capabilityView(agent)` / `gate.knownNames(agent)` 与
+  `GET /api/dsh-gate/capabilities[?agent=]`。/`state` 与 `gate_status` 的固定形状不变。
+- 新测试套件 `test/capabilities.test.mjs`（来源推断 / 解析链 / 例外偏离 / 双限制同步 / 上游隐藏）、
+  `test/migrate.test.mjs`（迁移幂等 / 备份去重 / 冲突取最宽松 / 悬空键 / 首存写 v3）。
+
+### Changed
+- 空策略模板改为 v3：`defaults` 按需/常驻/按需 + 9 个基础原生工具显式常驻（`ws_mcp_call` 退休）。
+  `defaults.capability` 显式写入时不再保留模板里的隐式常驻（「全关」不再被 read/write 顶掉）。
+- `prestep` 的技能轴改读 `defaults.skillpack`（`skills.tier` 保留为只读别名）。
+- 0.1.8 面板的 v2 形状保存（`tools/sections/skills`）在服务端翻译成 v3 `defaults + capabilities` 补丁后落盘；
+  `client/` 未改（UI 工单 05 接能力视图）。注意：旧面板的**逐工具**操作会按能力归并 ——
+  点一个 `univer_*` 工具 = 关整个插件能力，点 `mcp:<server>` 段落 = 同时收该 server 的工具与段落。
+- `snapshot()` 增 `upstreamHidden / policyVersion / warnings` 三个字段；`STATUS_KEYS` 与
+  `gate_status` 的 18 键属性集、顺序**一字未改**（前缀缓存约束不变）。
+- `restriction.state()` 增只读 `deny` 数组（区分「自己藏的」与「上游藏的」）。
+
+### Notes
+- 升级后工具面可能变大：来源未知（`tool:<name>`）且没被策略点名的工具**不再**按默认层隐藏（fail-open）。
+  这是 docs 04 §2「unknown 只标注、不合并、不隐藏」的落地；要藏它请在 `capabilities` 里显式点名。
+- 回滚到 0.1.8：先停宿主，把 `gate.json.v2.bak-*` 复制回 `gate.json`（0.1.8 读不懂 v3 的 `capabilities`）。
+- `npm run verify` 全绿：规范自检 16/16 + 10 个测试套件。
+
 ## [0.1.8] — 2026-11-05
 
 ### Fixed

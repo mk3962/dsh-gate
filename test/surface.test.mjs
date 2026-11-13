@@ -36,7 +36,7 @@ const check = async (label, fn) => {
   catch (error) { results.push({ ok: false, label, error: String((error && error.message) || error) }); }
 };
 
-const ANY = new Set(["attach", "listAgents", "restrictionState", "snapshot", "planSections", "reapply", "isApplying", "load", "callThrough", "catalogFor", "rememberSkills", "recordSections", "release", "releaseAll"]);
+const ANY = new Set(["attach", "listAgents", "restrictionState", "snapshot", "capabilityView", "knownNames", "planSections", "reapply", "isApplying", "load", "callThrough", "catalogFor", "rememberSkills", "recordSections", "release", "releaseAll"]);
 
 await check("公开面恰好是这组能力：内部表与内部函数一个都不外露", async () => {
   const host = makeHost({ names: NAMES });

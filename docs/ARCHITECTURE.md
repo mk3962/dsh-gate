@@ -56,14 +56,17 @@
 | 文件 | 职责 |
 |---|---|
 | `lib/index.js` | 插件入口。导出 `name` / `inject = ["tools"]` / `apply`。分段 `safe()` 挂载：任何一段失败只降级并 warn，绝不让宿主启动崩。`agent/created`、`agent/disposed`、`internal/dispatch(tools/change)` 三个订阅都在这里。 |
-| `lib/policy.js` | 策略解析。`defaultDshHome()`（`$DSH_HOME` 优先，否则 `~/.dsh`）；`tierOf()` 通配匹配且**最具体者胜**；`normalizeTier()` 只认 0/1/2（非法值回退默认）。`POLICY_KEYS` 是**顶层键的唯一真源**：一行 = 键名 + 怎么读（`kind`）+ 保存时怎么合并（`merge`）+ 内置默认（`fallback`）。`resolvePolicy()` / `emptyPolicyTemplate()` / `mergePolicyFile()` 三者都从这张表派生，加一个键只加一行；优先级**逐字段**是策略文件 > row config > 表里的默认（0.1.7 的 `catalog` 恰好反着来，0.1.8 统一），文件坏 → fail-open。 |
+| `lib/tiers.js` | 层与匹配的基础件：`TIER_OFF/RESIDENT/ONDEMAND`、`matches()` 通配、`specificity()` 最具体者胜、`normalizeTier()` 只认 0/1/2、`loosenessRank()`（迁移取最宽松用）。`policy.js` 继续 re-export，老 import 路径不变。 |
+| `lib/policy.js` | 策略解析（v3）。`defaultDshHome()`（`$DSH_HOME` 优先，否则 `~/.dsh`）；`POLICY_KEYS` 是**顶层键的唯一真源**：一行 = 键名 + 怎么读（`kind`）+ 保存时怎么合并（`merge`）+ 内置默认（`fallback`）。`resolvePolicy()` / `emptyPolicyTemplate()` / `mergePolicyFile()` 三者都从这张表派生，加一个键只加一行；优先级**逐字段**是策略文件 > row config > 表里的默认，文件坏 → fail-open。v2 文件/行 config 在读取时自动迁移（先备份 `gate.json.v2.bak-<时间戳>`，原文件不改）。`tierForTool() / resolveTier() / tierForSection()` 都走 `capabilities.js` 的解析链。 |
+| `lib/capabilities.js` | **能力模型**：能力 id（`mcp:<server>` / `plugin:<包名>` / `native:<tool>` / `tool:<name>` / `section:<name>` / `glob:<pattern>`）、显式 `sources` 映射、解析顺序（own → preset → protected → sources → 命名推断 → 能力档 → 例外 → defaults）、例外 `toolExceptions/sectionExceptions` 与 `deviation` 判定、`capabilityState()` 能力视图。一个能力档变化同时决定工具与段落两条限制。 |
+| `lib/migrate.js` | v2 → v3 迁移与 v3 规范化：同能力档位冲突取**最宽松**、其余成员写例外；悬空键进 `legacy.unknownOverrides` 并告警；键序/数组序固定（同输入迁两次逐字节一致）。`mergeCapabilities() / mergeSources()` 供保存路径与层合并复用。 |
 | `lib/restriction.js` | **限制所有权**：一个 agent 身上「当前被限制成什么样」的唯一真源。显式三态（`none` / `limited` / `passthrough`）＋ 显式键比较，四个动作 `apply(target)` / `drop()` / `isApplying()` / `state()`，外加 `suspend(fn)` 给 `gate_call` 的临时放行窗口。`apply` 幂等：模式与键都相同就什么都不做。 |
-| `lib/gate.js` | 每个 agent 的 entry，对外只给**能力**不给内部表（票 06）：`attach`（挂载并等就绪）/ `listAgents`（谁挂着、多久前活过）/ `snapshot`（唯一状态形状）/ `restrictionState` / `planSections` / `reapply` / `isApplying` / `load` / `callThrough` / `catalogFor` / `rememberSkills` / `recordSections` / `release` / `releaseAll`。内部条目、候选集、归层表、计划函数都不外露。它只负责「算目标形状」，限制怎么落由 `restriction.js` 管。 |
+| `lib/gate.js` | 每个 agent 的 entry，对外只给**能力**不给内部表（票 06）：`attach`（挂载并等就绪）/ `listAgents`（谁挂着、多久前活过）/ `snapshot`（唯一状态形状）/ `capabilityView`（能力视图）/ `knownNames`（当前工具面，迁移判定悬空键用）/ `restrictionState` / `planSections` / `reapply` / `isApplying` / `load` / `callThrough` / `catalogFor` / `rememberSkills` / `recordSections` / `release` / `releaseAll`。内部条目、候选集、归层表、计划函数都不外露。它只负责「算目标形状」，限制怎么落由 `restriction.js` 管；上游已隐藏（`known − visible − 自己的 deny`）先减掉，只标注不放出。 |
 | `lib/catalog.js` | `<gate-catalog>` 渲染：按插件分组（`ownerOf`）、描述取首句并按 `maxDescriptionLength` 截断、token 估算、`gate_search` 的检索。 |
 | `lib/sections.js` | 段落闸门：读宿主真实段落快照、摘除层 2 的段落、把被摘段落名塞进目录、维护 `gate-catalog` 这个注入段。 |
-| `lib/prestep.js` | 技能闸门：pre-step 钩子里识别宿主的 skill 目录消息（只看 `source.kind === "skill-catalog"`，没有文本特征回退 —— 认不出来就原样放行），记录名单；`skills.tier` 不是常驻时把那条消息摘掉。 |
+| `lib/prestep.js` | 技能闸门：pre-step 钩子里识别宿主的 skill 目录消息（只看 `source.kind === "skill-catalog"`，没有文本特征回退 —— 认不出来就原样放行），记录名单；技能轴不是常驻（`defaults.skillpack`，`skills.tier` 是只读别名）时把那条消息摘掉。 |
 | `lib/proxy.js` | 四个闸门工具的 `defineTool` 定义与 `output.schema`。**schema 属性集必须与导出的 `STATUS_KEYS` 逐项一致**（`pickStatus(snapshot)` 就按这份清单取子集），否则宿主校验会报 `ToolCallError: additionalProperties`（0.1.5 前真机上踩过）。 |
-| `lib/server.js` | 两条本地 HTTP 路由 + 两道鉴权门（主门 `connection.requestRejection`，兜底门自建四道）。策略保存只负责「读回 → 交给 `mergePolicyFile()` → 按字节写无 BOM」，自己不再维护键表或空模板。 |
+| `lib/server.js` | 三条本地 HTTP 路由（`state` / `policy` / `capabilities`）+ 两道鉴权门（主门 `connection.requestRejection`，兜底门自建四道）。策略保存只负责「读回 → `mergePolicyFile()` → 兼容旧 UI 的 v2 提交 → `normalizeV3Policy()` → 按字节写无 BOM」，自己不再维护键表或空模板。`/policy` 读回永远是 v3 形状（v2 文件只读迁移，不写盘）。 |
 | `client/index.js` | web 侧 bundle：`window.__ModuleLoader__.load({id, factory})` 手接格式，注册 `plugins.row.config` 槽（key = `dsh-gate#surface-gate`），三列面板 + 保存。 |
 
 ## 数据流：模型怎么"提货"

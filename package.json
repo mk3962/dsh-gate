@@ -1,6 +1,6 @@
 {
   "name": "dsh-gate",
-  "version": "0.1.8",
+  "version": "0.2.0",
   "description": "Two-tier prompt-surface gate for DeepSeek Harness: keep a small resident tool set declared, move every other tool / prompt section / skill catalog / MCP surface behind one on-demand catalog that the model can expand with gate_load, and manage it from a UI page.",
   "type": "module",
   "main": "lib/index.js",
@@ -18,7 +18,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "test": "node --import ./test/stub-loader.mjs test/selftest.mjs && node --import ./test/stub-loader.mjs test/loadtest.mjs && node --import ./test/stub-loader.mjs test/passthrough.test.mjs && node --import ./test/stub-loader.mjs test/restriction.test.mjs && node --import ./test/stub-loader.mjs test/snapshot.test.mjs && node --import ./test/stub-loader.mjs test/tier.test.mjs && node --import ./test/stub-loader.mjs test/policy.test.mjs && node --import ./test/stub-loader.mjs test/surface.test.mjs",
+    "test": "node --import ./test/stub-loader.mjs test/selftest.mjs && node --import ./test/stub-loader.mjs test/loadtest.mjs && node --import ./test/stub-loader.mjs test/passthrough.test.mjs && node --import ./test/stub-loader.mjs test/restriction.test.mjs && node --import ./test/stub-loader.mjs test/snapshot.test.mjs && node --import ./test/stub-loader.mjs test/tier.test.mjs && node --import ./test/stub-loader.mjs test/policy.test.mjs && node --import ./test/stub-loader.mjs test/migrate.test.mjs && node --import ./test/stub-loader.mjs test/capabilities.test.mjs && node --import ./test/stub-loader.mjs test/surface.test.mjs",
     "test:selftest": "node --import ./test/stub-loader.mjs test/selftest.mjs",
     "test:loadtest": "node --import ./test/stub-loader.mjs test/loadtest.mjs",
     "test:passthrough": "node --import ./test/stub-loader.mjs test/passthrough.test.mjs",
@@ -26,6 +26,8 @@
     "test:snapshot": "node --import ./test/stub-loader.mjs test/snapshot.test.mjs",
     "test:tier": "node --import ./test/stub-loader.mjs test/tier.test.mjs",
     "test:policy": "node --import ./test/stub-loader.mjs test/policy.test.mjs",
+    "test:migrate": "node --import ./test/stub-loader.mjs test/migrate.test.mjs",
+    "test:capabilities": "node --import ./test/stub-loader.mjs test/capabilities.test.mjs",
     "test:surface": "node --import ./test/stub-loader.mjs test/surface.test.mjs",
     "check": "node scripts/check-spec.mjs",
     "verify": "npm run check && npm test"

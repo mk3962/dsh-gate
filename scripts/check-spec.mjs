@@ -239,9 +239,12 @@ await check("gate.example.json 是合法策略文件（无 BOM 且字段齐）",
   assert(exists(file), "缺少 gate.example.json");
   assert(!hasBom(file), "gate.example.json 带 BOM");
   const policy = JSON.parse(read(file));
-  for (const key of ["version", "enabled", "tools", "sections", "skills"]) {
+  // v3（0.2.0）：能力 + 例外 + defaults；v2 的 tools / sections / skills 不再是独立真源。
+  for (const key of ["version", "enabled", "defaults", "capabilities", "sources", "legacy", "catalog", "narrowPassThrough", "protected"]) {
     assert(key in policy, "gate.example.json 缺少 " + key);
   }
+  assert(policy.version === 3, "gate.example.json 必须是 v3（version=3），实际 " + policy.version);
+  assert(!("tools" in policy) && !("sections" in policy) && !("skills" in policy), "gate.example.json 不许再带 v2 的 tools / sections / skills");
   return "version=" + policy.version + ", enabled=" + policy.enabled;
 });
 

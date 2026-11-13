@@ -62,12 +62,12 @@ const fakeRes = () => {
   res.setHeader = (key, value) => { res.headers[key] = value; };
   return res;
 };
-const callState = async () => {
-  const route = routeOf("/api/dsh-gate/state");
+const getJson = async (routePath) => {
+  const route = routeOf(routePath);
   const res = fakeRes();
   await route.handler({
     method: "GET",
-    url: "/api/dsh-gate/state",
+    url: routePath,
     headers: { host: "127.0.0.1:51235", "sec-fetch-site": "same-origin" },
     socket: { remoteAddress: "127.0.0.1" },
     async *[Symbol.asyncIterator]() { /* 空 body */ },
@@ -75,6 +75,7 @@ const callState = async () => {
   assert.equal(res.code, 200, "body=" + res.body);
   return JSON.parse(res.body);
 };
+const callState = () => getJson("/api/dsh-gate/state");
 
 const results = [];
 const check = async (label, fn) => {
@@ -151,6 +152,23 @@ await check("没有 agent 时快照仍是完整形状（不返回裸对象）", 
   assert.equal(blank.off, 0);
   assert.ok(Array.isArray(blank.offNames));
   for (const key of STATUS_KEYS) assert.ok(key in blank, "空快照缺键: " + key);
+});
+
+await check("能力视图走单独接口，不改 /state 的固定形状（0.2.0）", async () => {
+  const view = await getJson("/api/dsh-gate/capabilities");
+  assert.equal(view.version, 3);
+  assert.equal(view.agent, "session-live");
+  assert.ok(Array.isArray(view.capabilities) && view.capabilities.length > 0, "能力视图不能为空");
+  const row = view.capabilities.find((entry) => entry.id === "plugin:dsh-univer-office");
+  assert.ok(row, "univer 插件应有一行能力：" + JSON.stringify(view.capabilities.map((entry) => entry.id)));
+  assert.ok(row.tools.includes("univer_sheet"));
+  assert.ok(row.tools.includes("univer_doc"));
+  // /state 仍是 v2 时代的面板形状：不多不少（能力数据只在 /capabilities）。
+  assert.equal(Object.prototype.hasOwnProperty.call(state, "capabilities"), false);
+  // 旧 client 读的 defaults 字段仍由 v3 defaults 映射，UI 工单交接前不能断。
+  assert.equal(state.defaults.toolsDefaultTier, policy.defaults.capability);
+  assert.equal(state.defaults.sectionsDefaultTier, policy.defaults.section);
+  assert.equal(state.defaults.skillsTier, policy.defaults.skillpack);
 });
 
 await check("快照是只读的：对一个没挂过闸门的 agent 取快照，不许替它建条目或施加限制", async () => {

@@ -1,27 +1,43 @@
 {
-  "version": 2,
+  "version": 3,
   "enabled": true,
-  "tools": {
-    "defaultTier": 2,
-    "overrides": {
-      "pwsh": 1,
-      "read": 1,
-      "write": 1,
-      "edit": 1,
-      "grep": 1,
-      "glob": 1,
-      "web_search": 1,
-      "web_fetch": 1,
-      "ws_mcp_call": 1,
-      "skill": 1
+  "defaults": {
+    "capability": 2,
+    "section": 1,
+    "skillpack": 2
+  },
+  "capabilities": {
+    "native:edit": {
+      "tier": 1
+    },
+    "native:glob": {
+      "tier": 1
+    },
+    "native:grep": {
+      "tier": 1
+    },
+    "native:pwsh": {
+      "tier": 1
+    },
+    "native:read": {
+      "tier": 1
+    },
+    "native:skill": {
+      "tier": 1
+    },
+    "native:web_fetch": {
+      "tier": 1
+    },
+    "native:web_search": {
+      "tier": 1
+    },
+    "native:write": {
+      "tier": 1
     }
   },
-  "sections": {
-    "defaultTier": 1,
-    "overrides": {}
-  },
-  "skills": {
-    "tier": 1
+  "sources": {},
+  "legacy": {
+    "unknownOverrides": {}
   },
   "catalog": {
     "groupByPlugin": true,

@@ -133,7 +133,7 @@ ln -s "$HOME_DIR/local-plugins/dsh-gate" "$PROFILE/node_modules/dsh-gate"   # Wi
   会把仓库拷进 `node_modules`，升级＝卸载后重装）。npm 包名暂时用不了：还没发布到 npm。
 - pnpm 会对 `link:` 依赖报一条 peerDependencies 警告（`@deepseek-ai/dsh-tools` 不从目标 node_modules 解析）——
   无害，该模块由宿主 loader 提供。
-- **不写 `gate.json` 也能用**：没有策略文件时按内置默认（工具默认按需 + 10 个常用常驻）；
+- **不写 `gate.json` 也能用**：没有策略文件时按内置默认（能力默认按需 + 9 个基础原生工具常驻）；
   第一次点「保存策略」才会在 `<DSH home>\gate.json` 落地。
 
 ### 装好之后
@@ -162,6 +162,9 @@ ln -s "$HOME_DIR/local-plugins/dsh-gate" "$PROFILE/node_modules/dsh-gate"   # Wi
 > 归层以服务端权威表 `state.tiers` 为准。`run_code`、四个 `gate_*`、团队工具这类
 > **agent 自身注册**的工具（`state.own`）标「自身层」：`restrict` 管不到它们，永远常驻，面板不给无效按钮。
 
+0.2.0 起另有 `GET /api/dsh-gate/capabilities`（能力视图：来源置信度 / 命中链 / 例外偏离 / 上游隐藏），
+面板暂时还是三列；按能力切换的 UI 在工单 05。
+
 ### 策略文件
 
 优先级：`<DSH_HOME>/gate.json` > 插件行 `config` > 内置默认，**逐键**比较（`gate.example.json` 就是可直接用的默认策略）。
@@ -169,20 +172,34 @@ ln -s "$HOME_DIR/local-plugins/dsh-gate" "$PROFILE/node_modules/dsh-gate"   # Wi
 
 ```json
 {
-  "version": 2,
+  "version": 3,
   "enabled": true,
-  "tools":    { "defaultTier": 2, "overrides": { "read": 1, "univer_*": 2, "ops_*": 0 } },
-  "sections": { "defaultTier": 1, "overrides": { "free-search:engines": 2 } },
-  "skills":   { "tier": 1 },
-  "catalog":  { "groupByPlugin": true, "maxDescriptionLength": 64 },
+  "defaults": { "capability": 2, "section": 1, "skillpack": 2 },
+  "capabilities": {
+    "native:read": { "tier": 1 },
+    "plugin:dsh-univer-office": { "tier": 2 },
+    "mcp:context7": { "tier": 2, "toolExceptions": { "mcp__context7__resolve": 1 } }
+  },
+  "sources": { "plugin:dsh-gate": { "tools": ["gate_status", "gate_load"], "sections": ["gate-catalog"] } },
+  "legacy": { "unknownOverrides": { "ws_mcp_call": 1 } },
+  "catalog": { "groupByPlugin": true, "maxDescriptionLength": 64 },
   "narrowPassThrough": 12,
   "protected": []
 }
 ```
 
-- `overrides` 的键支持 `*` / `?` 通配；多条命中取**最具体**的一条（去掉通配后字面量最长者胜），所以 `univer_sheet` 压过 `univer_*`。
+- 开关单位是**能力**（一个来源实例），不是单个工具：`mcp:<server>`（工具 `mcp__<server>__*` + 段落 `mcp:<server>`）、
+  `plugin:<包名>`、`native:<tool>`（原生工具彼此独立，不并组）、`tool:<name>`（推不出来源：只标注，不合并、不隐藏）、
+  `section:<name>`。改一个能力档 = 同时改工具与段落两条限制，不会留下「有工具没段落」的半截状态。
+- 例外 `toolExceptions` / `sectionExceptions` 是唯一允许「同能力不同档」的地方，只能显式写；读回自动标 `deviation`。
+  成员名支持 `*` / `?` 通配，多条命中取**最具体**的一条。
+- `sources` 是显式来源映射（键 = 能力 id，值 = 成员名，支持通配）：包前缀推断错了用它纠正，
+  推断出来的插件来源置信度是 low，UI 会提示。
+- 解析顺序：own → preset → protected → 显式 `sources` → 命名推断 → 能力档 → 例外 → `defaults`。
+- `legacy.unknownOverrides` 只展示告警、不参与解析（v2 里 `ws_mcp_call` 这类已经找不到对应能力的键落在那里）。
+- `version: 2` 的旧文件**自动迁移**：首次读取先在旁边写一份 `gate.json.v2.bak-<时间戳>`（原文件不改），
+  同能力档位冲突取最宽松、其余成员写成例外；首次保存时落盘 v3。回滚到 0.1.8 前先把备份复制回 `gate.json`。
 - 优先级**逐字段**一致：文件里写了的字段以文件为准，没写才回落到插件行 `config`，最后才是内置默认。
-  `tools` / `sections` 的 `overrides` 是两张表的并集，同名冲突时文件赢（0.1.7 里这一条对 `catalog` 恰好反着来，0.1.8 统一了）。
 - `run_code`、四个 `gate_*`、以及 `protected` 里的名字**任何策略都动不了**（`restrict` 点名 `run_code` 会直接抛错）。
 - 策略文件读坏 / JSON 解析失败 → **fail-open**（全部常驻）：宁可没省 token，也不让会话崩。
 - 非法层值（`null` / `""` / `false`）按默认处理，不会被 `Number()` 静默转成 0 把工具关掉。

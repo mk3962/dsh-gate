@@ -38,8 +38,8 @@ const examplePolicy = resolvePolicy(example, { logger: host.logger });
 const gate = createGate({ ctx: host.rootCtx, logger: host.logger, policy: examplePolicy });
 await gate.attach(host.agent);
 
-await check("默认策略：T1 十件套常驻", () => {
-  for (const name of ["pwsh", "read", "write", "edit", "grep", "glob", "web_search", "web_fetch", "ws_mcp_call", "skill"]) {
+await check("默认策略：T1 九件套常驻（ws_mcp_call 已退休，进 legacy 不再常驻）", () => {
+  for (const name of ["pwsh", "read", "write", "edit", "grep", "glob", "web_search", "web_fetch", "skill"]) {
     assert.equal(tierForTool(examplePolicy, name), TIER_RESIDENT, name);
   }
 });
