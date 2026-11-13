@@ -292,6 +292,7 @@ const fakeGate = (state) => {
   await route.handler(plainReq({ url: "/api/dsh-gate/mcp" }), res);
   assert.equal(res.code, 200, res.body);
   const body = JSON.parse(res.body);
+  assert.equal(body.writable, true, "manager 在且策略启用时，UI 必须能拿到写权限（否则按钮全灰）");
   assert.deepEqual(body.servers.map((row) => row.name), ["external", "owned", "stopped"], "三来源合并并按名排序");
   const stopped = body.servers.find((row) => row.name === "stopped");
   assert.equal(stopped.state, "stopped");

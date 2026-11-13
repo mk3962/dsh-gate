@@ -322,6 +322,7 @@ window.__ModuleLoader__.load({
       const [skillsSaving, setSkillsSaving] = react.useState(false);
       const [mcpNotice, setMcpNotice] = react.useState(null);
       const [mcpConfirm, setMcpConfirm] = react.useState(null);
+      const [mcpDraft, setMcpDraft] = react.useState({ name: "", transport: "stdio", command: "", args: "", url: "" });
       const [enabledConfirm, setEnabledConfirm] = react.useState(false);
 
       const reload = react.useCallback(async (message) => {
@@ -980,6 +981,29 @@ window.__ModuleLoader__.load({
         }
       };
 
+      /** 新增 MCP server：表单只收最小必要字段（stdio: command/args；http: url）。 */
+      const mcpAdd = async () => {
+        setMcpNotice(null);
+        const name = String(mcpDraft.name || "").trim();
+        if (name.length === 0) { setMcpNotice({ tone: "error", text: "name 不能为空" }); return; }
+        const server = mcpDraft.transport === "http"
+          ? { transport: "streamable-http", url: String(mcpDraft.url || "").trim() }
+          : {
+              transport: "stdio",
+              command: String(mcpDraft.command || "").trim(),
+              args: String(mcpDraft.args || "").split(/\s+/).filter(Boolean),
+            };
+        try {
+          const result = await api("/api/dsh-gate/mcp", { method: "POST", body: JSON.stringify({ action: "add", name: name, server: server }) });
+          if (result && result.ok === false) throw new Error(result.message || "添加失败");
+          setMcpDraft({ name: "", transport: "stdio", command: "", args: "", url: "" });
+          await reload("MCP server 已添加，已重拉状态");
+        } catch (failure) {
+          setMcpNotice({ tone: "error", text: "添加失败：" + String((failure && failure.message) || failure) });
+        }
+      };
+      const setMcpDraftField = (key, value) => setMcpDraft(Object.assign({}, mcpDraft, { [key]: value }));
+
       const stat = (value, label, tone) => h("div", { className: "dshg-stat" + (tone ? " is-" + tone : "") },
         h("b", null, String(value)),
         h("span", null, label));
@@ -1427,8 +1451,46 @@ window.__ModuleLoader__.load({
             h("span", { className: "dshg-note" }, "owned = gate 托管（可改）；external = 宿主配置（只读）"),
             mcpNotice ? h("span", { className: "dshg-hint" }, mcpNotice.text) : null),
           h("div", { className: "dshg-cardBody" },
+            mcpWritable
+              ? h("div", { className: "dshg-filters", key: "mcpAdd" },
+                  h("input", {
+                    className: "dshg-input",
+                    placeholder: "name（[A-Za-z0-9_-]{1,32}）",
+                    value: mcpDraft.name,
+                    onChange: (event) => setMcpDraftField("name", event.target.value),
+                  }),
+                  h("select", {
+                    className: "dshg-select",
+                    value: mcpDraft.transport,
+                    onChange: (event) => setMcpDraftField("transport", event.target.value),
+                  },
+                    h("option", { value: "stdio" }, "stdio"),
+                    h("option", { value: "http" }, "http")),
+                  mcpDraft.transport === "http"
+                    ? h("input", {
+                        key: "url",
+                        className: "dshg-input",
+                        placeholder: "https://example.com/mcp",
+                        value: mcpDraft.url,
+                        onChange: (event) => setMcpDraftField("url", event.target.value),
+                      })
+                    : h("span", { key: "stdio", className: "dshg-filters" },
+                        h("input", {
+                          className: "dshg-input",
+                          placeholder: "command（如 node）",
+                          value: mcpDraft.command,
+                          onChange: (event) => setMcpDraftField("command", event.target.value),
+                        }),
+                        h("input", {
+                          className: "dshg-input",
+                          placeholder: "args（空格分隔）",
+                          value: mcpDraft.args,
+                          onChange: (event) => setMcpDraftField("args", event.target.value),
+                        })),
+                  h("button", { className: "dshg-btn", onClick: () => { void mcpAdd(); } }, "添加"))
+              : null,
             mcpServers.length === 0
-              ? h("div", { className: "dshg-empty" }, "还没有 MCP server。新增表单在 M1 接入 /mcp 的写接口后开放。")
+              ? h("div", { className: "dshg-empty" }, mcpWritable ? "还没有 MCP server：用上面的表单添加第一个。" : "还没有 MCP server。")
               : h("div", { className: "dshg-tableWrap" },
                   h("table", { className: "dshg-table" },
                     h("thead", null, h("tr", null,
