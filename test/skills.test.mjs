@@ -323,6 +323,22 @@ await checkAsync("takeover=false：不摘宿主目录，gate_load 照旧转发�
 });
 
 // ── 8. 复核 P2 批修（2026-11-14）：不完整名单 / 正文变更 / 导入 /name / 健壮性 ──
+await checkAsync("P1-2：新会话第一次装配（跑 pre-step 之前）就必须带技能目录与常驻正文", async () => {
+  const rig = makeRig(BASE, { sections: true });
+  await rig.attach();
+  // 真实宿主顺序：先 assemble，后 pre-step。这里故意一次 pre-step 都不跑。
+  const first = await rig.assemble({ sections: [{ name: "custom", text: "自定义段落" }] });
+  const catalog = first.sections.find((s) => s.name === CATALOG_SECTION);
+  assert.ok(catalog, "首步就要有 gate-catalog：" + JSON.stringify(first.sections.map((s) => s.name)));
+  assert.ok(catalog.text.includes("[技能]"), "首步目录里要有 [技能] 组：" + catalog.text.slice(0, 200));
+  assert.ok(catalog.text.includes("beta"), "按需技能要在首步目录里");
+  assert.ok(first.sections.some((s) => s.name === "gate-skill:alpha" && s.text.includes("ALPHA BODY")), "常驻正文首步就要注入");
+  // 第二次装配必须与第一次逐字节一致（否则第二轮会断前缀缓存）
+  const second = await rig.assemble({ sections: [{ name: "custom", text: "自定义段落" }] });
+  assert.deepEqual(second, first, "首步与第二步的系统提示词必须逐字节一致");
+  await rig.dispose();
+});
+
 await checkAsync("P2-6：宿主 snapshot.complete=false 时保留上一份名单，不让技能先消失再回来", async () => {
   const rig = makeRig(BASE);
   const agent = await rig.attach();
