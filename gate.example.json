@@ -45,5 +45,10 @@
     "maxDescriptionLength": 64
   },
   "narrowPassThrough": 12,
-  "protected": []
+  "protected": [],
+  "skills": {
+    "takeover": true,
+    "off": [],
+    "imports": []
+  }
 }

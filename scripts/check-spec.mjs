@@ -239,12 +239,19 @@ await check("gate.example.json 是合法策略文件（无 BOM 且字段齐）",
   assert(exists(file), "缺少 gate.example.json");
   assert(!hasBom(file), "gate.example.json 带 BOM");
   const policy = JSON.parse(read(file));
-  // v3（0.2.0）：能力 + 例外 + defaults；v2 的 tools / sections / skills 不再是独立真源。
-  for (const key of ["version", "enabled", "freezePtcToolset", "defaults", "capabilities", "sources", "legacy", "catalog", "narrowPassThrough", "protected"]) {
+  // v3（0.2.0）：能力 + 例外 + defaults；v2 的 tools / sections 不再是独立真源。
+  // 0.3.0：skills 回到顶层，但装的是技能接管配置（takeover / off / imports），不是 v2 的 { tier }。
+  for (const key of ["version", "enabled", "freezePtcToolset", "defaults", "capabilities", "sources", "legacy", "catalog", "narrowPassThrough", "protected", "skills"]) {
     assert(key in policy, "gate.example.json 缺少 " + key);
   }
   assert(policy.version === 3, "gate.example.json 必须是 v3（version=3），实际 " + policy.version);
-  assert(!("tools" in policy) && !("sections" in policy) && !("skills" in policy), "gate.example.json 不许再带 v2 的 tools / sections / skills");
+  assert(!("tools" in policy) && !("sections" in policy), "gate.example.json 不许再带 v2 的 tools / sections");
+  const skills = policy.skills;
+  assert(skills && typeof skills === "object" && !Array.isArray(skills), "gate.example.json 的 skills 必须是对象");
+  assert(typeof skills.takeover === "boolean", "skills.takeover 必须是布尔（缺省 true）");
+  assert(Array.isArray(skills.off), "skills.off 必须是数组");
+  assert(Array.isArray(skills.imports), "skills.imports 必须是数组");
+  assert(!("tier" in skills), "skills 里不许再出现 v2 的 tier（档位真源是 defaults.skillpack）");
   return "version=" + policy.version + ", enabled=" + policy.enabled;
 });
 

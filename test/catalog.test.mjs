@@ -50,6 +50,22 @@ const planOf = (names) => ({ tools: names.map((name) => ({ name })) });
   ok("组名原样输出（[Mcp] 仍叫 Mcp），但排序按 MCP 的位置");
 }
 
+// ── 3b. 技能行：名字 + 描述首句 + 来源（0.3.0 接管） ─────────────────────────
+{
+  const catalog = renderCatalog({
+    tools: [],
+    skills: [
+      // gate.reapply 用 skillCatalogEntry 先生成 {name, description, source}：来源标在行尾。
+      { name: "alpha", description: "Alpha 技能", source: "宿主:pkg-a" },
+      { name: "solo", description: "导入技能", source: "导入:local" },
+    ],
+  });
+  assert.ok(catalog.includes("- [技能] alpha — Alpha 技能（宿主:pkg-a）"), "宿主技能行要带来源：" + catalog);
+  assert.ok(catalog.includes("- [技能] solo — 导入技能（导入:local）"), "导入技能行要带来源：" + catalog);
+  assert.equal(catalog.includes("第二句"), false, "描述只取首句");
+  ok("技能行：名字 + 描述首句 + 来源（宿主:provider / 导入:id）");
+}
+
 // ── 4. ownerOf 行为不变（分组边界的既有约定） ────────────────────────────────
 {
   assert.equal(ownerOf("mcp__wincu__fs_read"), "mcp");

@@ -202,7 +202,8 @@ ln -s "$HOME_DIR/local-plugins/dsh-gate" "$PROFILE/node_modules/dsh-gate"   # Wi
   "legacy": { "unknownOverrides": { "ws_mcp_call": 1 } },
   "catalog": { "groupByPlugin": true, "maxDescriptionLength": 64 },
   "narrowPassThrough": 12,
-  "protected": []
+  "protected": [],
+  "skills": { "takeover": true, "off": [], "imports": [{ "id": "local", "path": "~/skills" }] }
 }
 ```
 
@@ -230,6 +231,42 @@ ln -s "$HOME_DIR/local-plugins/dsh-gate" "$PROFILE/node_modules/dsh-gate"   # Wi
   典型受害者：`dsh-mnemon` 的写记忆子代理（白名单只有 `mnemon_*` + `mnemon_subagent_result`），
   被藏掉后子代理只能纯文本收尾，父会话抛 `memory subagent completed without recording its result`。
 
+### 技能接管（0.3.0）
+
+0.3.0 起闸门把**技能注入**也收进自己手里（不再只靠宿主把目录塞进系统提示词）。默认开启，策略键：
+
+```json
+"skills": {
+  "takeover": true,
+  "off": ["某个不想让模型用的技能名"],
+  "imports": [{ "id": "local", "path": "~/skills" }]
+}
+```
+
+- `takeover`（默认 `true`）：宿主 `skill` 工具被**无条件 deny**（即使 `capabilities` 里把 `native:skill` 写成常驻），
+  宿主的技能目录消息（含它发现「没有技能可用」时补发的 `entries=[]` replacement）与 `/name` 显式调用正文
+  都按 `source.kind` 摘掉；目录由 `<gate-catalog>` 的 `[技能]` 组给（名字 + 描述首句 + 来源），
+  正文由 `gate_load(["skill:<name>"])` 返回。
+- 档位解析顺序：`skill:<name>`（单技能）→ `skillpack:<provider>`（同一来源的技能包）→ `defaults.skillpack`。
+  `0` = 关闭（不列目录、`gate_load` 返回 denied）、`1` = 常驻、`2` = 按需。
+  单技能条目永远压过技能包（「这一条单独关掉」是最具体的意图）。
+- **常驻（1）**：正文以 `<skill_content name="…">` 包装，作为独立段落 `gate-skill:<name>` 追加在系统提示词末尾，
+  `interpolate: false`，不进 `<gate-catalog>` 行。同一策略下逐字节稳定；单条超过 12000 字会截断并告警
+  （`skill-too-long`），全文随时可以 `gate_load`。
+- **按需（2）**：只在目录里列一行，模型 `gate_load(["skill:<name>"])` 才拿到正文（native / PTC 都一样，
+  正文走工具结果，不再追加尾部块）。
+- **关闭（0）**：不列、不加载；用户 `/name` 显式点名也不会注入正文。
+- `imports` 让闸门把**本地技能目录**也接进来（不依赖宿主注册）：目录含 `SKILL.md` 算一个技能；
+  目录下多个子目录各含 `SKILL.md` 算多个；单文件 `*.md` 也支持。frontmatter 的 `name` / `description` 自解，
+  正文是 frontmatter 之后的部分。相对路径以策略文件所在目录为基准，`~/` 展开到家目录。
+- **同名冲突**：宿主优先。同名导入条目标 `shadowed`（`/api/dsh-gate/capabilities` 的 `skills` 行带
+  `origin` / `path` / `tier` / `shadowed`），并 warn 一次；导入之间同名也是先声明的赢。
+- **逃生门**：`"takeover": false` 完整退回 0.1.8 —— 宿主照常注入目录、`skill` 工具照常可见、
+  `gate_load(["skill:x"])` 照旧转发宿主 `skill` 工具，闸门只按 `defaults.skillpack` 决定要不要摘目录。
+- 与宿主 UI 的边界：宿主自己的技能面板/按钮只认宿主注册的技能，看不到 `imports` 进来的条目；
+  闸门面板的技能列（`/api/dsh-gate/state` 的 `skills`）是**gate 可见名单**（宿主 + 导入 − `off` − `shadowed`），
+  能力视图 `/api/dsh-gate/capabilities` 才带来源、路径与被遮信息。改 `skills` 策略后下一轮生效。
+
 ### 语义边界（都是实测的宿主行为）
 
 | 事项 | 行为 |
@@ -241,6 +278,7 @@ ln -s "$HOME_DIR/local-plugins/dsh-gate" "$PROFILE/node_modules/dsh-gate"   # Wi
 | `gate_invoke` | 冻结下的日常执行口：临时撤限制 → 宿主完整管线（含 `defineTool` 参数校验）→ `finally` 恢复；宿主侧错误以 `{ isError: true }` 返回 |
 | 追加加载段落（PTC） | 系统提示词**逐字节不变**；段落正文搬进末尾声明；`<gate-catalog>` 也继续保留该段落 |
 | 尾部声明的位置与幂等 | 每步重算：内容不变就复用同一个消息对象（不新建数组）；用户发了新消息就把同一条尾块搬到末尾（id 不变） |
+| 技能（0.3.0 接管） | 宿主 `skill` 工具进 deny；目录消息与 `/name` 正文按 `source.kind` 摘掉后由闸门重出（常驻进系统提示词独立段落、按需进 `<gate-catalog>`、正文走 `gate_load`）；`off` 的技能不列不载，`/name` 也不注入 |
 | 子 agent | 继承同一套全局策略；闸门按 agent 分别记账。**例外**：`origin=subagent` 且授予工具数 ≤ `narrowPassThrough` 的子代理整台跳过闸门（见「策略文件」），`gate_status.passthrough` 可查 |
 | 工具热插拔 | 监听 `tools/change` 重算限制，不会留下过期 deny |
 | 插件卸载 | 所有 `restrict` 的 disposer 挂在插件 fiber 上，卸载即全部撤销 |
@@ -276,7 +314,8 @@ ln -s "$HOME_DIR/local-plugins/dsh-gate" "$PROFILE/node_modules/dsh-gate"   # Wi
     于是"看不见、管不到"，`gate.json` 给它们写的层像个死键 —— 旧文档据此误写成"根本不存在"。
     v0.1.6 起它们进候选集，但**默认不受管**（保持常驻、不写 deny）：只有你在 `overrides` 里点名
     （例如 `"read": 2` 把它贬成按需），闸门才真正对它们生效。UI 上这类工具带「预设层」标记。
-  - 技能面同理：`skill` 工具存在且可点名受管；面板技能列只有在宿主真的把技能目录注入给 `skill` 工具后才非空。
+  - 技能面同理：`skill` 工具存在且可点名受管。0.3.0 起默认由闸门**接管**（`skills.takeover`，见「技能接管」）：
+    宿主工具被 deny、目录/正文由闸门出；`takeover: false` 时退回 0.1.8（面板技能列只在宿主真的注入目录后非空）。
 - **段落面**依赖宿主每轮 assemble 的真实快照；宿主大版本改段落渲染时可能读不到（会 fail-open）。
 - **`gate_load` 的粒度是「下一步」**：SDK 声明在每一步开始前渲染好，所以同一个 `run_code` 程序体内
   紧跟 `gate_load` 再调该工具仍会 `tools.<name> is not a function`（真机实测），下一步才可用。

@@ -40,8 +40,10 @@ const tmpDir = () => fs.mkdtempSync(path.join(os.tmpdir(), "gate-policy-"));
   const tableKeys = POLICY_KEYS.map((spec) => spec.key);
   assert.deepEqual([...tableKeys].sort(), Object.keys(DEFAULT_POLICY).sort(), "表里的键必须与 DEFAULT_POLICY 完全一致");
   assert.equal(new Set(tableKeys).size, tableKeys.length, "表里不许有重复键");
-  // v3 的键集是定稿的：v2 的 tools / sections / skills 不再是独立真源。
-  assert.deepEqual([...tableKeys].sort(), ["capabilities", "catalog", "defaults", "enabled", "freezePtcToolset", "legacy", "narrowPassThrough", "protected", "sources", "version"]);
+  // v3 的键集是定稿的：v2 的 tools / sections / skills.tier 不再是独立真源。
+  // 0.3.0 起 skills 回到顶层，但装的是接管配置（takeover/off/imports），档位真源仍是 defaults.skillpack；
+  // v2 只写 { tier } 的老文件由 isV2SkillsShape 识别后迁移，不会当成 v3 配置。
+  assert.deepEqual([...tableKeys].sort(), ["capabilities", "catalog", "defaults", "enabled", "freezePtcToolset", "legacy", "narrowPassThrough", "protected", "skills", "sources", "version"]);
   for (const spec of POLICY_KEYS) {
     assert.equal(typeof spec.kind, "string", spec.key + " 缺 kind");
     assert.equal(typeof spec.merge, "string", spec.key + " 缺 merge");
@@ -190,6 +192,8 @@ const tmpDir = () => fs.mkdtempSync(path.join(os.tmpdir(), "gate-policy-"));
       case "legacy": return { unknownOverrides: { mutated_tool: 1 } };
       case "object": return Object.assign({}, spec.fallback, { mutatedKey: true });
       case "names": return ["mutated-name"];
+      // 0.3.0 新增的 kind：技能接管配置（takeover 覆盖、off/imports 整条替换）。
+      case "skills": return { takeover: false, off: ["mutated-skill"], imports: [{ id: "mut", path: "./skills/mut" }] };
       default: throw new Error("未知 kind: " + spec.kind);
     }
   };

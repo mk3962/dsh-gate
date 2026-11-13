@@ -39,7 +39,9 @@ const check = async (label, fn) => {
 
 // loadedTextFor / canInvoke 是工单 07 加的两个「问得出口的问题」：
 //   这一步尾部要追加什么（PTC 冻结） / 这个工具能不能转发（gate_invoke 的准入）。
-const ANY = new Set(["attach", "listAgents", "restrictionState", "snapshot", "capabilityView", "knownNames", "canInvoke", "loadedTextFor", "planSections", "reapply", "isApplying", "load", "callThrough", "catalogFor", "searchEntries", "rememberSkills", "recordSections", "release", "releaseAll"]);
+// 工单 14 加的四个技能口：refreshSkills（每步刷新名单）/ skillSections（常驻正文段落）/
+// renderSkill（pre-step 的 /name 注入，不记加载态）/ loadSkill（gate_load 的技能分支）。
+const ANY = new Set(["attach", "listAgents", "restrictionState", "snapshot", "capabilityView", "knownNames", "canInvoke", "loadedTextFor", "planSections", "reapply", "isApplying", "load", "callThrough", "catalogFor", "searchEntries", "rememberSkills", "recordSections", "refreshSkills", "skillSections", "renderSkill", "loadSkill", "release", "releaseAll"]);
 
 await check("公开面恰好是这组能力：内部表与内部函数一个都不外露", async () => {
   const host = makeHost({ names: NAMES });
@@ -123,7 +125,8 @@ await check("gate_search：工具结果带真实描述首句，未知词返回�
   const skillHit = (await search.execute({ query: "office-xlsx" }, { agent: host.agent, signal: undefined })).results
     .find((row) => row.name === "skill:office-xlsx");
   assert.ok(skillHit, "技能候选必须带 skill: 前缀");
-  assert.equal(skillHit.tier, "技能");
+  // 0.3.0 接管：技能行带真实档位（常驻/按需/关闭），不再是笼统的「技能」。
+  assert.equal(skillHit.tier, "技能·按需", "技能应带真实档位（takeover 默认开）");
   assert.equal(skillHit.description, "技能目录里的说明", "技能仍用 skillEntries.description 的首句");
   const empty = await search.execute({ query: "zzz_no_such_tool" }, { agent: host.agent, signal: undefined });
   assert.deepEqual(empty.results, [], "未知词不许兜底返回全部候选");

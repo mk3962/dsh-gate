@@ -2,6 +2,47 @@
 
 版本号遵循语义化版本；格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [0.3.0] — 未发布
+
+### Added — 技能接管（工单 14）
+- **策略 v3 新增 `skills`**：`{ takeover?: boolean, off?: string[], imports?: { id?, path }[] }`。
+  `takeover` 缺省 `true`；`off` 是永不注入的技能名清单；`imports` 把本地技能目录接进 gate。
+  已同步到 `POLICY_KEYS` / v3 规范化 / `mergePolicyFile` / v2→v3 迁移默认值 / `gate.example.json` /
+  `scripts/check-spec.mjs`。v2 的 `skills: { tier }` 仍被识别并迁移成 `defaults.skillpack`；
+  档位真源仍是 `defaults.skillpack`，v3 的 `skills` 里不再有 `tier`。
+- **新模块 `lib/skills.js`**（纯函数为主）：宿主技能列/取正文（`ctx.skills.list/get`，形状按 0.2.2-rc.1 源码）、
+  本地导入扫描（目录含 `SKILL.md` / 多子目录各一个 / 单文件 `*.md`，路径支持 `~/` 与策略文件相对）、
+  自写 frontmatter 解析（`name` / `description`，无新依赖）、宿主优先的同名合并（导入标 `shadowed` + 告警）、
+  统一的 `<skill_content name="…">` 渲染、常驻正文段落（`gate-skill:<name>`，单条上限 12000 字，超长截断告警）。
+- **能力 id 扩到单技能**：`skill:<name>` 压过 `skillpack:<provider>`，再落到 `defaults.skillpack`；
+  `resolveSkillDecision` 返回 `single` 与命中的 `capabilityEntry`，`/capabilities` 的 `skills` 行带
+  `origin` / `path` / `tier` / `shadowed`。
+- **接管**（`skills.takeover` 为真时，默认）：
+  - `planFor` 无条件 deny 宿主 `skill` 工具（哪怕策略把 `native:skill` 写成常驻），归层表把它标成 off，
+    能力视图标「由 gate 接管」（`takenOver` / `forcedTier`）；
+  - pre-step 按 `source.kind` 摘掉**所有**技能目录消息（含宿主在「无技能可用」时补发的 `entries=[]`
+    replacement）与用户 `/name` 显式调用的宿主正文；`/name` 改由 gate 用自己的技能表判档后重注入
+    （`off` / `shadowed` / 未知不注入；同一步重复跑不重复、复用同一条消息对象保 id 稳定）；
+  - 目录进 `<gate-catalog>` 的 `[技能]` 组（名字 + 描述首句 + 来源），`off` / `shadowed` 不列；
+  - 常驻正文进系统提示词独立段落 `gate-skill:<name>`（`interpolate: false`，同策略逐字节稳定），
+    不塞进目录行、不记进 UI 段落清单、不会被段落档位误摘；
+  - `gate_load(["skill:<name>"])` 由 gate 自己解析并返回正文（native / PTC 同一条路，不再转发宿主，
+    也不再追加尾部声明）；`off` 返回 denied、不存在返回 unknown；
+  - `gate_search` 的技能候选带真实档位（`技能·常驻 / 技能·按需 / 技能·关闭`）与描述首句。
+- **逃生门**：`"takeover": false` 完整退回 0.1.8 —— 宿主目录照旧注入、`skill` 工具照旧可见、
+  `gate_load(["skill:x"])` 照旧转发宿主 `skill` 工具。
+- `snapshot().skills` 改为 **gate 可见技能名单**（宿主 + 导入 − `off` − `shadowed`，键序/形状不变）；
+  `gate_status` 的 18 键一个没动、顺序不变。
+- 新测试套件 `test/skills.test.mjs`（8 条：目录/正文摘除、`/name` 重注入与幂等、常驻段落字节稳定与防误摘、
+  加载/off/未知、导入三种形态与同名冲突、档位优先级、`takeover=false` 回退）；
+  `selftest` / `surface` / `policy` / `migrate` / `catalog` / `tier` / `snapshot` 的既有断言按新语义更新
+  （每条都在注释里写明为什么改）。
+
+### Changed — 技能接管带来的语义变化
+- `defaults.skillpack=1`（常驻）不再「零改动透传」宿主目录：接管下常驻也摘，目录/正文都由 gate 出。
+- `gate_search` 的技能行不再统一写「技能」，改为带真实档位；`takeover=false` 时仍是「技能」。
+- `gate.example.json` 增 `skills`（`takeover: true` / `off: []` / `imports: []`），规范自检开始校验它的形状。
+
 ## [0.2.0] — 2026-11-13
 
 ### Added
