@@ -117,6 +117,22 @@ await check("冻结：gate_load 后工具仍不在工具表里，但仍可 gate_
   await gate.release(agent);
 });
 
+await check("关闭就是关闭：off 的工具 gate_load 不收、gate_invoke / gate_call 不转发", async () => {
+  const rig = makeRig({ executor: makePtcExecutor(), policy: { capabilities: { "plugin:dsh-univer-office": { tier: 0 } } } });
+  const { gate, host, agent } = rig;
+  registerGateTools({ ctx: host.rootCtx, gate, policy: rig.policy });
+  await gate.attach(agent);
+  const loaded = await gate.load(agent, ["univer_doc"]);
+  assert.deepEqual(loaded.denied, ["univer_doc"], "off 的工具不能算 loaded");
+  assert.deepEqual(loaded.loaded, []);
+  assert.deepEqual(gate.canInvoke(agent, "univer_doc"), { ok: false, reason: "off" });
+  const invoke = host.tool("gate_invoke");
+  await assert.rejects(() => invoke.execute({ tool: "univer_doc", arguments: {} }, { agent, signal: undefined }), /关闭/);
+  const call = host.tool("gate_call");
+  await assert.rejects(() => call.execute({ name: "univer_doc", arguments: {} }, { agent, signal: undefined }), /关闭/);
+  await gate.release(agent);
+});
+
 await check("冻结：加载前后 gate-catalog 与 deny 集逐字节不变", async () => {
   const { gate, host, agent } = makeRig({ executor: makePtcExecutor() });
   await gate.attach(agent);
