@@ -425,6 +425,107 @@ await check("段落：native 下加载仍回系统提示词（保持现状，理
   await gate.release(agent);
 });
 
+// ── 7. 段落保护：tools:sdk / tools:ptc-only 永不被摘（tier=off 也不行） ───────
+await check("段落保护：tools:sdk / tools:ptc-only 内在保护，用户 protected 追加同样生效", async () => {
+  const { gate, host, policy, agent } = makeRig({
+    executor: makePtcExecutor(),
+    policy: {
+      capabilities: {
+        "section:tools:sdk": { tier: 0 },
+        "section:tools:ptc-only": { tier: 0 },
+        "section:custom:keep": { tier: 0 },
+      },
+      protected: ["custom:keep"],
+    },
+  });
+  mountSectionGate({ ctx: host.rootCtx, gate, logger: host.logger, policy });
+  await gate.attach(agent);
+  const plan = gate.planSections(agent);
+  assert.equal(plan.shouldDrop("tools:sdk"), false, "tools:sdk 内在保护，即使策略明确 tier=0 也不许摘");
+  assert.equal(plan.shouldDrop("tools:ptc-only"), false, "tools:ptc-only 内在保护，tier=0 也不许摘");
+  assert.equal(plan.shouldDrop("custom:keep"), false, "用户 protected 追加的段落同样永不被摘");
+  assert.equal(plan.shouldDrop("free-search:engines"), true, "未保护的按需段落仍照常摘");
+
+  const assembly = () => ({
+    sections: [
+      { name: "tools:sdk", text: "SDK-SIGNATURES" },
+      { name: "tools:ptc-only", text: "PTC-SIGNATURES" },
+      { name: "custom:keep", text: "KEEP-ME" },
+      { name: "free-search:engines", text: "DROP-ME" },
+    ],
+    contexts: [],
+    tools: [],
+    variables: {},
+  });
+  const result = await host.assemble(assembly(), agent);
+  const names = result.sections.map((section) => section.name);
+  assert.ok(names.includes("tools:sdk"), "装配结果必须保留 tools:sdk：" + JSON.stringify(names));
+  assert.ok(names.includes("tools:ptc-only"), "装配结果必须保留 tools:ptc-only：" + JSON.stringify(names));
+  assert.ok(names.includes("custom:keep"), "装配结果必须保留用户 protected 段落");
+  assert.equal(names.includes("free-search:engines"), false, "未保护段落照常摘");
+  await gate.release(agent);
+});
+
+// ── 8. gate_load("section:不存在") 不收：按当前清单校验 bare 名 ───────────────
+await check("段落加载校验：不存在的段落进 unknown，真实段落才收；先记录清单再生效", async () => {
+  const { gate, host, policy, agent } = makeRig({ executor: makePtcExecutor() });
+  mountSectionGate({ ctx: host.rootCtx, gate, logger: host.logger, policy });
+  await gate.attach(agent);
+
+  // 还没装配过：清单为空，任何段落名都不该被收下。
+  const early = await gate.load(agent, ["section:free-search:engines"]);
+  assert.deepEqual(early.loaded, [], "没有清单时不许收段落");
+  assert.deepEqual(early.unknown, ["section:free-search:engines"]);
+
+  await host.assemble({
+    sections: [{ name: "free-search:engines", text: "ENGINES-BODY" }],
+    contexts: [],
+    tools: [],
+    variables: {},
+  }, agent);
+
+  const missing = await gate.load(agent, ["section:不存在", "section:"]);
+  assert.deepEqual(missing.loaded, [], "不存在的段落名不许进 loaded");
+  assert.deepEqual(missing.unknown, ["section:不存在", "section:"], "不存在 / 空名都要进 unknown");
+
+  const real = await gate.load(agent, ["section:free-search:engines"]);
+  assert.deepEqual(real.loaded, ["section:free-search:engines"], "真实段落必须能加载");
+  assert.deepEqual(real.unknown, []);
+  assert.ok(gate.loadedTextFor(agent).includes("ENGINES-BODY"));
+  await gate.release(agent);
+});
+
+// ── 9. 段落正文加载时定格：尾部先出正文，后改装配文本也不变 ──────────────────
+await check("段落正文定格：加载时从 inventory 抄正文，后续装配改文不改尾部声明（不出占位）", async () => {
+  const { gate, host, policy, agent } = makeRig({ executor: makePtcExecutor() });
+  mountSectionGate({ ctx: host.rootCtx, gate, logger: host.logger, policy });
+  mountTailGate({ ctx: host.rootCtx, gate, policy });
+  await gate.attach(agent);
+  const assembly = (text) => ({
+    sections: [
+      { name: "HARNESS_IDENTITY", text: "you are dsh" },
+      { name: "free-search:engines", text },
+    ],
+    contexts: [],
+    tools: [],
+    variables: {},
+  });
+
+  await host.assemble(assembly("BODY-A"), agent);
+  const loaded = await gate.load(agent, ["section:free-search:engines"]);
+  assert.deepEqual(loaded.loaded, ["section:free-search:engines"]);
+  const first = gate.loadedTextFor(agent);
+  assert.ok(first.includes("BODY-A"), "首次加载必须直接拿到正文：" + first);
+  assert.equal(first.includes("未取到段落正文"), false, "不许先出正文缺失占位");
+
+  // 装配文本变了，但加载时已定格：尾部声明逐字节不变。
+  await host.assemble(assembly("BODY-B"), agent);
+  const second = gate.loadedTextFor(agent);
+  assert.equal(second, first, "加载后改装配文本，尾部声明必须逐字节不变");
+  assert.equal(second.includes("BODY-B"), false, "后改的正文不许漏进尾部声明");
+  await gate.release(agent);
+});
+
 const failed = results.filter((row) => !row.ok);
 for (const row of results) console.log((row.ok ? "  ok    " : "  FAIL  ") + row.label + (row.ok ? "" : "  →  " + row.error));
 console.log("\n" + (results.length - failed.length) + "/" + results.length + " passed");

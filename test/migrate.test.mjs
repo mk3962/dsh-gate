@@ -95,12 +95,13 @@ const readJson = (file) => JSON.parse(fs.readFileSync(file, "utf8"));
   assert.equal(migrated.policy.legacy.unknownOverrides.ws_mcp_call, TIER_RESIDENT, "ws_mcp_call 进 legacy");
   assert.ok(migrated.warnings.some((row) => row.code === "dangling-key" && row.name === "ws_mcp_call"), "悬空键要告警");
 
-  // 工具面里真有这个工具时，就不是悬空键：它有自己的能力，别丢档位。
-  const alive = migrateV2ToV3(V2, { knownNames: new Set(["ws_mcp_call"]) });
-  assert.equal(alive.policy.capabilities["tool:ws_mcp_call"].tier, TIER_RESIDENT);
-  assert.equal(alive.policy.legacy.unknownOverrides.ws_mcp_call, undefined);
-  assert.equal(alive.warnings.some((row) => row.code === "dangling-key"), false);
-  ok("悬空键 → legacy.unknownOverrides + 告警；当前工具面里存在时照常迁成能力");
+  // 退休名优先于当前工具面：ws_mcp_call 已从宿主退休，即使视图里还注册着同名工具，
+  // 也不能迁成「永远不生效」的 tool:ws_mcp_call 能力，必须落 legacy + 告警。
+  const alive = migrateV2ToV3(V2, { knownNames: new Set(["ws_mcp_call", "read"]) });
+  assert.equal(alive.policy.capabilities["tool:ws_mcp_call"], undefined, "退休名不许迁成能力");
+  assert.equal(alive.policy.legacy.unknownOverrides.ws_mcp_call, TIER_RESIDENT, "退休名仍进 legacy");
+  assert.ok(alive.warnings.some((row) => row.code === "dangling-key" && row.name === "ws_mcp_call"), "退休名仍要告警");
+  ok("悬空键 → legacy.unknownOverrides + 告警；退休名优先，当前工具面里有同名注册也不迁能力");
 }
 
 // ── 4. 幂等：同输入迁两次逐字节一致 ───────────────────────────────────────────
@@ -135,6 +136,37 @@ const readJson = (file) => JSON.parse(fs.readFileSync(file, "utf8"));
   assert.equal(fs.readdirSync(dir).filter((name) => name.startsWith("gate.json.v2.bak-")).length, 1, "同内容只留一份备份");
   assert.equal(JSON.stringify(again.capabilities), JSON.stringify(policy.capabilities), "重复迁移结果必须一致");
   ok("读 v2 自动迁移并备份一次；原文件不动、重复启动不堆备份");
+}
+
+// ── 5b. 真实 v2 文件里的退休键：备份 + legacy + 告警，一次到位 ────────────────
+{
+  const dir = tmpDir();
+  const file = path.join(dir, "gate.json");
+  const text = JSON.stringify(V2, null, 2);
+  fs.writeFileSync(file, text);
+  const before = fs.readFileSync(file);
+
+  const policy = resolvePolicy({}, { dshHome: dir, knownNames: new Set(["ws_mcp_call", "read"]) });
+  assert.equal(policy.migrated, true);
+  assert.equal(policy.legacy.unknownOverrides.ws_mcp_call, TIER_RESIDENT, "退休键必须落 legacy，不能静默丢");
+  assert.ok(
+    policy.warnings.some((row) => row.code === "dangling-key" && row.name === "ws_mcp_call" && row.layer === "file"),
+    "必须给出 dangling-key 告警（带文件层标记）",
+  );
+  assert.equal(policy.capabilities["tool:ws_mcp_call"], undefined, "不许生成死能力");
+
+  // 迁移只读：原文件逐字节不变，备份恰好一份且逐字节相同。
+  assert.deepEqual(fs.readFileSync(file), before, "迁移不许改原文件一个字节");
+  const backups = fs.readdirSync(dir).filter((name) => name.startsWith("gate.json.v2.bak-"));
+  assert.equal(backups.length, 1, "必须恰好留一份备份，实际 " + JSON.stringify(fs.readdirSync(dir)));
+  assert.deepEqual(fs.readFileSync(path.join(dir, backups[0])), before, "备份必须与原文件逐字节一致");
+
+  // 幂等：同一份文件再读一次，结果字符串一致且不堆备份。
+  const again = resolvePolicy({}, { dshHome: dir, knownNames: new Set(["ws_mcp_call", "read"]) });
+  assert.equal(JSON.stringify(again.capabilities), JSON.stringify(policy.capabilities), "重复迁移结果一致");
+  assert.equal(JSON.stringify(again.legacy), JSON.stringify(policy.legacy), "legacy 也必须一致");
+  assert.equal(fs.readdirSync(dir).filter((name) => name.startsWith("gate.json.v2.bak-")).length, 1, "重复启动不堆备份");
+  ok("真实 v2 文件：退休键 → legacy + 告警；原文件逐字节不变、备份恰一份且逐字节相同、二次迁移一致");
 }
 
 // ── 6. 首次保存写 v3（旧 UI 提交的 v2 形状也要能升级） ────────────────────────

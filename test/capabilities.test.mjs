@@ -20,11 +20,14 @@ import { normalizeV3Policy } from "../lib/migrate.js";
 import { resolvePolicy, TIER_OFF, TIER_ONDEMAND, TIER_RESIDENT } from "../lib/policy.js";
 import {
   capabilityIdOfSectionName,
+  capabilityIdOfSkill,
   capabilityIdOfToolName,
   capabilityOfSection,
+  capabilityOfSkill,
   capabilityOfTool,
   capabilityState,
   resolveSectionDecision,
+  resolveSkillDecision,
   resolveToolDecision,
   withCapabilityTier,
   withMemberException,
@@ -237,6 +240,136 @@ const basePolicy = () => resolvePolicy({
   assert.ok(gate.snapshot(host.agent).residentNames.includes("univer_doc"), "上游撤销后工具回到常驻");
   await gate.release(host.agent);
   ok("上游隐藏（known−visible−自己 deny）先减掉：只标注不放出，也不算进自己的 deny");
+}
+
+// ── 8. 原生工具清单补齐：团队 / 专家 / 闸门工具不再落 tool:unknown ─────────────
+{
+  const names = [
+    "spawn_teammate", "wait_agent",
+    "team_task_create", "team_task_get", "team_task_list", "team_task_update",
+    "list_experts", "summon_expert", "summon_experts", "summon_expert_team",
+    "propose_custom_expert", "propose_expert_team",
+    "open_custom_expert_editor", "open_expert_team_editor",
+    "get_expert_team", "list_expert_teams",
+    "gate_status", "gate_load", "gate_search", "gate_invoke", "gate_call",
+  ];
+  for (const name of names) {
+    assert.equal(capabilityIdOfToolName(name), "native:" + name, name + " 的来源必须是 native");
+    const decision = resolveToolDecision(basePolicy(), name, { globallyVisible: true });
+    assert.equal(decision.capability, "native:" + name, name + " 的能力 id 错了");
+    assert.notEqual(decision.capability, "tool:unknown", name + " 不许落 unknown");
+    assert.equal(decision.confidence, "medium", name + " 的来源置信度应为 native 级");
+  }
+  ok("原生清单补齐：团队 / 专家 / 闸门工具的能力 id 是 native:<name>，不是 tool:<name>");
+}
+
+// ── 9. 原生来源在能力视图里也读得出来（行 provenance） ────────────────────────
+{
+  const names = ["spawn_teammate", "list_experts", "gate_status", "gate_load", "gate_search", "gate_call"];
+  const view = capabilityState(basePolicy(), { tools: names.map((name) => ({ name })) });
+  for (const name of names) {
+    const tool = view.tools.find((entry) => entry.name === name);
+    assert.equal(tool.capability, "native:" + name);
+    assert.equal(tool.confidence, "medium");
+  }
+  const statusRow = view.capabilities.find((row) => row.id === "native:gate_status");
+  assert.ok(statusRow, "能力视图里应有 native:gate_status 一行");
+  assert.deepEqual(statusRow.tools, ["gate_status"]);
+  assert.equal(statusRow.provenance.source, "native", "闸门工具这一行的来源必须是 native");
+  assert.equal(statusRow.provenance.confidence, "high");
+  ok("能力视图：原生工具落 native:<name> 行，行 provenance 读作 native（不是 unknown）");
+}
+
+// ── 10. 技能包：provider 聚合 + defaults.skillpack 生效 ───────────────────────
+{
+  const policy = resolvePolicy({
+    version: 3,
+    defaults: { capability: TIER_ONDEMAND, section: TIER_RESIDENT, skillpack: TIER_ONDEMAND },
+    capabilities: {
+      "skillpack:alpha": { tier: TIER_OFF },
+      "skillpack:beta": { tier: TIER_ONDEMAND },
+    },
+    sources: {},
+  }, { dshHome: policyDir, backup: false });
+  assert.equal(capabilityIdOfSkill("alpha"), "skillpack:alpha");
+  assert.equal(capabilityIdOfSkill(undefined), "skillpack:unknown", "没有 provider 仍聚到 unknown，不丢成员");
+  assert.equal(capabilityOfSkill("alpha").confidence, "high");
+  assert.equal(capabilityOfSkill(undefined).confidence, "unknown");
+  assert.equal(resolveSkillDecision(policy, { name: "x", provider: "gamma" }).reason, "defaults");
+  assert.equal(resolveSkillDecision(policy, { name: "x", provider: "gamma" }).tier, TIER_ONDEMAND, "未配置 pack 走 defaults.skillpack");
+  assert.equal(resolveSkillDecision(policy, { name: "x", provider: "alpha" }).tier, TIER_OFF, "能力条目压过 defaults");
+  assert.equal(resolveSkillDecision(policy, { name: "x", provider: "alpha" }).reason, "capability");
+
+  const view = capabilityState(policy, {
+    skills: [
+      { name: "alpha-one", provider: "alpha" },
+      { name: "alpha-two", provider: "alpha" },
+      { name: "beta-one", provider: "beta" },
+      { name: "no-provider" },
+    ],
+  });
+  const alpha = view.capabilities.find((row) => row.id === "skillpack:alpha");
+  assert.ok(alpha, "必须生成 skillpack:alpha 行");
+  assert.equal(alpha.configured, true);
+  assert.equal(alpha.tier, TIER_OFF);
+  assert.deepEqual(alpha.skills, ["alpha-one", "alpha-two"], "同 provider 的技能聚合进行成员表");
+  assert.equal(alpha.provenance.source, "skillpack");
+  assert.equal(alpha.provenance.confidence, "high");
+  const unknown = view.capabilities.find((row) => row.id === "skillpack:unknown");
+  assert.ok(unknown, "没有 provider 的技能聚到 skillpack:unknown 一行");
+  assert.equal(unknown.configured, false);
+  assert.deepEqual(unknown.skills, ["no-provider"]);
+  // 行本身没有配置条目时 tier=null；成员的有效档位在 view.skills 里读。
+  const unknownMember = view.skills.find((entry) => entry.name === "no-provider");
+  assert.equal(unknownMember.tier, TIER_ONDEMAND, "unknown pack 也走 defaults.skillpack（只标注，不隐藏）");
+  assert.equal(unknownMember.reason, "defaults");
+  assert.deepEqual(view.skills.map((entry) => entry.name), ["alpha-one", "alpha-two", "beta-one", "no-provider"], "顶部技能列表按名字排序");
+
+  // defaults.skillpack 是技能轴的唯一真源：改成 0，未配置的 pack 一起关闭。
+  const defaultsPolicy = resolvePolicy({
+    version: 3,
+    defaults: { capability: TIER_ONDEMAND, section: TIER_RESIDENT, skillpack: TIER_OFF },
+    capabilities: {},
+  }, { dshHome: policyDir, backup: false });
+  assert.equal(resolveSkillDecision(defaultsPolicy, { name: "x", provider: "alpha" }).tier, TIER_OFF, "defaults.skillpack=0 必须生效");
+  ok("技能包按 provider 聚合成 skillpack:<provider> 行；无 provider 聚 unknown；defaults.skillpack 生效");
+}
+
+// ── 11. gate 快照带技能 provider；能力视图有对应 skillpack 行与成员 ───────────
+{
+  const host = makeHost({ names: ["read"], id: "cap-skillpack" });
+  const policy = basePolicy();
+  const gate = createGate({ ctx: host.rootCtx, logger: host.logger, policy });
+  await gate.attach(host.agent);
+  gate.rememberSkills(host.agent, [
+    { name: "alpha-one", provider: "alpha", description: "A" },
+    { name: "beta-one", provider: "beta", description: "B" },
+    { name: "no-provider", description: "N" },
+  ]);
+  const snapshot = gate.snapshot(host.agent);
+  const alphaEntry = snapshot.skillEntries.find((entry) => entry.name === "alpha-one");
+  assert.equal(alphaEntry.provider, "alpha", "快照 skillEntries 必须带 provider");
+  assert.equal(alphaEntry.description, "A");
+
+  const view = gate.capabilityView(host.agent);
+  const alphaRow = view.capabilities.find((row) => row.id === "skillpack:alpha");
+  assert.ok(alphaRow, "能力视图必须有 skillpack:alpha 行");
+  assert.deepEqual(alphaRow.skills, ["alpha-one"]);
+  assert.equal(alphaRow.configured, false);
+  assert.equal(view.skills.find((entry) => entry.name === "alpha-one").tier, TIER_ONDEMAND, "成员有效档位走 defaults.skillpack");
+  const unknownRow = view.capabilities.find((row) => row.id === "skillpack:unknown");
+  assert.ok(unknownRow);
+  assert.deepEqual(unknownRow.skills, ["no-provider"]);
+  assert.deepEqual(view.skills.map((entry) => entry.name), ["alpha-one", "beta-one", "no-provider"]);
+
+  // defaults.skillpack 改了，能力视图立刻跟着变（同一个 policy 引用）。
+  policy.defaults.skillpack = TIER_OFF;
+  gate.reapply(host.agent);
+  const after = gate.capabilityView(host.agent);
+  assert.ok(after.capabilities.some((row) => row.id === "skillpack:alpha"));
+  assert.equal(after.skills.find((entry) => entry.name === "alpha-one").tier, TIER_OFF, "defaults.skillpack 改后成员档位立即生效");
+  await gate.release(host.agent);
+  ok("gate 技能 provider 进快照；能力视图生成 skillpack 行与成员，defaults.skillpack 生效");
 }
 
 console.log("\n全部通过 (" + passed + ")");

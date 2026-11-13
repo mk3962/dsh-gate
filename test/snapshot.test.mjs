@@ -34,6 +34,11 @@ const gate = createGate({ ctx: host.rootCtx, logger: host.logger, policy });
 await gate.attach(agent);
 await gate.load(agent, ["univer_doc"]);
 gate.recordSections(agent, [{ name: "mcp:wincu", chars: 120, tokens: 40 }]);
+// 技能带 provider：能力视图要按 skillpack:<provider> 聚行，快照的 skillEntries 也要带来源。
+gate.rememberSkills(agent, [
+  { name: "alpha-skill", provider: "alpha", description: "A" },
+  { name: "beta-skill", provider: "beta", description: "B" },
+]);
 gate.reapply(agent);
 
 registerGateTools({ ctx: host.rootCtx, gate, policy });
@@ -179,6 +184,66 @@ await check("快照是只读的：对一个没挂过闸门的 agent 取快照，
   assert.equal(gate.restrictionState(stranger).mode, "none");
   // 关键：listAgents 里不许因为「取过一次快照」就多出一个会话。
   assert.equal(gate.listAgents().some((row) => row.id === "stranger"), false, "取快照不该把 agent 登记进来");
+});
+
+await check("口径对齐：gate_status 工具输出与 /state 的 18 个键逐项同值（连键序一致）", async () => {
+  const toolStatus = await host.tool("gate_status").execute({}, { agent, signal: undefined });
+  assert.deepEqual(Object.keys(toolStatus), STATUS_KEYS, "gate_status 键集/顺序必须仍是 STATUS_KEYS");
+  for (const key of STATUS_KEYS) {
+    assert.deepEqual(toolStatus[key], state[key], "口径不一致：/state[" + key + "]");
+    assert.deepEqual(toolStatus[key], status[key], "口径不一致：pickStatus[" + key + "]");
+  }
+  assert.equal(JSON.stringify(toolStatus), JSON.stringify(status), "gate_status 输出必须与 /state 的 18 键逐字节一致");
+});
+
+await check("口径对齐：/capabilities 可复算 gate_status 的分层数字、名字清单、段落体积与加载态", async () => {
+  const view = await getJson("/api/dsh-gate/capabilities");
+  const namesIn = (bucket) => view.tools.filter((tool) => tool.bucket === bucket).map((tool) => tool.name).sort();
+  const own = namesIn("own");
+  const preset = namesIn("preset");
+  const resident = namesIn("resident");
+  const ondemand = namesIn("ondemand");
+  const off = namesIn("off");
+
+  assert.equal(view.tools.length, status.visible, "tools.length 必须等于 visible");
+  assert.equal(own.length + preset.length + resident.length, status.resident, "own + preset + resident 必须等于 resident");
+  assert.equal(ondemand.length, status.onDemand, "ondemand 桶必须等于 onDemand");
+  assert.equal(off.length, status.off, "off 桶必须等于 off");
+  assert.deepEqual(own, [...status.ownNames].sort(), "own 桶必须等于 ownNames");
+  assert.deepEqual(preset, [...status.presetNames].sort(), "preset 桶必须等于 presetNames");
+  assert.deepEqual([...own, ...preset, ...resident].sort(), [...status.residentNames].sort(), "三个常驻桶的并集必须等于 residentNames");
+  assert.deepEqual(ondemand, [...status.onDemandNames].sort(), "ondemand 桶必须等于 onDemandNames");
+  assert.deepEqual(off, [...status.offNames].sort(), "off 桶必须等于 offNames");
+  // passthrough 时 restriction.count 由宿主决定（不是 own deny 的算术和），不做等式假设。
+  if (status.passthrough === false) assert.equal(status.gated, status.onDemand + status.off, "gated 必须等于按需 + 关闭");
+
+  // 段落：名字、体积、gated 口径与 gate_status.sections 同源。
+  const sectionByName = new Map(view.sections.map((section) => [section.name, section]));
+  assert.deepEqual([...sectionByName.keys()].sort(), status.sections.map((section) => section.name).sort(), "段落名字清单必须一致");
+  for (const row of status.sections) {
+    const section = sectionByName.get(row.name);
+    assert.ok(section, "能力视图缺段落：" + row.name);
+    assert.equal(section.chars, row.chars, "段落 chars 不一致：" + row.name);
+    assert.equal(section.tokens, row.tokens, "段落 tokens 不一致：" + row.name);
+    assert.equal(section.gated, row.gated, "段落 gated 不一致：" + row.name);
+  }
+
+  // 技能名字（排序后）与 gate_status.skills 一致；provider 聚合行必须在。
+  assert.deepEqual(view.skills.map((skill) => skill.name).sort(), [...status.skills].sort(), "技能名字清单必须一致");
+  const alphaRow = view.capabilities.find((row) => row.id === "skillpack:alpha");
+  assert.ok(alphaRow, "技能必须按 provider 聚合出 skillpack:alpha 行");
+  assert.deepEqual(alphaRow.skills, ["alpha-skill"]);
+
+  // 已加载标记：工具落 resident（reason=loaded），段落 loaded=true。
+  for (const name of status.loaded) {
+    if (name.startsWith("section:")) {
+      assert.equal(sectionByName.get(name.slice("section:".length))?.loaded, true, "段落 loaded 标记不一致：" + name);
+    } else {
+      const tool = view.tools.find((row) => row.name === name);
+      assert.ok(tool, "能力视图缺已加载工具：" + name);
+      assert.equal(tool.bucket, "resident", "已加载工具必须落 resident：" + name);
+    }
+  }
 });
 
 await gate.release(agent);
