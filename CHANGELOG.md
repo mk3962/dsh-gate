@@ -2,7 +2,7 @@
 
 版本号遵循语义化版本；格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
-## [0.3.0] — 未发布
+## [0.3.0] — 2026-11-14
 
 ### Added — 技能接管（工单 14）
 - **策略 v3 新增 `skills`**：`{ takeover?: boolean, off?: string[], imports?: { id?, path }[] }`。
