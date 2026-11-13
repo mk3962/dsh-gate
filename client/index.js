@@ -1405,7 +1405,8 @@ window.__ModuleLoader__.load({
         const stateName = row && typeof row.state === "string" ? row.state : "unavailable";
         const owned = stateName === "owned" || stateName === "stopped";
         const enabled = row && row.enabled !== false;
-        const stopAction = stateName === "stopped" ? "start" : "stop";
+        // 服务端 POST 只认 enable/disable；stopped 状态下按钮写「启动」但动作必须是 enable。
+        const stopAction = stateName === "stopped" ? "enable" : "disable";
         return h("tr", { key: name },
           h("td", null, h("div", { className: "dshg-mono" }, name)),
           h("td", null, h("span", { className: "dshg-hint" }, mcpTransportOf(row))),
