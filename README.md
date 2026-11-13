@@ -258,14 +258,24 @@ ln -s "$HOME_DIR/local-plugins/dsh-gate" "$PROFILE/node_modules/dsh-gate"   # Wi
   只列目录、不灌正文 —— 旧 v2 的 `skills.tier=1` 也是「保留目录」，迁移时同样降为 2 并告警。
 - **按需（2）**：只在目录里列一行，模型 `gate_load(["skill:<name>"])` 才拿到正文（native / PTC 都一样，
   正文走工具结果，不再追加尾部块）。
-- **关闭（0）**：不列、不加载；用户 `/name` 显式点名也不会注入正文。
+- **关闭（0）**：不列、不加载；用户 `/name` 显式点名也不会注入正文。`gate_search` 也不列它
+  （想恢复就去面板能力视图找 `skill:<name>` 那一行改档）。
 - `imports` 让闸门把**本地技能目录**也接进来（不依赖宿主注册）：目录含 `SKILL.md` 算一个技能；
-  目录下多个子目录各含 `SKILL.md` 算多个；单文件 `*.md` 也支持。frontmatter 的 `name` / `description` 自解，
-  正文是 frontmatter 之后的部分。相对路径以策略文件所在目录为基准，`~/` 展开到家目录。
+  目录下多个子目录各含 `SKILL.md` 算多个；单文件 `*.md` 也支持；符号链接目录照常跟随（断链跳过）。
+  frontmatter 的 `name` / `description` 自解（支持 `|` / `>` 块标量），正文是 frontmatter 之后的部分。
+  单个技能文件超过 1 MiB 拒绝读取并告警（不静默截断正文）。相对路径以策略文件所在目录为基准，
+  `~/` 展开到家目录。
+- **`/name` 手势**：宿主技能与导入技能都支持——导入技能宿主不认识，闸门会按「整条正文就是一个 `/技能名`」
+  的严格词法自行识别（只是正文里提到 `/xxx` 不算）。
 - **同名冲突**：宿主优先。同名导入条目标 `shadowed`（`/api/dsh-gate/capabilities` 的 `skills` 行带
   `origin` / `path` / `tier` / `shadowed`），并 warn 一次；导入之间同名也是先声明的赢。
 - **逃生门**：`"takeover": false` 完整退回 0.1.8 —— 宿主照常注入目录、`skill` 工具照常可见、
   `gate_load(["skill:x"])` 照旧转发宿主 `skill` 工具，闸门只按 `defaults.skillpack` 决定要不要摘目录。
+- **不完整名单**：宿主 `skills.snapshot()` 返回 `complete: false`（provider 发现超时/被 abort）时，
+  闸门沿用上一份可用名单并告警一次，不拿部分名单覆盖（否则技能会先消失再回来，两次改字节 = 两次断缓存）。
+- **旧会话残留**：升级前就存在的会话里，历史中的旧技能目录消息（`source.kind=skill-catalog`）已经写进
+  durable 事件，`pre-step` 只过滤本轮消息、改不了历史。这类会话恢复后可能同时看到旧目录与
+  `<gate-catalog>`；**以 `<gate-catalog>` 为准**（旧目录是历史记录，不再更新）。
 - 与宿主 UI 的边界：宿主自己的技能面板/按钮只认宿主注册的技能，看不到 `imports` 进来的条目；
   闸门面板的技能列（`/api/dsh-gate/state` 的 `skills`）是**gate 可见名单**（宿主 + 导入 − `off` − `shadowed`），
   能力视图 `/api/dsh-gate/capabilities` 才带来源、路径与被遮信息。改 `skills` 策略后下一轮生效。

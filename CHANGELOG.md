@@ -85,6 +85,32 @@
 - **/mcp 500**：`server.js` 三处 `savePolicyFile` 是 async 却未 `await`，add/remove/enable/disable
   全部 500；已修并补测试覆盖。
 
+### Fixed — 0.3.0 复核 P2 批修（2026-11-14，r4 报告 P2=12）
+- **P1-4b 导入技能改正文不生效**：`rememberSkills` 的签名不含正文，改动只发生在 `content` 时直接
+  early-return，`entry.skills` 留着旧正文（而 `gate_load` 读新文件 ⇒ 同一技能两个版本）。
+  签名现已纳入 `content` 的 sha1 前 12 位。
+- **P2-6 不完整名单覆盖 last-good**：改用 `ctx.skills.snapshot()` 并检查 `complete`；宿主发现超时/被 abort
+  时沿用上一份名单并告警一次（否则技能先消失再回来 = 两次断缓存）。
+- **P2-7 装配不可取消**：`sections.js` 把 `context.signal` 传给 `gate.skillSections()`，装配期回查正文
+  可随 turn abort 取消。
+- **P2-8 正文瞬态失败抖动**：取不到正文时不再渲染「（这份技能没有正文。）」占位段（有旧缓存用旧值，
+  没有就跳过该段），避免下一轮又变回正文。
+- **P2-9 正文取不到被报成 unknown**：`gate_load("skill:x")` 只把「名字不存在」放 `unknown`；
+  名单里有但正文暂时取不到时给出「暂时取不到正文」说明，不再诱导模型改名重试。
+- **P2-11 非接管时技能列两遍**：`takeover=false` 且 `skillpack=1`（宿主目录没被摘）时，
+  `<gate-catalog>` 不再重复列技能。
+- **P2-12 导入技能不支持 `/name`**：新增 `collectSlashInvocations`，按「整条用户正文就是 `/技能名`」
+  的严格词法识别（包含式提到不算），命中 gate 技能表的按同一份 `resolveSkill` 渲染注入。
+- **P2-13 导入健壮性**：单文件超过 1 MiB 拒读并告警（`code=skill-too-large`，不静默截断正文）；
+  `dirEntries` 跟随符号链接（断链跳过）；frontmatter 支持 `|` / `>` 块标量；扫描缓存改 LRU（上限 32）。
+- **P2-14 每步空名单 reapply**：名单从空到空时不再触发 `reapply`。
+- **P2-5 旧会话残留**（文档级，不改历史）：README「技能接管」新增两条说明——旧会话历史里的
+  `skill-catalog` 消息无法被 `pre-step` 摘除，以 `<gate-catalog>` 为准。
+- **MCP 工具数恒 0**：`countTools` 改用注册名（`knownNames`）计数，restriction 只影响 `visible`；
+  没有活跃会话时面板不再把已挂载的 server 报成 0 工具。
+- **面板空态**：会话尚未产生过一次请求时（段落/技能清单还没装配），面板显式说明原因，
+  不再让两栏 `0` 看起来像坏了。
+
 ## [0.2.0] — 2026-11-13
 
 ### Added

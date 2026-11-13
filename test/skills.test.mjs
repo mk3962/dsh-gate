@@ -21,6 +21,12 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createGate } from "../lib/gate.js";
+import {
+  MAX_SKILL_FILE_BYTES,
+  parseFrontmatter,
+  readSkillFile,
+  scanImport,
+} from "../lib/skills.js";
 import { resolvePolicy, TIER_OFF, TIER_ONDEMAND, TIER_RESIDENT } from "../lib/policy.js";
 import { mountSkillGate } from "../lib/prestep.js";
 import { mountSectionGate, CATALOG_SECTION } from "../lib/sections.js";
@@ -313,6 +319,132 @@ await checkAsync("takeover=false：不摘宿主目录，gate_load 照旧转发�
   const result = await tool.execute({ names: ["skill:alpha"] }, { agent });
   assert.ok(String(result.skillText).includes("skill ok"), "应转发给宿主 skill 工具：" + result.skillText);
   assert.equal(result.loaded.includes("skill:alpha"), false, "转发路径不改加载清单（0.1.8 行为）");
+  await rig.dispose();
+});
+
+// ── 8. 复核 P2 批修（2026-11-14）：不完整名单 / 正文变更 / 导入 /name / 健壮性 ──
+await checkAsync("P2-6：宿主 snapshot.complete=false 时保留上一份名单，不让技能先消失再回来", async () => {
+  const rig = makeRig(BASE);
+  const agent = await rig.attach();
+  await rig.gate.refreshSkills(agent);
+  const before = rig.gate.snapshot(agent).skills.slice();
+  assert.deepEqual(before, ["alpha", "beta", "gamma"], "第一次是完整名单");
+  // 宿主发现超时：快照变成「只有 alpha」且 complete=false
+  rig.service.snapshot = async () => ({ skills: [{ name: "alpha", provider: "pkg-a", description: "Alpha 技能。" }], complete: false });
+  await rig.gate.refreshSkills(agent);
+  assert.deepEqual(rig.gate.snapshot(agent).skills.slice(), before, "不完整名单不能覆盖 last-good");
+  assert.ok(rig.host.logs.some((line) => line.includes("不完整")), "要留一次可读告警：" + JSON.stringify(rig.host.logs));
+  // 恢复完整后照常接受新名单
+  rig.service.snapshot = async () => ({ skills: [{ name: "alpha", provider: "pkg-a", description: "Alpha 技能。" }], complete: true });
+  await rig.gate.refreshSkills(agent);
+  assert.deepEqual(rig.gate.snapshot(agent).skills.slice(), ["alpha"], "完整名单照常生效");
+  await rig.dispose();
+});
+
+await checkAsync("P1-4b：导入技能只改正文（名字/描述不变）也会立刻生效，且 gate_load 与段落同源", async () => {
+  const root = tmpDir("body-change");
+  const file = path.join(root, "SKILL.md");
+  writeFile(file, "---\nname: changing\ndescription: 会改正文\n---\nFIRST BODY");
+  const rig = makeRig({
+    version: 3,
+    defaults: { capability: 2, section: 1, skillpack: TIER_ONDEMAND },
+    capabilities: { "skill:changing": { tier: TIER_RESIDENT } },
+    skills: { takeover: true, off: [], imports: [{ id: "local", path: root }] },
+  }, { sections: true });
+  const agent = await rig.attach();
+  await rig.host.preStep({ kind: "enter", messages: [] }, agent);
+  const first = await rig.assemble({ sections: [] });
+  assert.ok(first.sections.find((s) => s.name === "gate-skill:changing").text.includes("FIRST BODY"));
+  // 改正文：mtime 变化 → scanImport 重读 → rememberSkills 的签名必须因 hash 不同而变化
+  writeFile(file, "---\nname: changing\ndescription: 会改正文\n---\nSECOND BODY");
+  await rig.host.preStep({ kind: "enter", messages: [] }, agent);
+  const second = await rig.assemble({ sections: [] });
+  assert.ok(second.sections.find((s) => s.name === "gate-skill:changing").text.includes("SECOND BODY"),
+    "改正文后常驻段落必须跟着变：" + second.sections.find((s) => s.name === "gate-skill:changing").text);
+  const loaded = await rig.gate.loadSkill(agent, "changing");
+  assert.ok(loaded.text.includes("SECOND BODY"), "gate_load 也要拿到同一份新正文");
+  await rig.dispose();
+});
+
+await checkAsync("P2-12：用户手打 /导入技能名 也会注入正文（宿主不认识导入技能）", async () => {
+  const root = tmpDir("slash-import");
+  writeFile(path.join(root, "SKILL.md"), "---\nname: slashy\ndescription: 导入技能\n---\nSLASH BODY");
+  const rig = makeRig({
+    version: 3,
+    defaults: { capability: 2, section: 1, skillpack: TIER_ONDEMAND },
+    capabilities: {},
+    skills: { takeover: true, off: [], imports: [{ id: "local", path: root }] },
+  });
+  const agent = await rig.attach();
+  await rig.gate.refreshSkills(agent);
+  const decision = { kind: "enter", messages: [{ role: "user", content: [{ type: "text", text: "/slashy" }] }] };
+  const out = await rig.host.preStep(decision, agent);
+  const injected = out.messages.filter((m) => m.source && m.source.kind === "skill-invocation");
+  assert.equal(injected.length, 1, "导入技能的 /name 要注入一条正文，实际 " + injected.length);
+  assert.equal(injected[0].source.name, "slashy");
+  assert.ok(messageText(injected[0]).includes("SLASH BODY"));
+  // 正文里只是「提到」/xxx 不算调用（严格整条词法）
+  const prose = { kind: "enter", messages: [{ role: "user", content: [{ type: "text", text: "请解释 /slashy 这个命令" }] }] };
+  const proseOut = await rig.host.preStep(prose, agent);
+  assert.equal(proseOut.messages.filter((m) => m.source && m.source.kind === "skill-invocation").length, 0, "包含式提到不触发注入");
+  // off 的技能不注入
+  const offRig = makeRig({
+    version: 3,
+    defaults: { capability: 2, section: 1, skillpack: TIER_ONDEMAND },
+    capabilities: { "skill:slashy": { tier: TIER_OFF } },
+    skills: { takeover: true, off: [], imports: [{ id: "local", path: root }] },
+  });
+  const offAgent = await offRig.attach();
+  await offRig.gate.refreshSkills(offAgent);
+  const offOut = await offRig.host.preStep(decision, offAgent);
+  assert.equal(offOut.messages.filter((m) => m.source && m.source.kind === "skill-invocation").length, 0, "off 技能 /name 不注入");
+  await rig.dispose();
+  await offRig.dispose();
+});
+
+check("P2-13：frontmatter 支持 | / > 块标量（不再把 \">\" 当描述）", () => {
+  const folded = parseFrontmatter("---\nname: f\ndescription: >\n  第一行\n  第二行\n---\nBODY");
+  assert.equal(folded.data.description, "第一行 第二行", "> 折叠成一行");
+  const literal = parseFrontmatter("---\nname: l\ndescription: |\n  第一行\n  第二行\n---\nBODY");
+  assert.equal(literal.data.description, "第一行\n第二行", "| 保留换行");
+  assert.equal(parseFrontmatter("---\nname: q\ndescription: \"引号里: 有冒号\"\n---\nB").data.description, "引号里: 有冒号");
+});
+
+check("P2-13：超大技能文件拒读并带 code（不静默截断正文）", () => {
+  const dir = tmpDir("too-large");
+  const file = path.join(dir, "SKILL.md");
+  fs.writeFileSync(file, "---\nname: big\n---\n" + "x".repeat(MAX_SKILL_FILE_BYTES + 10), "utf8");
+  assert.throws(() => readSkillFile(file), (error) => error.code === "skill-too-large", "应抛 skill-too-large");
+  const result = scanImport(dir, {});
+  assert.equal(result.skills.length, 0, "超大文件不产出技能");
+  assert.ok(result.warnings.some((w) => w.code === "import-unreadable" && w.message.includes("超过")), JSON.stringify(result.warnings));
+});
+
+check("P2-13：符号链接子目录里的 SKILL.md 也能扫到", () => {
+  const real = tmpDir("real-skill");
+  writeFile(path.join(real, "SKILL.md"), "---\nname: linked\ndescription: 链接技能\n---\nLINK BODY");
+  const root = tmpDir("link-root");
+  let linked = false;
+  try {
+    fs.symlinkSync(real, path.join(root, "child"), "dir");
+    linked = true;
+  } catch { /* Windows 无权限时跳过（不算失败） */ }
+  if (!linked) { console.log("  skip  符号链接用例（本机不允许建 symlink）"); return; }
+  const result = scanImport(root, {});
+  assert.deepEqual(result.skills.map((s) => s.name), ["linked"], "symlink 子目录要能发现：" + JSON.stringify(result.warnings));
+});
+
+await checkAsync("P2-9：技能在名单里但正文取不到时，gate_load 不报 unknown", async () => {
+  const rig = makeRig(BASE);
+  const agent = await rig.attach();
+  const original = rig.service.get;
+  rig.service.get = async () => undefined; // 模拟宿主正文瞬态取不到
+  registerGateTools({ ctx: rig.host.rootCtx, gate: rig.gate, policy: rig.policy });
+  const tool = rig.host.tool("gate_load");
+  const result = await tool.execute({ names: ["skill:beta"] }, { agent });
+  assert.equal((result.unknown || []).includes("skill:beta"), false, "不能报「没找到」：" + JSON.stringify(result));
+  assert.ok(String(result.skillText).includes("暂时取不到正文"), "要说清是暂时取不到：" + result.skillText);
+  rig.service.get = original;
   await rig.dispose();
 });
 
