@@ -27,8 +27,8 @@ check("插件名", () => assert.equal(name, "dsh-gate"));
 const policyFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "gate-loadtest-")), "gate.json");
 const dispose = apply(host.rootCtx, { enabled: true, policyFile });
 check("apply 返回卸载函数", () => assert.equal(typeof dispose, "function"));
-check("注册了 4 个闸门工具", () => {
-  for (const toolName of ["gate_status", "gate_search", "gate_load", "gate_call"]) {
+check("注册了 5 个闸门工具", () => {
+  for (const toolName of ["gate_status", "gate_search", "gate_load", "gate_invoke", "gate_call"]) {
     assert.ok(host.registry.has(toolName), toolName);
   }
 });

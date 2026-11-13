@@ -41,7 +41,7 @@ const tmpDir = () => fs.mkdtempSync(path.join(os.tmpdir(), "gate-policy-"));
   assert.deepEqual([...tableKeys].sort(), Object.keys(DEFAULT_POLICY).sort(), "表里的键必须与 DEFAULT_POLICY 完全一致");
   assert.equal(new Set(tableKeys).size, tableKeys.length, "表里不许有重复键");
   // v3 的键集是定稿的：v2 的 tools / sections / skills 不再是独立真源。
-  assert.deepEqual([...tableKeys].sort(), ["capabilities", "catalog", "defaults", "enabled", "legacy", "narrowPassThrough", "protected", "sources", "version"]);
+  assert.deepEqual([...tableKeys].sort(), ["capabilities", "catalog", "defaults", "enabled", "freezePtcToolset", "legacy", "narrowPassThrough", "protected", "sources", "version"]);
   for (const spec of POLICY_KEYS) {
     assert.equal(typeof spec.kind, "string", spec.key + " 缺 kind");
     assert.equal(typeof spec.merge, "string", spec.key + " 缺 merge");
@@ -103,6 +103,7 @@ const tmpDir = () => fs.mkdtempSync(path.join(os.tmpdir(), "gate-policy-"));
     catalog: { groupByPlugin: false, maxDescriptionLength: 32 },
     protected: ["pwsh"],
     narrowPassThrough: 3,
+    freezePtcToolset: false,
   }, null, 2));
 
   const resolved = resolvePolicy({}, { dshHome: dir });
@@ -118,6 +119,7 @@ const tmpDir = () => fs.mkdtempSync(path.join(os.tmpdir(), "gate-policy-"));
   assert.equal(resolved.catalog.groupByPlugin, false, "文件里的 catalog 要生效");
   assert.equal(resolved.catalog.maxDescriptionLength, 32, "catalog 的截断长度要生效");
   assert.equal(resolved.narrowPassThrough, 3, "文件里的豁免阈值要生效");
+  assert.equal(resolved.freezePtcToolset, false, "PTC 冻结开关（工单 07）必须逐键读进来");
   assert.ok(resolved.protectedNames.has("pwsh"), "protected 里的名字要进受保护集");
   assert.ok(resolved.protectedNames.has("gate_status"), "内置受保护名单不能被文件挤掉");
 
@@ -127,12 +129,14 @@ const tmpDir = () => fs.mkdtempSync(path.join(os.tmpdir(), "gate-policy-"));
     defaults: { capability: "banana" },
     capabilities: { "mcp:bad": "nope", "mcp:ok": { tier: "banana", toolExceptions: { "mcp__ok__x": null } } },
     narrowPassThrough: -1,
+    freezePtcToolset: "yes",
   }, null, 2));
   const messy = resolvePolicy({}, { dshHome: dir });
   assert.equal(messy.defaults.capability, DEFAULT_POLICY.defaults.capability, "非法层数必须回退默认层，不能变 0");
   assert.equal(messy.capabilities["mcp:bad"], undefined, "非对象能力条目必须丢弃");
   assert.deepEqual(messy.capabilities["mcp:ok"], {}, "非法例外值必须丢弃，不留下 {tier:undefined}");
   assert.equal(messy.narrowPassThrough, DEFAULT_POLICY.narrowPassThrough, "非法阈值必须回退默认，不能变 0");
+  assert.equal(messy.freezePtcToolset, true, "布尔开关的坏值必须回退默认（true），不能静默当成 false");
   ok("读文件时每个顶层键都认 v3 的解释（层数归一、能力条目清洗、protected 只增不减）");
 }
 
@@ -288,6 +292,7 @@ const tmpDir = () => fs.mkdtempSync(path.join(os.tmpdir(), "gate-policy-"));
     capabilities: { "mcp:a": { tier: 2 } },
     catalog: { groupByPlugin: false, maxDescriptionLength: 30 },
     narrowPassThrough: 5,
+    freezePtcToolset: false,
   }, null, 2));
   const resolved = resolvePolicy(
     {
@@ -295,6 +300,7 @@ const tmpDir = () => fs.mkdtempSync(path.join(os.tmpdir(), "gate-policy-"));
       capabilities: { "mcp:a": { tier: 0 } },
       catalog: { groupByPlugin: true, maxDescriptionLength: 90 },
       narrowPassThrough: 9,
+      freezePtcToolset: true,
     },
     { dshHome: dir },
   );
@@ -305,6 +311,7 @@ const tmpDir = () => fs.mkdtempSync(path.join(os.tmpdir(), "gate-policy-"));
   assert.equal(resolved.catalog.groupByPlugin, false, "catalog 必须文件优先");
   assert.equal(resolved.catalog.maxDescriptionLength, 30, "catalog 的截断长度也必须文件优先");
   assert.equal(resolved.narrowPassThrough, 5, "narrowPassThrough 文件优先");
+  assert.equal(resolved.freezePtcToolset, false, "freezePtcToolset 也必须文件优先");
   ok("所有顶层键的优先级一致：文件 > 插件行 config > 内置默认");
 }
 

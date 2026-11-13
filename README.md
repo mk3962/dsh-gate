@@ -2,11 +2,12 @@
 
 > 给 [DeepSeek Harness](https://github.com/deepseek-ai)（DSH）用的插件：把提示词表面 —— **工具声明 / 系统提示词段落 / skill 目录** ——
 > 切成「常驻」和「按需」两层。按需那层不进工具表，只在 `<gate-catalog>` 目录里留一行；
-> 模型需要时用 `gate_load` 提上来，下一步就能直接调用。
+> 模型需要时用 `gate_load` 提上来：native 会话下一步直接可调；PTC 会话把声明追加到消息末尾、
+> 用 `gate_invoke` 执行，之后的追加加载不改系统提示词一个字节。
 >
 > 实测（DSH 桌面版 + 137 个工具）：首轮请求 **48.6K → 31.7K token，省 34.8%**。
 
-MIT License · 需要 DSH ≥ 0.1.7-rc.1 · Node ≥ 20 · 离线可测（自测 / 加载 / 委派收窄 / 限制对象 / 快照 / 归层 / 策略 / 对外面）
+MIT License · 需要 DSH ≥ 0.1.7-rc.1 · Node ≥ 20 · 离线可测（自测 / 加载 / 委派收窄 / 限制对象 / 快照 / 归层 / 策略 / 对外面 / 末尾注入）
 
 [![CI](https://github.com/mk3962/dsh-gate/actions/workflows/ci.yml/badge.svg)](https://github.com/mk3962/dsh-gate/actions/workflows/ci.yml)
 
@@ -37,14 +38,30 @@ PTC 的 SDK 声明段是按 `sdkSchemas(scope)` **现渲染**的，所以隐藏�
 | **T2** | 按需（on-demand） | 从工具表里 restrict 掉，只在 `<gate-catalog>` 里留「名字 — 一句话」 |
 | **T0** | 关闭（off） | 既不进工具表也不进目录 —— 放完全不该被模型看到的东西 |
 
-配套四个**永远常驻**的闸门工具：
+配套五个**永远常驻**的闸门工具：
 
 | 工具 | 作用 |
 |---|---|
 | `gate_status` | 看当前分层、目录体积、段落清单、已加载的工具 |
 | `gate_search <query>` | 在按需工具里按名字/描述检索 |
-| `gate_load <names>` | 把按需工具提到常驻（当前会话内保持） |
+| `gate_load <names>` | 把按需工具提到常驻（当前会话内保持）；`section:` 前缀把段落搬到末尾声明 |
+| `gate_invoke <tool> <arguments>` | PTC 冻结下的唯一执行口：走宿主完整执行管线执行一个已加载工具，不把声明加回工具表 |
 | `gate_call <name> <args>` | 临时撤限制 → 走宿主完整执行管线 → 立刻恢复，用于一次性的重型工具 |
+
+> `gate_call` 与 `gate_invoke` 的区别：前者按**任意已知工具**执行、不要求先 `gate_load`（一次性重型工具）；
+> 后者只执行**已加载 / 常驻**的工具（未知或上游隐藏的会被拒），是冻结下日常调用的口子。
+
+### 两种会话模式：native 与 PTC
+
+| 模式 | 怎么认出来 | `gate_load` 之后 |
+|---|---|---|
+| **native** | 执行器 `constructor.name` 是 `NativeToolExecutor`，或 `describe().schemas` 不止 `run_code` | 0.1.8 行为：下一步工具直接进工具表；加载的段落回系统提示词 |
+| **PTC** | 执行器 `constructor.name` 是 `PtcExecutor`，或 `describe().schemas` **恰好只有** `run_code` | **工具表冻结**：加载的工具不进工具表，声明以一条 user 消息追加到消息末尾，用 `gate_invoke` 执行 |
+
+判据拿不到执行器 / 认不出类型 → **fail-open**：按 native 处理（不冻结、不启用尾部声明）。
+判定结果在 `gate.snapshot()` / `GET /api/dsh-gate/state` 的 `executor: { kind, reason }` 与 `frozen` 里
+（`gate_status` 的 18 键形状是前缀缓存约束的一部分，**不**加这两个字段）。两种模式的目录、deny 集合、
+面板计数完全相同，差别只在「加载之后怎么用」。
 
 ## 效果（同一台机器、同一 profile、首轮只说「只回复两个字：收到」）
 
@@ -159,7 +176,7 @@ ln -s "$HOME_DIR/local-plugins/dsh-gate" "$PROFILE/node_modules/dsh-gate"   # Wi
 「保存策略」写回策略文件（按字节写无 BOM UTF-8），**下一轮生效**，不需要重启；
 段落/技能改动同样下一轮生效。
 
-> 归层以服务端权威表 `state.tiers` 为准。`run_code`、四个 `gate_*`、团队工具这类
+> 归层以服务端权威表 `state.tiers` 为准。`run_code`、五个 `gate_*`、团队工具这类
 > **agent 自身注册**的工具（`state.own`）标「自身层」：`restrict` 管不到它们，永远常驻，面板不给无效按钮。
 
 0.2.0 起另有 `GET /api/dsh-gate/capabilities`（能力视图：来源置信度 / 命中链 / 例外偏离 / 上游隐藏），
@@ -174,6 +191,7 @@ ln -s "$HOME_DIR/local-plugins/dsh-gate" "$PROFILE/node_modules/dsh-gate"   # Wi
 {
   "version": 3,
   "enabled": true,
+  "freezePtcToolset": true,
   "defaults": { "capability": 2, "section": 1, "skillpack": 2 },
   "capabilities": {
     "native:read": { "tier": 1 },
@@ -200,7 +218,9 @@ ln -s "$HOME_DIR/local-plugins/dsh-gate" "$PROFILE/node_modules/dsh-gate"   # Wi
 - `version: 2` 的旧文件**自动迁移**：首次读取先在旁边写一份 `gate.json.v2.bak-<时间戳>`（原文件不改），
   同能力档位冲突取最宽松、其余成员写成例外；首次保存时落盘 v3。回滚到 0.1.8 前先把备份复制回 `gate.json`。
 - 优先级**逐字段**一致：文件里写了的字段以文件为准，没写才回落到插件行 `config`，最后才是内置默认。
-- `run_code`、四个 `gate_*`、以及 `protected` 里的名字**任何策略都动不了**（`restrict` 点名 `run_code` 会直接抛错）。
+- `freezePtcToolset`（默认 `true`）：PTC 会话是否启用「工具表冻结 + 末尾声明」。设 `false` 退回 0.1.8 的加载语义
+  （`gate_load` 直接改工具表），用于调试或上游执行器判据不稳时；native 会话不受这个键影响。
+- `run_code`、五个 `gate_*`、以及 `protected` 里的名字**任何策略都动不了**（`restrict` 点名 `run_code` 会直接抛错）。
 - 策略文件读坏 / JSON 解析失败 → **fail-open**（全部常驻）：宁可没省 token，也不让会话崩。
 - 非法层值（`null` / `""` / `false`）按默认处理，不会被 `Number()` 静默转成 0 把工具关掉。
 - `narrowPassThrough`（默认 `12`，读法与其它键一样逐键比较：`gate.json` 点名 > 插件行 config > 内置默认）：
@@ -217,6 +237,10 @@ ln -s "$HOME_DIR/local-plugins/dsh-gate" "$PROFILE/node_modules/dsh-gate"   # Wi
 | 被隐藏的工具 | 不在 SDK 声明里，调用返回 `UNKNOWN_TOOL` |
 | `gate_load` 之后 | 当前会话内保持常驻，同一 agent 的后续步骤立即生效 |
 | `gate_call` | 临时撤限制 → 宿主完整执行管线（含 pre-execute 守卫）→ `finally` 立刻恢复 |
+| PTC 会话的 `gate_load` | 工具表冻结：名字仍在 deny 集、工具表字节不变；声明追加为**最后一条 user 消息**（`<gate-loaded>` / `<gate-section>`），已有消息不改、不重排 |
+| `gate_invoke` | 冻结下的日常执行口：临时撤限制 → 宿主完整管线（含 `defineTool` 参数校验）→ `finally` 恢复；宿主侧错误以 `{ isError: true }` 返回 |
+| 追加加载段落（PTC） | 系统提示词**逐字节不变**；段落正文搬进末尾声明；`<gate-catalog>` 也继续保留该段落 |
+| 尾部声明的位置与幂等 | 每步重算：内容不变就复用同一个消息对象（不新建数组）；用户发了新消息就把同一条尾块搬到末尾（id 不变） |
 | 子 agent | 继承同一套全局策略；闸门按 agent 分别记账。**例外**：`origin=subagent` 且授予工具数 ≤ `narrowPassThrough` 的子代理整台跳过闸门（见「策略文件」），`gate_status.passthrough` 可查 |
 | 工具热插拔 | 监听 `tools/change` 重算限制，不会留下过期 deny |
 | 插件卸载 | 所有 `restrict` 的 disposer 挂在插件 fiber 上，卸载即全部撤销 |
@@ -256,6 +280,14 @@ ln -s "$HOME_DIR/local-plugins/dsh-gate" "$PROFILE/node_modules/dsh-gate"   # Wi
 - **段落面**依赖宿主每轮 assemble 的真实快照；宿主大版本改段落渲染时可能读不到（会 fail-open）。
 - **`gate_load` 的粒度是「下一步」**：SDK 声明在每一步开始前渲染好，所以同一个 `run_code` 程序体内
   紧跟 `gate_load` 再调该工具仍会 `tools.<name> is not a function`（真机实测），下一步才可用。
+  PTC 冻结下同一程序体内**立即可以** `gate_invoke`（它不依赖工具表，走的是执行管线）。
+- **PTC 冻结的已知代价**：`gate_invoke` 每次调用会临时 `suspend` 再 `reapply`（发出两次 `tools/change`；
+  `applying` 窗口内不重算，但订阅者会收到事件）。尾部声明的函数签名是**退化渲染** ——
+  复杂 schema 只到 `array<object>` / `object` / `any`，参数校验仍由宿主的 `defineTool` 负责，
+  参数不对会得到 `{ isError: true, text: "Error: … should be string" }` 而不是崩溃。
+- **PTC 判据依赖执行器实现**：`constructor.name` 是 dist 里的实现细节，宿主演进后认不出会 fail-open
+  （不冻结、不启用尾部声明），原因在 HTTP 快照的 `executor.reason`；语义判据 `describe().schemas` 是第二道保险。
+- **反复 `gate_load` 无副作用**：PTC 下已加载的工具不会再进目录，声明只按当前清单重渲染。
 - 目录里每条描述按 `catalog.maxDescriptionLength`（默认 64 字）截断。
 - **段落行的说明永远是空的**（已知问题）：`recordSections` 只记 `{name, chars, tokens}`，目录渲染却读 `entry.summary`，
   所以 `<gate-catalog>` 里段落行只有名字、没有那句摘要。修它会让目录字节变化 ⇒ 从那一段起前缀缓存失效，另开票处理。
@@ -267,13 +299,13 @@ ln -s "$HOME_DIR/local-plugins/dsh-gate" "$PROFILE/node_modules/dsh-gate"   # Wi
 
 ```bash
 npm run check     # DSH 插件规范自检（入口文件、BOM、patch 格式、client externals…）
-npm test          # 全部套件（自测 / 加载 / 委派收窄 / 限制对象 / 快照 / 归层 / 策略 / 对外面），离线跑，不碰真实宿主
+npm test          # 全部套件（自测 / 加载 / 委派收窄 / 限制对象 / 快照 / 归层 / 策略 / 迁移 / 能力 / 对外面 / 末尾注入），离线跑，不碰真实宿主
 npm run verify    # 上面两个一起
 ```
 
 测试用一个共享宿主 seam `test/host.mjs`（`makeHost`）复刻宿主的 `view / restrict / execute / assemble /
 pre-step` 真实语义（含「`view()` 无 scope = 全局视图」与「preset 平面注册在 agent 祖先层」这两条关键区别）；
-需要宿主的七个套件（自测 / 加载 / 委派收窄 / 限制对象 / 快照 / 归层 / 对外面）全部从它取宿主，
+需要宿主的八个套件（自测 / 加载 / 委派收窄 / 限制对象 / 快照 / 归层 / 对外面 / 末尾注入）全部从它取宿主，
 宿主演进只改这一处（策略表那套是纯函数，不需要宿主）。`test/vendor/dsh-tools` 只负责让裸包名 `@deepseek-ai/dsh-tools`
 能解析（`--import ./test/stub-loader.mjs`），因此**不需要 `npm install`、不需要 DSH 在跑**。
 

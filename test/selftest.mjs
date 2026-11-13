@@ -49,7 +49,7 @@ await check("默认策略：插件工具按需", () => {
   }
 });
 await check("闸门自己的工具受保护", () => {
-  for (const name of ["gate_status", "gate_search", "gate_load", "gate_call"]) {
+  for (const name of ["gate_status", "gate_search", "gate_load", "gate_invoke", "gate_call"]) {
     assert.equal(tierForTool(examplePolicy, name), TIER_RESIDENT, name);
   }
 });

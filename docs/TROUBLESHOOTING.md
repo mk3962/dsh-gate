@@ -32,6 +32,11 @@
 | 目录里段落行只有名字、没有摘要 | 已知问题：`recordSections` 只记 `{name, chars, tokens}`，`renderCatalog` 却读 `entry.summary` | 正常现象，0.1.8 起记为已知限制（修它要改目录字节、破缓存前缀，另开票） |
 | `gate_call` 一次后工具表抖两下 | 0.1.1 前 `callThrough` 没置 `applying` | 升级到 0.1.2+ |
 | 真机调 `gate_status` 报 `ToolCallError: value.xxx is not a declared property` | `output.schema` 与 `STATUS_KEYS` 漂了（宿主 `additionalProperties: false`） | 升级到 0.1.5+；改 schema 时用 `npm test` 里的 schema 覆盖用例兜住 |
+| PTC 下 `gate_load` 后工具不在工具表 | 正常：PTC 冻结了工具表，声明追加在消息末尾 | 用 `gate_invoke({ tool, arguments })` 调；`GET /api/dsh-gate/state` 的 `executor` / `frozen` 看判定（`gate_status` 18 键不含它们） |
+| PTC 下工具表仍随 `gate_load` 变化 | 执行器没认出来（fail-open 按 native），或策略里 `freezePtcToolset: false` | 看 HTTP 快照的 `executor.reason`；认不出属宿主演进，按 native 跑即可 |
+| `gate_invoke` 返回 `{ isError: true }` | 参数被宿主 `defineTool` 校验拒绝，或工具自身抛错 | 看 `text` 里的 `Error: …`；闸门不代校验参数，签名以声明里那行退化签名为准 |
+| `gate_invoke` 说「未知工具」/「被上游隐藏」 | 目标不在 known、被上游隐藏、或名字打错（`gate_invoke` 只执行已加载 / 常驻工具，不像 `gate_call` 接受任意已知工具） | 先 `gate_search` / `gate_load`；上游隐藏的名字闸门不会放出来 |
+| 尾部声明每步换位置 / 重建 | 清单变了（新加载的名字、段落正文首次取到） | 正常：内容变化才换块；内容不变时复用同一消息对象并用正文哈希当 id |
 
 ## 官方 UI 的「卸载」按钮失败
 
@@ -53,7 +58,15 @@ pnpm 在 D: 盘找不到同盘 store，于是拒绝任何写操作。两步对�
 
 改完 UI 卸载能跑完；不想折腾就直接用 `scripts\uninstall.ps1`（它不走 pnpm）。
 
+## PTC 会话的加载语义（0.2.0+）
+
+- 看到 `frozen: true` 就是冻结模式：`gate_load` 不改工具表，只让末尾声明变长；调用一律走 `gate_invoke`。
+- 冻结在第一次 `gate_load` 之前就生效 —— 别指望「先加载一次、再冻上」能省缓存。
+- 想退回 0.1.8 的加载语义（加载即改工具表）：策略里写 `"freezePtcToolset": false`，下一轮生效，不用降级。
+- native 会话没有尾部声明；段落加载后仍回系统提示词，这是有意保留的差异（native 没有 `gate_invoke` 这条执行口）。
+
 ## 日志
 
-插件只在两处写 info：挂载 agent 时的分层统计、以及禁用策略时的提示；其余失败一律 warn 且不阻塞。
+插件只在三处写 info：挂载 agent 时的分层统计、禁用策略时的提示、执行器判定的首次 / 变化记录
+（`dsh-gate: 执行器判定 …`）；其余失败一律 warn 且不阻塞。
 想看更细的：把 `policyFile` 里的 `enabled` 改 false 再改回 true，可以确认"读到的是哪份策略"。

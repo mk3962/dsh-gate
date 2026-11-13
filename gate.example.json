@@ -1,6 +1,7 @@
 {
   "version": 3,
   "enabled": true,
+  "freezePtcToolset": true,
   "defaults": {
     "capability": 2,
     "section": 1,

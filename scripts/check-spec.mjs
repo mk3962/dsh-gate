@@ -240,7 +240,7 @@ await check("gate.example.json 是合法策略文件（无 BOM 且字段齐）",
   assert(!hasBom(file), "gate.example.json 带 BOM");
   const policy = JSON.parse(read(file));
   // v3（0.2.0）：能力 + 例外 + defaults；v2 的 tools / sections / skills 不再是独立真源。
-  for (const key of ["version", "enabled", "defaults", "capabilities", "sources", "legacy", "catalog", "narrowPassThrough", "protected"]) {
+  for (const key of ["version", "enabled", "freezePtcToolset", "defaults", "capabilities", "sources", "legacy", "catalog", "narrowPassThrough", "protected"]) {
     assert(key in policy, "gate.example.json 缺少 " + key);
   }
   assert(policy.version === 3, "gate.example.json 必须是 v3（version=3），实际 " + policy.version);

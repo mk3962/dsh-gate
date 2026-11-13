@@ -36,7 +36,9 @@ const check = async (label, fn) => {
   catch (error) { results.push({ ok: false, label, error: String((error && error.message) || error) }); }
 };
 
-const ANY = new Set(["attach", "listAgents", "restrictionState", "snapshot", "capabilityView", "knownNames", "planSections", "reapply", "isApplying", "load", "callThrough", "catalogFor", "rememberSkills", "recordSections", "release", "releaseAll"]);
+// loadedTextFor / canInvoke 是工单 07 加的两个「问得出口的问题」：
+//   这一步尾部要追加什么（PTC 冻结） / 这个工具能不能转发（gate_invoke 的准入）。
+const ANY = new Set(["attach", "listAgents", "restrictionState", "snapshot", "capabilityView", "knownNames", "canInvoke", "loadedTextFor", "planSections", "reapply", "isApplying", "load", "callThrough", "catalogFor", "rememberSkills", "recordSections", "release", "releaseAll"]);
 
 await check("公开面恰好是这组能力：内部表与内部函数一个都不外露", async () => {
   const host = makeHost({ names: NAMES });
@@ -94,7 +96,7 @@ await check("内部条目里的字段不再被外部模块读到", async () => {
   assert.equal(/touchedAt\)/.test(server), false, "server.js 不该自己比较 touchedAt");
 });
 
-await check("四个闸门工具只从快照取字段", async () => {
+await check("五个闸门工具只从快照取字段", async () => {
   const proxy = read("lib/proxy.js");
   assert.ok(proxy.includes("pickStatus(gate.snapshot("), "gate_status 必须从快照投影");
   assert.ok(proxy.includes("gate.snapshot(exec.agent)"), "gate_search 必须从快照取清单");

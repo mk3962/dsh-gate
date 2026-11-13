@@ -23,8 +23,18 @@
   不进候选集、不可 `gate_load`，闸门不会把它们重新放出来。
 - **能力视图**：`gate.capabilityView(agent)` / `gate.knownNames(agent)` 与
   `GET /api/dsh-gate/capabilities[?agent=]`。/`state` 与 `gate_status` 的固定形状不变。
+- **PTC 末尾注入 + `gate_invoke`（票 07）**：检测到 PTC 执行器（`PtcExecutor`，或 `describe().schemas`
+  恰好只有 `run_code`）后**冻结工具表**：`gate_load` 之后工具不进工具表，声明以一条 user 消息追加到
+  messages 末尾（已加载工具的退化签名 + 已加载段落正文），模型用新增的 `gate_invoke({ tool, arguments })`
+  执行。冻结从第一次加载**之前**生效，追加加载不改系统提示词 / `gate-catalog` 一个字节；
+  native 会话维持 0.1.8 行为（加载即进工具表、段落回提示词），尾部声明与 `gate_invoke` 不启用。
+  执行器认不出 → fail-open（按 native），原因记进 `snapshot.executor`。
+- 新策略键 `freezePtcToolset`（默认 `true`）：PTC 冻结的总开关；置 `false` 退回 0.1.8 的加载语义。
+  已进 `POLICY_KEYS` / `TOP_KEYS` / v3 规范化 / v2→v3 迁移 / `gate.example.json` / 规范自检。
 - 新测试套件 `test/capabilities.test.mjs`（来源推断 / 解析链 / 例外偏离 / 双限制同步 / 上游隐藏）、
-  `test/migrate.test.mjs`（迁移幂等 / 备份去重 / 冲突取最宽松 / 悬空键 / 首存写 v3）。
+  `test/migrate.test.mjs`（迁移幂等 / 备份去重 / 冲突取最宽松 / 悬空键 / 首存写 v3）、
+  `test/tail.test.mjs`（21 条：PTC 判据 / 冻结前后 / 尾部声明顺序与幂等 / 同输入字节一致 /
+  native 行为 / 段落搬运 / `gate_invoke` 成功与错误）。
 
 ### Changed
 - 空策略模板改为 v3：`defaults` 按需/常驻/按需 + 9 个基础原生工具显式常驻（`ws_mcp_call` 退休）。
@@ -33,15 +43,19 @@
 - 0.1.8 面板的 v2 形状保存（`tools/sections/skills`）在服务端翻译成 v3 `defaults + capabilities` 补丁后落盘；
   `client/` 未改（UI 工单 05 接能力视图）。注意：旧面板的**逐工具**操作会按能力归并 ——
   点一个 `univer_*` 工具 = 关整个插件能力，点 `mcp:<server>` 段落 = 同时收该 server 的工具与段落。
-- `snapshot()` 增 `upstreamHidden / policyVersion / warnings` 三个字段；`STATUS_KEYS` 与
+- `snapshot()` 增 `upstreamHidden / policyVersion / warnings` 三个字段，以及
+  `executor: { kind, reason }` 与 `frozen`（PTC 判据与冻结状态）；`STATUS_KEYS` 与
   `gate_status` 的 18 键属性集、顺序**一字未改**（前缀缓存约束不变）。
+- 闸门工具 4 → 5：新增 `gate_invoke`；`gate_load` 的描述改成「PTC 下工具表冻结，加载后仍用
+  `gate_invoke` 执行；native 下下一步直接调用」。`gate_call` / `gate_load` 的执行改走
+  `ToolExecutionPipeline + executeToolBatch`（旧宿主没有这个导出时退回 `tools.execute` 单调用）。
 - `restriction.state()` 增只读 `deny` 数组（区分「自己藏的」与「上游藏的」）。
 
 ### Notes
 - 升级后工具面可能变大：来源未知（`tool:<name>`）且没被策略点名的工具**不再**按默认层隐藏（fail-open）。
   这是 docs 04 §2「unknown 只标注、不合并、不隐藏」的落地；要藏它请在 `capabilities` 里显式点名。
 - 回滚到 0.1.8：先停宿主，把 `gate.json.v2.bak-*` 复制回 `gate.json`（0.1.8 读不懂 v3 的 `capabilities`）。
-- `npm run verify` 全绿：规范自检 16/16 + 10 个测试套件。
+- `npm run verify` 全绿：规范自检 16/16 + 11 个测试套件（124 → 145 条断言）。
 
 ## [0.1.8] — 2026-11-05
 
