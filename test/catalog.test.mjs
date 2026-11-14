@@ -75,4 +75,30 @@ const planOf = (names) => ({ tools: names.map((name) => ({ name })) });
   ok("ownerOf 切分规则不变（第一个下划线之前；无下划线保留整名）");
 }
 
+
+// ── 5. 技能行折叠（0.4.1）：skillGroups=true 时按来源折叠成一行 ────────────────
+{
+  const plan = {
+    tools: [],
+    skills: [
+      { name: "alpha", description: "A 技能", source: "宿主:pkg-a" },
+      { name: "beta", description: "B 技能", source: "宿主:pkg-a" },
+      { name: "gamma", description: "C 技能", source: "导入:local" },
+    ],
+  };
+  // 默认（不折叠）：逐条列出，与 0.4.0 逐字节一致。
+  const plain = renderCatalog(plan);
+  assert.ok(plain.includes("- [技能] alpha — A 技能（宿主:pkg-a）"), plain);
+  assert.ok(plain.includes("- [技能] beta — B 技能（宿主:pkg-a）"), plain);
+  assert.ok(plain.includes("- [技能] gamma — C 技能（导入:local）"), plain);
+
+  // 折叠：每来源一行，只留名字，描述全部消失。
+  const folded = renderCatalog(plan, { skillGroups: true });
+  assert.ok(folded.includes("- [技能] 宿主:pkg-a 2 条：alpha, beta"), folded);
+  assert.ok(folded.includes("- [技能] 导入:local 1 条：gamma"), folded);
+  assert.equal(folded.includes("A 技能"), false, "折叠后不再逐条带描述");
+  assert.ok(folded.length < plain.length, "折叠必须更短：" + folded.length + " vs " + plain.length);
+  ok("技能行折叠：skillGroups=true 按来源折叠，默认逐条列出（0.4.0 字节不变）");
+}
+
 console.log("\n全部通过 (" + passed + ")");
