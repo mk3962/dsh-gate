@@ -200,7 +200,7 @@ ln -s "$HOME_DIR/local-plugins/dsh-gate" "$PROFILE/node_modules/dsh-gate"   # Wi
   },
   "sources": { "plugin:dsh-gate": { "tools": ["gate_status", "gate_load"], "sections": ["gate-catalog"] } },
   "legacy": { "unknownOverrides": { "ws_mcp_call": 1 } },
-  "catalog": { "groupByPlugin": true, "maxDescriptionLength": 64 },
+  "catalog": { "groupByPlugin": true, "maxDescriptionLength": 64, "skillGroups": false },
   "narrowPassThrough": 12,
   "protected": [],
   "skills": { "takeover": true, "off": [], "imports": [{ "id": "local", "path": "~/skills" }] }
@@ -347,6 +347,16 @@ ln -s "$HOME_DIR/local-plugins/dsh-gate" "$PROFILE/node_modules/dsh-gate"   # Wi
 保存时与文件既有内容**浅合并**，不会把 `catalog` / `protected` 之类的字段抹掉。
 
 插件本身**不发任何网络请求**，不收集遥测，不读写策略文件以外的文件。
+
+### catalog.skillGroups（0.4.1）
+
+技能行默认**逐条**列进 `<gate-catalog>`（名字 + 描述首句 + 来源）。设为 `true` 时按来源折叠成一行：
+`- [技能] 宿主:mattpocock 16 条：a, b, c…`。
+
+- **收益**：本机 57 条技能 / 7 个来源，技能段从 5,585 字符降到约 1,550，净省约 **1,080 tok / 请求**。
+- **代价**：折叠会改 `<gate-catalog>` 的字节，**从该段起前缀缓存失效一次**。
+- **默认关闭**（`false`），不打开时与 0.4.0 逐字节一致。只有严格 `true` 才生效（`"true"` / `1` 不算）。
+- 折叠后技能仍可被 `gate_search` 按名字、说明与中文别名逐个命中（0.4.1 的别名字典已覆盖这一点）。
 
 ---
 
