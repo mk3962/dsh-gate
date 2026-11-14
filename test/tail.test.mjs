@@ -242,6 +242,73 @@ await check("用户新消息落在尾部块之后：复用同一条消息对象�
   await gate.release(agent);
 });
 
+/**
+ * 0.3.1 回归：宿主的 pre-step 只交本轮 claim 的新增消息（dsh-agent-loop 的 claimed），
+ * 历史里的尾部块不会出现在 decision.messages 里；返回数组只走 append。
+ * 所以「内容不变就复用同一条消息」在真机上不可能发生 —— 曾经的实现因此每步追加一条，
+ * 一条 40 多步的会话累积成 57 条 / 约 1 万 token（session.v4.jsonl.zstd 实测）。
+ */
+await check("delta 契约：清单没变就一条都不再追加（历史不累积）", async () => {
+  const { gate, host, agent } = makeRig({ executor: makePtcExecutor() });
+  mountTailGate({ ctx: host.rootCtx, gate, policy: policyFor() });
+  await gate.attach(agent);
+  await gate.load(agent, ["univer_doc"]);
+  const first = await host.preStep({ kind: "enter", messages: [userMessage("u1", "一")] }, agent);
+  assert.equal(first.messages.length, 2, "第一次要追加一条声明");
+  assert.equal(isTailMessage(first.messages[1]), true);
+  // 第二步：宿主只交本轮新消息（不含历史里那条声明）
+  const assistant = { id: "a1", role: "assistant", content: [{ type: "text", text: "调工具" }] };
+  const second = await host.preStep({ kind: "enter", messages: [assistant] }, agent);
+  assert.equal(second.messages.length, 1, "清单没变，不能再追加一条");
+  assert.equal(second.messages[0], assistant, "本轮消息必须原对象返回");
+  const third = await host.preStep({ kind: "enter", messages: [userMessage("u2", "二")] }, agent);
+  assert.equal(third.messages.length, 1, "同一份声明不能每步发一次");
+  assert.equal(third.messages[0].id, "u2");
+  await gate.release(agent);
+});
+
+await check("delta 契约：清单变了才追加一条新的，旧声明不回收也不重复", async () => {
+  const { gate, host, agent } = makeRig({ executor: makePtcExecutor() });
+  mountTailGate({ ctx: host.rootCtx, gate, policy: policyFor() });
+  await gate.attach(agent);
+  await gate.load(agent, ["univer_doc"]);
+  const first = await host.preStep({ kind: "enter", messages: [userMessage("u1", "一")] }, agent);
+  assert.equal(first.messages.length, 2);
+  await gate.load(agent, ["ssh_exec"]);
+  const second = await host.preStep({ kind: "enter", messages: [userMessage("u2", "二")] }, agent);
+  assert.equal(second.messages.length, 2, "清单变了要追加一条新的");
+  const text = messageTextOf(second.messages[1]);
+  assert.ok(text.includes("univer_doc") && text.includes("ssh_exec"), text);
+  // 再下一步（还是同一份清单）：不再追加
+  const third = await host.preStep({ kind: "enter", messages: [userMessage("u3", "三")] }, agent);
+  assert.equal(third.messages.length, 1);
+  await gate.release(agent);
+});
+
+await check("表面自愈：插件重启（内存里没有记录）时按会话表面判断，不重复追加", async () => {
+  const first = makeRig({ executor: makePtcExecutor() });
+  mountTailGate({ ctx: first.host.rootCtx, gate: first.gate, policy: policyFor() });
+  await first.gate.attach(first.agent);
+  await first.gate.load(first.agent, ["univer_doc"]);
+  const text = first.gate.loadedTextFor(first.agent);
+  assert.ok(text.length > 0);
+
+  // 新 rig = 新插件实例（WeakMap 里没有这个 agent 的记录），但会话表面里已经有那条声明。
+  const second = makeRig({ executor: makePtcExecutor() });
+  second.agent.session = {
+    surface: { nodes: [1, 7] },
+    eventAt: (seq) => (seq === 7
+      ? { type: "user/message", data: { id: "gate-tail-x", role: "user", source: { kind: "gate-tail" }, content: [{ type: "text", text }] } }
+      : (seq === 1 ? { type: "user/message", data: userMessage("u1", "一") } : undefined)),
+  };
+  await second.gate.attach(second.agent);
+  await second.gate.load(second.agent, ["univer_doc"]);
+  const decision = await second.host.preStep({ kind: "enter", messages: [userMessage("u2", "二")] }, second.agent);
+  assert.equal(decision.messages.length, 1, "表面里已有同一份声明，不该再追加");
+  await first.gate.release(first.agent);
+  await second.gate.release(second.agent);
+});
+
 await check("同输入字节一致：两次渲染 / 两个独立 rig / 不同加载顺序都逐字节相同", async () => {
   const a = makeRig({ executor: makePtcExecutor() });
   const b = makeRig({ executor: makePtcExecutor() });

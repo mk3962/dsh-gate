@@ -323,7 +323,7 @@ ln -s "$HOME_DIR/local-plugins/dsh-gate" "$PROFILE/node_modules/dsh-gate"   # Wi
 | PTC 会话的 `gate_load` | 工具表冻结：名字仍在 deny 集、工具表字节不变；声明追加为**最后一条 user 消息**（`<gate-loaded>` / `<gate-section>`），已有消息不改、不重排 |
 | `gate_invoke` | 冻结下的日常执行口：临时撤限制 → 宿主完整管线（含 `defineTool` 参数校验）→ `finally` 恢复；宿主侧错误以 `{ isError: true }` 返回 |
 | 追加加载段落（PTC） | 系统提示词**逐字节不变**；段落正文搬进末尾声明；`<gate-catalog>` 也继续保留该段落 |
-| 尾部声明的位置与幂等 | 每步重算：内容不变就复用同一个消息对象（不新建数组）；用户发了新消息就把同一条尾块搬到末尾（id 不变） |
+| 尾部声明的位置与幂等 | 宿主交给 `agent/pre-step` 的只有**本轮新 claim 的消息**（历史不回灌），返回数组只会 `append` 进会话表面 ⇒ 「复用同一条消息」做不到。0.3.1 起按内容去重：**清单没变就一条都不追加**；清单变了才追加一条新的（旧块留在历史里，自然过时）。有 `agent.session` 时还按会话表面判断，声明被压缩掉后会自动补一条 |
 | 技能（0.3.0 接管） | 宿主 `skill` 工具进 deny；目录消息与 `/name` 正文按 `source.kind` 摘掉后由闸门重出（常驻进系统提示词独立段落、按需进 `<gate-catalog>`、正文走 `gate_load`）；`off` 的技能不列不载，`/name` 也不注入 |
 | MCP server（0.3.0 接管） | `gate.json` 的 `mcp.servers` 由 gate 自挂（`ctx.plugin(mcp-client)`）；宿主 loader 行里已有的只观察、不 dispose；工具照旧按 `mcp:<server>` 能力档归层 |
 | 子 agent | 继承同一套全局策略；闸门按 agent 分别记账。**例外**：`origin=subagent` 且授予工具数 ≤ `narrowPassThrough` 的子代理整台跳过闸门（见「策略文件」），`gate_status.passthrough` 可查 |

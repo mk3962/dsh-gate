@@ -2,6 +2,25 @@
 
 版本号遵循语义化版本；格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [0.3.1] — 2026-11-14
+
+### Fixed — PTC 尾部声明每步累积（票 01）
+- **根因是宿主契约而不是复用分支写错**：`dsh-agent-loop/src/agent.ts` 的 `preStep` 里
+  `claimed = this.inbox.claim(target, position.turn)` —— `agent/pre-step` 监听者拿到的
+  `decision.messages` **只是本轮新 claim 的消息**，历史里的尾部块永远不在里面；返回的数组又只会被
+  `append` 进会话表面，摘除历史消息没有通道。所以 `prestep.js` 原来那条「`existing.length === 1` 就
+  原地复用 / 搬到末尾」的分支在真机上一次都命中不了，每步都走 `makeTailMessage`，一步一条。
+- **实测代价**：一条 57 步的会话里 `source.kind === "gate-tail"` 的 user 消息 **57 条**（57 个不同 id、
+  只有 3 种正文），累计 39,884 字符 ≈ **9,971 token**，全部 `surfaceOp: "append"`。
+- **修法**（`lib/prestep.js`）：
+  - `lastEmitted`（`WeakMap<agent, text>`）记住上次**确实追加**的正文；正文没变就不再追加。
+  - `retainedTailText(agent)` 在宿主提供 `agent.session`（`surface.nodes` + `eventAt`）时按会话表面
+    判断「上下文里是否还有这份声明」，插件重启 / 声明被压缩掉之后也能正确决策（读不到就退回内存记录）。
+  - 本轮宿主一条新消息都没交时不再塞声明（避免把空步撑成一次模型调用）。
+  - 历史回灌型宿主（`existing` 出现在 `decision.messages` 里）的复用/搬家分支保留，作为兼容路径。
+- 新增三条回归用例：delta 契约下不累积、清单变化才追加、按会话表面自愈（插件重启不重复发）。
+- 效果：同一会话步数下声明只按「清单变化次数」增长（57 → 3），每步省约 175 token。
+
 ## [0.3.0] — 2026-11-14
 
 ### Added — 技能接管（工单 14）
