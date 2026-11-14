@@ -2,6 +2,37 @@
 
 版本号遵循语义化版本；格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [0.4.1] — 2026-11-15
+
+### Added — gate_search 跨语言别名（生产体检票 03）
+
+- **现象**：185 次 `gate_search` 里中文查询 34 次、**31 次零命中（91.2%）**。模型按用户语言写
+  `记忆` / `天气` / `终端` 全部打空，只能改用英文重试 —— 一次往返 + 一次失败。
+- **根因**：`searchCatalog` 只做名字与英文说明的子串匹配，而名字（`mnemon_remember` /
+  `weather` / `terminal_open`）与宿主 `description` 几乎全是 ASCII ⇒ 中文查询在数学上不可能命中。
+- **修法**：新增 `lib/search-alias.js`（`CJK_ALIASES` 70 组中文词 → 英文词根 +
+  `cjkKeywordsOf` / `hasCjk`）；`searchCatalog` 在原有分档之后加一档 —— 命中别名词根的名字
+  记 25、只在说明里命中记 15。低于精确/前缀/包含/说明包含，高于零 ⇒ **老行为不退化**。
+- **字节影响**：0。别名表只被 `gate_search` 读，不进 `gate-catalog`。
+- **回归**：`test/catalog-search.test.mjs` 新增 2 组，9/9 通过。
+
+### Added — 技能目录可折叠（`catalog.skillGroups`，默认关闭）
+
+- **依据**：57 条技能行占 5,585 字符 / 目录的 37.6%，而 7 天里被 `gate_load` 过的技能只有 5 个。
+- **修法**：`renderCatalog` 新增 `options.skillGroups`；`lib/gate.js` 抽出 `catalogOptionsOf(policy)`，
+  `skillGroups` 严格 `=== true` 才算打开（写 `"true"` / `1` 都不算）。
+- **实测**：57 条技能 / 7 个来源，折叠前 3,248 字符 → 折叠后 900 字符（**省 72%**）。
+  真实目录里技能段 5,585 字符 ⇒ 折叠后约 1,550，净省约 4,000 字符 ≈ 1,080 tok / 请求。
+- **为什么默认关闭**：折叠改 `gate-catalog` 字节，从该段起前缀缓存失效一次。省 token 与
+  一次重装配是用户的取舍，代码只提供开关；不打开时与 0.4.0 **逐字节一致**。
+- **回归**：`test/catalog.test.mjs` 新增 1 组（折叠后每来源一行、描述消失、总长更短；
+  默认与 0.4.0 逐字节一致）。
+
+### Compatibility
+
+- 无新增配置键以外的新接口；`gate_status` 键集不变；`gate_load` / `gate_invoke` 输出形状不变。
+- `catalogOptionsOf` 是内部函数，不在公开面（`test/surface.test.mjs` 的 `ANY` 集合未变）。
+
 ## [0.4.0] — 2026-11-14
 
 ### Changed — 尾块改增量投递（后缀缓存优化）
