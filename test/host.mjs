@@ -109,10 +109,13 @@ export function makeHost(options) {
       visible.set(name, { name, description: "own layer" });
     }
     const restrictable = new Set(namesOf(agent).filter((name) => !ownOf(agent).has(name)));
+    // knownNames = **注册面**（真实宿主口径）：别人的 restrict({allow}) 只收窄 visible，
+    // 不会把它改小。测试要复现这一点时给 agent 传 registered（默认仍等于本 agent 的工具面）。
+    const registered = Array.isArray(agent.registered) ? agent.registered : namesOf(agent);
     return {
       visible,
       restrictableNames: restrictable,
-      knownNames: new Set([...namesOf(agent), ...ownOf(agent)].filter((name) => name !== TRANSPORT)),
+      knownNames: new Set([...registered, ...ownOf(agent)].filter((name) => name !== TRANSPORT)),
     };
   };
 
@@ -189,7 +192,7 @@ export function makeHost(options) {
 
   const makeAgent = (config) => {
     const spec = config || {};
-    const agent = { id: spec.id || "agent-1", names: spec.names, own: spec.own || [] };
+    const agent = { id: spec.id || "agent-1", names: spec.names, own: spec.own || [], registered: spec.registered };
     if (spec.origin !== undefined) agent.session = { header: { origin: spec.origin } };
     const scopedTools = {
       view: () => agentView(agent),

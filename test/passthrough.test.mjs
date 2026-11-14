@@ -93,6 +93,22 @@ check("豁免生效时 gate_status.passthrough 为 true", narrowOut.status !== u
 const [knobOut] = await run([{ id: "child-narrow-3", origin: "subagent", names: [...MNEMON_CHILD_TOOLS, ...OWN], own: OWN }], { narrowPassThrough: 0 });
 check("narrowPassThrough=0 时回到旧行为（deny 非空）", knobOut.deny.length > 0, "deny=" + knobOut.deny.length);
 
+// 真实宿主口径（2026-11-14 复核）：别人的 restrict({allow}) 只收窄 visible，不动 knownNames。
+// 旧实现拿 knownNames 数授予数 ⇒ 恒等于全量注册 ⇒ 豁免永远不触发。
+const [registryWideOut] = await run([{
+  id: "child-allowlist",
+  origin: "subagent",
+  names: [...MNEMON_CHILD_TOOLS, ...OWN],
+  registered: GLOBAL,
+  own: OWN,
+}]);
+check("真实宿主口径：注册面全量、授予面 4 个时仍能豁免", registryWideOut.deny.length === 0, "deny=" + JSON.stringify(registryWideOut.deny.slice(0, 6)));
+check("真实宿主口径：gate_status.passthrough 为 true", registryWideOut.status !== undefined && registryWideOut.status.passthrough === true);
+
+// 反向：注册面全量、授予面也全量（宽子代理）时必须照旧受限，豁免不能白送。
+const [registryWideAll] = await run([{ id: "child-allowlist-wide", origin: "subagent", names: GLOBAL, registered: GLOBAL, own: OWN }]);
+check("真实宿主口径：宽授予面照样受限", registryWideAll.deny.length > 0, "deny=" + registryWideAll.deny.length);
+
 const failed = results.filter((r) => r.ok !== true);
 console.log("\n" + (results.length - failed.length) + "/" + results.length + " passed");
 process.exit(failed.length === 0 ? 0 : 1);
