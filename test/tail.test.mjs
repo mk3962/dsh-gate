@@ -267,6 +267,26 @@ await check("delta 契约：清单没变就一条都不再追加（历史不累�
   await gate.release(agent);
 });
 
+await check("continuation 步（本轮 claimed 为空）照样能补发变化的声明", async () => {
+  const { gate, host, agent } = makeRig({ executor: makePtcExecutor() });
+  mountTailGate({ ctx: host.rootCtx, gate, policy: policyFor() });
+  await gate.attach(agent);
+  await gate.load(agent, ["univer_doc"]);
+  const first = await host.preStep({ kind: "enter", messages: [userMessage("u1", "一")] }, agent);
+  assert.equal(first.messages.length, 2);
+  // 工具循环内部：claimed 是空的（工具结果不进 inbox），此时清单变了必须补一条
+  await gate.load(agent, ["ssh_exec"]);
+  const empty = await host.preStep({ kind: "enter", messages: [] }, agent);
+  assert.equal(empty.messages.length, 1, "claimed 为空也要补发（否则模型永远不知道刚加载了什么）");
+  assert.equal(isTailMessage(empty.messages[0]), true);
+  const text = messageTextOf(empty.messages[0]);
+  assert.ok(text.includes("univer_doc") && text.includes("ssh_exec"), text);
+  // 再往下一步还是空 claimed，但清单没变：不再发
+  const again = await host.preStep({ kind: "enter", messages: [] }, agent);
+  assert.equal(again.messages.length, 0, "清单没变就不再追加");
+  await gate.release(agent);
+});
+
 await check("delta 契约：清单变了才追加一条新的，旧声明不回收也不重复", async () => {
   const { gate, host, agent } = makeRig({ executor: makePtcExecutor() });
   mountTailGate({ ctx: host.rootCtx, gate, policy: policyFor() });
