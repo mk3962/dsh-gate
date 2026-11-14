@@ -9,6 +9,7 @@
  */
 import assert from "node:assert/strict";
 import { normalizeForSearch, searchCatalog } from "../lib/catalog.js";
+import { cjkKeywordsOf, hasCjk } from "../lib/search-alias.js";
 
 let passed = 0;
 const ok = (label) => { passed += 1; console.log("  ok    " + label); };
@@ -93,6 +94,49 @@ const top = (query) => namesOf(searchCatalog(entries, query, 5))[0];
     assert.equal(top(query), want, query + " 应命中 " + want);
   }
   ok("体检里「7 行首句完全相同」的 deck_* 可按自然语言区分");
+}
+
+
+// ── 8. 跨语言别名（0.4.1）：中文查询也能命中（体检票 03：91.2% 零命中） ──────
+{
+  const zhEntries = [
+    { name: "mnemon_remember", description: "Archive one durable insight in a selected provider-backed Memory Space。" },
+    { name: "mnemon_memory_bodies", description: "Inspect a bounded Memory Space catalog。" },
+    { name: "weather", description: "Get current weather and daily forecast for a location。" },
+    { name: "terminal_open", description: "Create a persistent terminal session。" },
+    { name: "excel_read", description: "Read one or all sheets of an existing workbook。" },
+    { name: "slide_create", description: "Create a PowerPoint presentation。" },
+    { name: "subagent", description: "Delegate a self-contained task to a subagent。" },
+    { name: "deck_issue_list", description: "List shared tasks, including readiness, owner, revision。" },
+  ];
+  const first = (q) => namesOf(searchCatalog(zhEntries, q, 5))[0];
+  // 体检里那 14 个中文词挑 8 个必须命中（以前 17 个里 17 个全空）。
+  // 「记忆」会同时命中 mnemon_remember 与 mnemon_memory_bodies（同档 25，按名字排序），
+  // 这里只断言「落到了 mnemon 这一族」—— 搜出来的是候选，模型再挑具体那个。
+  assert.ok(String(first("记忆")).startsWith("mnemon_"), "记忆 → mnemon 族，实际 " + first("记忆"));
+  assert.equal(first("天气"), "weather", "天气 → weather");
+  assert.equal(first("终端"), "terminal_open", "终端 → terminal");
+  assert.equal(first("表格"), "excel_read", "表格 → excel/sheet");
+  assert.equal(first("幻灯片"), "slide_create", "幻灯片 → slide/pptx");
+  assert.equal(first("子代理"), "subagent", "子代理 → subagent");
+  assert.equal(hasCjk("记忆"), true);
+  assert.equal(hasCjk("memory"), false);
+  assert.deepEqual(cjkKeywordsOf("记忆"), ["mnemon", "memory", "recall"], "别名展开保序去重");
+  assert.deepEqual(cjkKeywordsOf("memory"), [], "纯英文查询不展开别名");
+  ok("跨语言别名：体检里打空的 6 个中文词全部命中，纯英文查询不受影响");
+}
+
+// ── 9. 别名档低于精确/前缀/包含：老行为不退化 ─────────────────────────────
+{
+  const mixed = [
+    { name: "weather", description: "Get current weather。" },
+    { name: "weather_forecast", description: "Extended forecast。" },
+  ];
+  // "weather" 精确命中名字（100）必须压过别名词根（25）。
+  assert.equal(namesOf(searchCatalog(mixed, "weather", 2))[0], "weather");
+  // 无别名、无匹配时仍是空数组（不能因为 CJK 分支就把无关条目捞出来）。
+  assert.deepEqual(searchCatalog(mixed, "zzzz", 5), []);
+  ok("别名档不抢精确名的位次；无关查询仍然回空");
 }
 
 console.log("\n全部通过 (" + passed + ")");
