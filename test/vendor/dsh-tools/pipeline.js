@@ -38,7 +38,22 @@ export function invalidArguments(parameters, args) {
   return undefined;
 }
 
+/**
+ * 测试钩子：让接下来 N 次 executeToolBatch 直接抛宿主的批量委派失败。
+ *
+ * 生产体检（2026-11-14）实测这条报错在 gate_call / gate_load(skill) / gate_invoke 上共出现
+ * 95 次，且重试一次就能成 —— gate 侧加「只在文案命中时重试一次」的补偿，这里提供可复现的注入点。
+ */
+let failNextBatch = 0;
+export function failBatchTimes(times) {
+  failNextBatch = Number(times) || 0;
+}
+
 export async function executeToolBatch(input, pipeline, limit) {
+  if (failNextBatch > 0) {
+    failNextBatch -= 1;
+    throw new Error("Tool batch execution failed");
+  }
   const calls = input && Array.isArray(input.calls) ? input.calls : [];
   const tools = pipeline && pipeline.ctx && pipeline.ctx.tools;
   const results = [];

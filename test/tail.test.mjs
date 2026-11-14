@@ -22,6 +22,7 @@ import { mountSectionGate } from "../lib/sections.js";
 import { mountTailGate, isTailMessage, messageTextOf } from "../lib/prestep.js";
 import { registerGateTools } from "../lib/proxy.js";
 import { makeHost, makePtcExecutor, makeNativeExecutor, makeOpaqueExecutor } from "./host.mjs";
+import { failBatchTimes } from "./vendor/dsh-tools/pipeline.js";
 
 let seq = 0;
 const results = [];
@@ -447,6 +448,55 @@ await check("gate_invoke：自调 / 未知 / 上游隐藏是程序错误（抛�
   assert.equal(gate.snapshot(agent).upstreamHidden.includes("read"), true);
   await assert.rejects(() => invoke.execute({ tool: "read" }, exec), /被上游隐藏/);
   lift();
+  await gate.release(agent);
+});
+
+// ── 5b. 宿主批量委派失败的补偿（0.3.3 生产体检） ─────────────────────────────
+await check("宿主批量委派失败：自动重试一次并成功（生产日志里 95 次同一条报错）", async () => {
+  const rig = makeRig({ executor: makePtcExecutor() });
+  const { gate, host, agent } = rig;
+  registerGateTools({ ctx: host.rootCtx, gate, policy: rig.policy });
+  await gate.attach(agent);
+  failBatchTimes(1);
+  const forwarded = await host.tool("gate_invoke").execute({ tool: "ssh_exec", arguments: { command: "echo hi" } }, { agent, signal: undefined });
+  assert.equal(forwarded.isError, false, "第一次批量失败、重试成功 ⇒ 不能把失败交给模型");
+  assert.equal(forwarded.text, 'ssh_exec ok {"command":"echo hi"}');
+  await gate.release(agent);
+});
+
+await check("宿主批量委派失败：连续两次都失败时，文案要说明「参数没错」且只重试一次", async () => {
+  const rig = makeRig({ executor: makePtcExecutor() });
+  const { gate, host, agent } = rig;
+  registerGateTools({ ctx: host.rootCtx, gate, policy: rig.policy });
+  await gate.attach(agent);
+  failBatchTimes(99);
+  const forwarded = await host.tool("gate_invoke").execute({ tool: "ssh_exec", arguments: { command: "echo hi" } }, { agent, signal: undefined });
+  assert.equal(forwarded.isError, true, "两次都失败 ⇒ 仍是 isError 结果");
+  assert.match(forwarded.text, /宿主执行通道暂时不可用/);
+  assert.match(forwarded.text, /参数没有错/);
+  assert.doesNotMatch(forwarded.text, /Tool batch execution failed/, "不能再把宿主内部报错原样丢给模型");
+  failBatchTimes(0);
+  await gate.release(agent);
+});
+
+await check("真实工具报错不触发重试：副作用只做一次（判据是「抛」不是「文案」）", async () => {
+  const rig = makeRig({ executor: makePtcExecutor() });
+  const { gate, host, agent } = rig;
+  failBatchTimes(0);
+  let runs = 0;
+  host.registry.set("tail_count", {
+    name: "tail_count",
+    description: "计数后失败。",
+    // 目标工具自己抛的错误文本恰好与宿主文案相同 —— 宿主管线会把它变成结果（不是抛），
+    // 所以不会命中重试判据。这条用例守的就是「别因为文案相同把副作用做两遍」。
+    execute: async () => { runs += 1; throw new Error("Tool batch execution failed"); },
+  });
+  registerGateTools({ ctx: host.rootCtx, gate, policy: rig.policy });
+  await gate.attach(agent);
+  const forwarded = await host.tool("gate_invoke").execute({ tool: "tail_count", arguments: {} }, { agent, signal: undefined });
+  assert.equal(forwarded.isError, true);
+  assert.equal(runs, 1, "工具只执行一次（重试判据只认宿主抛出的批量失败）");
+  assert.match(forwarded.text, /Tool batch execution failed/, "工具自己的错误原样返回，不被改写成「通道不可用」");
   await gate.release(agent);
 });
 
