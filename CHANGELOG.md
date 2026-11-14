@@ -2,6 +2,35 @@
 
 版本号遵循语义化版本；格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [0.4.0] — 2026-11-14
+
+### Changed — 尾块改增量投递（后缀缓存优化）
+
+- **动机**：0.3.x 每次清单变化就追加一条**全量** `<gate-loaded>` 快照。会话内加载 n 次，
+  累计字符 ≈ n×(190+110n) —— 20 次加载约 26,900 字符，而增量只需 6,000。差额会永久
+  留在前缀里，此后每个请求都重付一遍。（量化见 `.scratch/dsh-gate-尾块增量注入-…/issues/05`）
+- **改法**（三个文件）：
+  - `lib/gate.js`：`entry.emitted`（Set）与 `loaded` 分开记「模型已被告知过什么」；
+    `loadedTextFor` 拆出 `loadedBlockFor(agent, only)`；新增 `deltaTextFor(agent, names)`
+    返回 `{ text, fresh }`（只渲染未投递过的签名并记账）、`indexTextFor(agent)`（一行名字索引）。
+  - `lib/proxy.js`：`gate_load` 输出加 `deltaText`，签名跟在**本条工具结果**里 ——
+    模型在拿到「已加载」的同一个回合就看到参数，不必再等下一步的尾部 user 消息。
+  - `lib/prestep.js`：`mountTailGate` 改用 `indexTextFor`，尾部只留一行
+    「本次会话已加载 N 个：a, b, c」。
+- **纪律不变**：已投递的签名**永不重发**，旧块留在原处自然过时、不搬动、不删除；
+  模型靠块内索引行拼全集。压缩把块吃掉后，索引行会在下一步自愈补一条
+  （实测 116 次压缩后 gate-tail 存活 0，自愈是主路径不是兜底）。
+- **实测字节账**（10 个真实工具名）：全量重发累计 3,766 字符 → 增量累计 2,562 字符，
+  **省 32%**；尾部索引行 206 字符且只在清单变化时发一条。
+- **测试**：`test/tail.test.mjs` 新增 5 条回归（只发新增 / 不重复投递 / 索引反映全集 /
+  增量累计<全量 / 尾部不含签名），3 处旧断言的取样点从尾块搬到 `deltaTextFor`；
+  `test/surface.test.mjs` 公开面加 3 个新口。`npm test` 全绿（tail 37/37）。
+
+### Compatibility
+
+- `loadedTextFor(agent)` 保留原签名与原语义（全量快照），供测试、调试与外部调用方使用。
+- 无新增配置键：不带回退开关，回退方式是装回旧版本。
+
 ## [0.3.3] — 2026-11-14
 
 ### Fixed — gate_search 的归一化（生产体检 P0）
