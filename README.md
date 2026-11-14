@@ -362,6 +362,11 @@ ln -s "$HOME_DIR/local-plugins/dsh-gate" "$PROFILE/node_modules/dsh-gate"   # Wi
 
 ## 兼容性与已知限制
 
+- **`gate_load` 只看本插件的候选集，不复核别人的 `restrict`**（0.4.1 复核结论）：别人藏掉、
+  本插件候选集里还在的名字会被报成「已加载」，直到 `gate_invoke` 走宿主 `executable()`
+  得到 `UNKNOWN_TOOL` 才暴露。修它要么在热路径上每次撤一次限制（重开 0.3.4 堵上的
+  重载泄漏口子），要么做成 `gate_invoke` 错误路径上的自愈 —— 目前选择**不修**，因为
+  两套 deny 重叠时本机结构上触发不了，且失败是一次明确报错而不是错误执行。
 - **两类工具平面**（v0.1.6 起说清楚，旧文档写反了）：
   - **全局层**：插件注册的工具（MCP 工具、`ws_mcp_call`、office/univer 之类）与宿主全局注册的工具 ——
     闸门默认**全权管理**（默认层 + `overrides` 说了算）。
