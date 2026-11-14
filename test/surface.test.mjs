@@ -43,7 +43,9 @@ const check = async (label, fn) => {
 // renderSkill（pre-step 的 /name 注入，不记加载态）/ loadSkill（gate_load 的技能分支）。
 // 工单 15 加的三个 MCP 口：startMcp（启动自挂）/ reapplyAll（挂/卸后刷新全部 agent）/
 // mcpManager（HTTP 层读写服务器清单；manager 自己只暴露 mount/unmount/update/list/state/disposeAll）。
-const ANY = new Set(["attach", "listAgents", "restrictionState", "snapshot", "capabilityView", "knownNames", "canInvoke", "loadedTextFor", "planSections", "reapply", "reapplyAll", "isApplying", "load", "callThrough", "catalogFor", "searchEntries", "rememberSkills", "recordSections", "refreshSkills", "ensureSkills", "skillSections", "renderSkill", "loadSkill", "release", "releaseAll", "startMcp", "mcpManager"]);
+// 0.4.0 加的四个增量口：deltaTextFor（本次要投递的签名）/ indexTextFor（尾部索引行）/
+// loadedBlockFor（按名子集渲染声明块）/ 其余不变。
+const ANY = new Set(["attach", "listAgents", "restrictionState", "snapshot", "capabilityView", "knownNames", "canInvoke", "loadedTextFor", "loadedBlockFor", "deltaTextFor", "indexTextFor", "planSections", "reapply", "reapplyAll", "isApplying", "load", "callThrough", "catalogFor", "searchEntries", "rememberSkills", "recordSections", "refreshSkills", "ensureSkills", "skillSections", "renderSkill", "loadSkill", "release", "releaseAll", "startMcp", "mcpManager"]);
 
 await check("公开面恰好是这组能力：内部表与内部函数一个都不外露", async () => {
   const host = makeHost({ names: NAMES });

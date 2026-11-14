@@ -188,9 +188,10 @@ await check("尾部声明是一条 user 消息，追加在末尾，已有消息�
   assert.equal(tail.role, "user");
   assert.ok(messageTextOf(tail).includes("<gate-loaded>"));
   assert.ok(messageTextOf(tail).includes("gate_invoke"));
-  assert.ok(messageTextOf(tail).includes("univer_doc()"), "无参数工具也要有签名");
-  const signature = messageTextOf(tail);
-  assert.ok(signature.includes("- tail_sig({ text: string, limit?: number })"), "声明里要有必填/可选标记的紧凑签名：" + signature);
+  // 0.4.0：签名走增量投递（gate_load 的工具结果），尾部只剩索引行。
+  const sig = gate.deltaTextFor(agent, ["univer_doc", "tail_sig"]);
+  assert.ok(sig.text.includes("univer_doc()"), "无参数工具也要有签名");
+  assert.ok(sig.text.includes("- tail_sig({ text: string, limit?: number })"), "声明里要有必填/可选标记的紧凑签名：" + sig.text);
   await gate.release(agent);
 });
 
@@ -526,13 +527,19 @@ await check("段落：冻结下加载段落不进系统提示词，正文搬到�
   await gate.load(agent, ["section:free-search:engines"]);
   const after = await host.assemble(assembly(), agent);
   assert.equal(JSON.stringify(after.sections), promptBefore, "加载段落不许改系统提示词（缓存纪律）");
-  const decision = await host.preStep({ kind: "enter", messages: [userMessage("u1", "hi")] }, agent);
-  const tail = decision.messages[decision.messages.length - 1];
-  assert.equal(isTailMessage(tail), true);
-  const text = messageTextOf(tail);
+  // 0.4.0：段落正文与工具签名一样走**增量投递**（在加载那一刻渲染一次），
+  // 尾部只留索引行 —— 所以正文断言改在 deltaTextFor 的产物上做。
+  const delta = gate.deltaTextFor(agent, ["section:free-search:engines"]);
+  const text = delta.text;
   assert.ok(text.includes('<gate-section name="free-search:engines">'), text);
   assert.ok(text.includes("ENGINES-BODY-42"), "段落正文必须出现");
   assert.equal(text.includes("you are dsh"), false, "常驻段落不该被重复搬一遍");
+  const decision = await host.preStep({ kind: "enter", messages: [userMessage("u1", "hi")] }, agent);
+  const tail = decision.messages[decision.messages.length - 1];
+  assert.equal(isTailMessage(tail), true);
+  const tailText = messageTextOf(tail);
+  assert.equal(tailText.includes("ENGINES-BODY-42"), false, "0.4.0 尾部不再重复正文（签名/正文都在增量块里）");
+  assert.ok(tailText.includes("本次会话已加载"), "尾部必须留名字索引：" + tailText);
   await gate.release(agent);
 });
 
@@ -660,6 +667,85 @@ await check("段落正文定格：加载时从 inventory 抄正文，后续装�
   const second = gate.loadedTextFor(agent);
   assert.equal(second, first, "加载后改装配文本，尾部声明必须逐字节不变");
   assert.equal(second.includes("BODY-B"), false, "后改的正文不许漏进尾部声明");
+  await gate.release(agent);
+});
+
+// ── 10. 0.4.0 增量投递：只发新增、索引给全集、不覆盖工具表 ──────────────────
+await check("0.4.0 增量：第一次只发本次新增的签名，块头改口径", async () => {
+  const rig = makeRig({ executor: makePtcExecutor() });
+  const { gate, host, agent } = rig;
+  registerGateTools({ ctx: host.rootCtx, gate, policy: rig.policy });
+  await gate.attach(agent);
+  await gate.load(agent, ["univer_doc"]);
+  const first = gate.deltaTextFor(agent, ["univer_doc"]);
+  assert.ok(first.text.includes("本次新增"), "增量块表头必须是「本次新增」：" + first.text);
+  assert.ok(first.text.includes("univer_doc"), first.text);
+  assert.ok(first.text.includes("本次会话已加载 1 个"), "必须带名字索引：" + first.text);
+  assert.deepEqual(first.fresh, ["univer_doc"]);
+  await gate.release(agent);
+});
+
+await check("0.4.0 增量：同一工具第二次加载不再重复投递（省字节的关键）", async () => {
+  const rig = makeRig({ executor: makePtcExecutor() });
+  const { gate, host, agent } = rig;
+  await gate.attach(agent);
+  await gate.load(agent, ["univer_doc"]);
+  gate.deltaTextFor(agent, ["univer_doc"]);
+  const again = gate.deltaTextFor(agent, ["univer_doc"]);
+  assert.equal(again.text, "", "已投递过的签名必须一条都不再发");
+  assert.deepEqual(again.fresh, []);
+  await gate.release(agent);
+});
+
+await check("0.4.0 增量：第二次加载只发第二个，索引行变成 2 个", async () => {
+  const rig = makeRig({ executor: makePtcExecutor() });
+  const { gate, host, agent } = rig;
+  await gate.attach(agent);
+  await gate.load(agent, ["univer_doc"]);
+  gate.deltaTextFor(agent, ["univer_doc"]);
+  await gate.load(agent, ["ssh_exec"]);
+  const second = gate.deltaTextFor(agent, ["ssh_exec"]);
+  assert.deepEqual(second.fresh, ["ssh_exec"]);
+  assert.ok(second.text.includes("- ssh_exec("), second.text);
+  assert.equal(second.text.includes("- univer_doc("), false, "已投递过的签名不许再出现（索引行里的名字除外）");
+  assert.ok(second.text.includes("本次会话已加载 2 个"), "索引必须反映全集：" + second.text);
+  assert.ok(second.text.includes("univer_doc"), "索引行必须列出全集的名字");
+  await gate.release(agent);
+});
+
+await check("0.4.0 增量：字节账 —— 20 次加载的增量累计远小于全量重发", async () => {
+  const rig = makeRig({ executor: makePtcExecutor() });
+  const { gate, host, agent } = rig;
+  await gate.attach(agent);
+  const names = [...(rig.host.registry ?? new Map()).keys()]
+    .filter((name) => !name.startsWith("gate_") && name !== "skill")
+    .slice(0, 8);
+  assert.ok(names.length >= 3, "测试宿主里至少要有 3 个可加载工具");
+  let fullTotal = 0;
+  let deltaTotal = 0;
+  const loadedSoFar = [];
+  for (const name of names) {
+    await gate.load(agent, [name]);
+    loadedSoFar.push(name);
+    fullTotal += gate.loadedTextFor(agent).length;
+    deltaTotal += gate.deltaTextFor(agent, [name]).text.length;
+  }
+  assert.ok(deltaTotal < fullTotal, "增量累计(" + deltaTotal + ")必须小于全量重发累计(" + fullTotal + ")");
+  await gate.release(agent);
+});
+
+await check("0.4.0 尾部：只发索引行，不含签名与段落正文", async () => {
+  const rig = makeRig({ executor: makePtcExecutor() });
+  const { gate, host, agent, policy } = rig;
+  mountTailGate({ ctx: host.rootCtx, gate, policy });
+  await gate.attach(agent);
+  await gate.load(agent, ["univer_doc"]);
+  gate.deltaTextFor(agent, ["univer_doc"]);
+  const decision = await host.preStep({ kind: "enter", messages: [userMessage("u1", "hi")] }, agent);
+  const tail = decision.messages[decision.messages.length - 1];
+  const text = messageTextOf(tail);
+  assert.ok(text.includes("本次会话已加载 1 个"), text);
+  assert.equal(text.includes("univer_doc()"), false, "尾部不许重复签名：" + text);
   await gate.release(agent);
 });
 
