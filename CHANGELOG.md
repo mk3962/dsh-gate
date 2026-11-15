@@ -2,6 +2,50 @@
 
 版本号遵循语义化版本；格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [0.5.0] — 2026-11-15
+
+### Added — 面板三页签按来源折叠（能力 / 技能 / MCP）
+
+- **动机**：103 条能力平铺成一屏，`native` 一个桶就占 84 行；57 条技能占 11 个 provider 却混在一张表里，
+  想「看看 univer 那几个」只能靠搜索。折叠的价值在**扫视**，不在省钱（面板不进上下文）。
+- **分组口径**（实测分布见 `.scratch/dsh-gate-panel-ui-0.5.0/research/03-grouping-distribution.md`）：
+  - 能力页一级 = `kind`：native 84 / plugin 9 / section 6 / unknown 3 / mcp 1。**没有**真实 source 跨 kind，
+    双层分组无收益，所以组内保持现有行；`native` 这个超过 24 行的大桶在桶内再按档位分二级（按需 66 / 常驻 18）。
+  - 技能页一级 = `provider`：bundled-mattpocock 27 / univer 12 / filesystem 9 / runtime 2 / 其余 7 个各 1；
+    `skills.imports` 导入的技能归「导入」组。
+  - MCP 页一级 = `state`（owned / external / stopped / unavailable）：实测只有 2 个 server，
+    所以**只有一个分组时不折叠**，平铺照旧。
+- **交互**：所有分组默认收起（大表默认展开会退回原样）；组行显示「N 条 · 档位分布」；搜索词命中时
+  自动展开命中的分组，清空搜索后回到用户手动开的组（`openGroups` 里没写过的键跟随搜索）。
+- **面**：纯客户端（`client/index.js`），目录字节 0 影响、`gate-catalog` / `gate_status` 不变，无新配置键。
+
+### Added — 技能页冷启动清单（未装配也能看到技能）
+
+- **现象**：新开一个会话、还没发第一条消息时，技能页写「本会话还没有装配过」——因为清单只来自
+  pre-step 解析到的宿主 `skill-catalog` 消息，没装配就什么都没有。
+- **修法**：`lib/skills.js` 新增 `prescanHostSkills(ctx,{preset,cwd,signal,timeoutMs})`，直接读宿主
+  registry：`ctx.get('agentPresets').acquireScope(preset)` 拿 preset 的 standing scope（只 +1 引用、
+  不重 mount）→ `ctx.skills.snapshot({cwd,signal,scope})` → 过滤 `modelInvocable===false` → 映射成技能行。
+  1500 ms 超时兜底；租约在 `finally` 里用 `Symbol.asyncDispose` 释放。本机实测 10.7 ms（12 根 / 66 个 SKILL.md）。
+- **服务端**：`GET /skills` 与四处 POST 都先 `await prescanFor(want)`，`skillsPayload(want, prescan)`
+  **保持同步**，只在真清单为空时填、行标 `prescan:true`；顶层新增
+  `prescan:{active,scoped,preset,cwd,complete,at,reason}`。缓存 10 s（`complete:false` 时 2 s）+
+  `ctx.on('skills/change')` 立即失效。服务缺失 ⇒ `active:false` + `reason`，**不当成「没有技能」**。
+- **一个反直觉事实**：有 agent ≠ 有技能表。宿主在 `agent/created` 就挂上闸门，而技能表由 pre-step 的
+  `refreshSkills` 在**第一条消息**时填，所以新建会话是「有 agent + 空表」。因此 `agent-live` 只在技能表
+  已经非空时才返回，空表照扫（否则本票目的落空）。
+- **降级**：拿不到 preset scope 时标 `scoped:false`，UI 明说「provider 归属可能与装配后不同」
+  （`~/.dsh/skills` 会落到 global 层第二个 filesystem 实例名下）；`cwd` 用宿主默认工作目录，
+  不猜工作区根 ⇒ project 级技能仍可能缺席。
+- **回归**：`test/server-skills.test.mjs` 补 4 组（预扫描正常 / `acquireScope` 抛错 / 服务缺失 /
+  有 agent 但空表），顶层键断言同步加 `prescan`；全套 20 套件通过。
+
+### Compatibility
+
+- `gate_status` 仍是 18 键；`gate-catalog` 字节不变；`gate_load` / `gate_invoke` 输出形状不变。
+- `GET /api/dsh-gate/skills` 顶层多一个 `prescan` 键（三键以外不变），老客户端忽略即可。
+- 无新增 `gate.json` 键。
+
 ## [0.4.1] — 2026-11-15
 
 ### Added — gate_search 跨语言别名（生产体检票 03）

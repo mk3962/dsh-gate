@@ -35,6 +35,17 @@ window.__ModuleLoader__.load({
       ".dshg-btn.is-danger{color:var(--dshg-error);border-color:var(--dshg-error)}",
       ".dshg-btn.is-on{background:var(--dshg-hover)}",
       ".dshg-list{display:flex;flex-direction:column}",
+      ".dshg-group{display:flex;flex-direction:column;border-top:1px solid var(--dshg-border)}",
+      ".dshg-group:first-child{border-top:0}",
+      ".dshg-groupHead{display:flex;gap:8px;align-items:center;flex-wrap:wrap;width:100%;box-sizing:border-box;background:transparent;border:0;padding:8px 12px;cursor:pointer;font-family:inherit;font-size:12px;color:inherit;text-align:left}",
+      ".dshg-groupHead:hover{background:var(--dshg-hover)}",
+      ".dshg-groupCaret{color:var(--dshg-faint);font-size:10px;flex:0 0 auto;width:9px}",
+      ".dshg-groupName{font-weight:650;word-break:break-all}",
+      ".dshg-groupCount{color:var(--dshg-sub);font-size:11px}",
+      ".dshg-groupBody{display:flex;flex-direction:column;margin:0 12px 8px 30px;padding-left:8px;border-left:2px solid var(--dshg-border2)}",
+      ".dshg-groupRow{background:var(--dshg-layer)}",
+      ".dshg-groupRow td{padding:0;border-top:1px solid var(--dshg-border)}",
+      ".dshg-groupRow .dshg-groupHead{padding:7px 8px}",
       ".dshg-cap{display:flex;flex-direction:column;gap:8px;padding:9px 12px;border-top:1px solid var(--dshg-border)}",
       ".dshg-cap:first-child{border-top:0}",
       ".dshg-capMain{display:flex;gap:9px;align-items:flex-start;flex-wrap:wrap}",
@@ -324,6 +335,9 @@ window.__ModuleLoader__.load({
       const [mcpConfirm, setMcpConfirm] = react.useState(null);
       const [mcpDraft, setMcpDraft] = react.useState({ name: "", transport: "stdio", command: "", args: "", url: "" });
       const [enabledConfirm, setEnabledConfirm] = react.useState(false);
+      // 0.5.0：一级「来源目录」的展开态。键形如 caps:native / caps:native/2 / skills:宿主:univer / mcp:external。
+      // 未写过的键 = 跟随搜索：搜索有词就自动展开，没搜索词就默认收起。
+      const [openGroups, setOpenGroups] = react.useState({});
 
       const reload = react.useCallback(async (message) => {
         setLoading(true);
@@ -888,6 +902,10 @@ window.__ModuleLoader__.load({
         return haystack.indexOf(skillQueryText) >= 0;
       });
       const skillOffList = listOf(skillsData && skillsData.off);
+      // 0.5.0 冷启动预扫描（服务端 GET /skills 的 prescan 段）：没有 agent 时直接读宿主 registry。
+      const prescanInfo = skillsData !== null && isObject(skillsData.prescan) ? skillsData.prescan : null;
+      const prescanActive = prescanInfo !== null && prescanInfo.active === true;
+      const prescanShaky = prescanActive && (prescanInfo.complete === false || prescanInfo.scoped === false);
       const stageSkillTier = (row, tier) => {
         const base = tierOf(row.tier, skillsDefaultTier);
         setPendingSkills((previous) => {
@@ -1274,7 +1292,9 @@ window.__ModuleLoader__.load({
           h("td", null,
             h("div", { className: "dshg-mono", title: row.name }, row.name),
             row.path ? h("div", { className: "dshg-hint dshg-mono", title: row.path }, row.path) : null),
-          h("td", null, h("span", { className: "dshg-badge", "data-origin": row.origin }, ORIGIN_LABEL[row.origin] || row.origin)),
+          h("td", null,
+            h("span", { className: "dshg-badge", "data-origin": row.origin }, ORIGIN_LABEL[row.origin] || row.origin),
+            row.prescan ? h("span", { className: "dshg-tag is-business", key: "prescan", title: "预扫描：本会话还没装配过，这份清单直接读宿主 registry（provider / project 技能可能与装配后不同）" }, "预扫描") : null),
           h("td", { className: "dshg-hideSm" }, h("span", { className: "dshg-hint" }, row.provider || "—")),
           h("td", null,
             row.shadowed
@@ -1293,6 +1313,21 @@ window.__ModuleLoader__.load({
           h("td", null, h("span", { className: "dshg-hint" }, row.shadowed ? "不可用" : row.capability || "—")));
       };
 
+      /* 技能页：一级 provider（宿主:xxx / 导入:xxx）；真机 57 条实测 11 个来源。 */
+      const skillSearching = skillQuery.trim().length > 0;
+      const skillGroupList = (() => {
+        const buckets = new Map();
+        for (const row of filteredSkills) {
+          const provider = typeof row.provider === "string" && row.provider.length > 0 ? row.provider : "";
+          const name = row.origin === "import"
+            ? "导入:" + (provider || "gate-import")
+            : "宿主:" + (provider || "未标注 provider");
+          if (!buckets.has(name)) buckets.set(name, []);
+          buckets.get(name).push(row);
+        }
+        return Array.from(buckets.entries()).sort((left, right) => right[1].length - left[1].length || (left[0] < right[0] ? -1 : 1));
+      })();
+
       const renderSkillsTab = () => {
         if (skillsError) {
           return h("div", { className: "dshg-card" },
@@ -1304,7 +1339,10 @@ window.__ModuleLoader__.load({
         if (skillsData === null) return h("div", { className: "dshg-empty" }, "技能表载入中…");
         return h("div", { className: "dshg-card" },
           h("div", { className: "dshg-cardHead" },
-            h("span", null, "技能（" + filteredSkills.length + " / " + visibleSkillCount + "）"),
+            h("span", null, "技能（" + filteredSkills.length + " / " + visibleSkillCount + "）· " + skillGroupList.length + " 个来源目录"),
+            prescanActive
+              ? h("span", { key: "prescanNote", className: "dshg-tag is-business", title: "服务端在无 agent 装配时直读宿主 registry：preset scope=" + (prescanInfo.scoped === true ? "已取到" : "未取到") + " · complete=" + (prescanInfo.complete === false ? "false" : "true") }, "预扫描清单")
+              : null,
             h("span", { className: "dshg-note" }, skillsDirty ? "有未保存改动" : "与策略文件同步"),
             h("button", { className: "dshg-btn", onClick: discardSkills, disabled: !skillsDirty || skillsSaving }, "放弃改动"),
             h("button", {
@@ -1324,6 +1362,13 @@ window.__ModuleLoader__.load({
                 ? "gate 接管：宿主 skill 工具被 deny，目录与正文由 gate 自己出。"
                 : "接管关闭：宿主 skill 工具与目录照旧生效，下面的档位只影响 gate 自己的目录与 gate_load。")),
             h("div", { className: "dshg-note" }, "档位效果：" + SKILL_TIER_NOTE),
+            prescanActive
+              ? h("div", { className: "dshg-alert", "data-tone": prescanShaky ? "warn" : "ok" },
+                  "预扫描（本会话还没装配过）：这份清单由服务端直接问宿主 skills registry 得来" +
+                  (prescanInfo.scoped === true ? "（已按 preset scope 取，来源与装配后一致）" : "（没取到 preset scope，只到 global 层 ⇒ provider 归属可能与装配后不同）") +
+                  (prescanInfo.complete === false ? "；宿主这次只给了部分名单（complete=false），别当全集看。" : "。") +
+                  "发第一条消息后由装配后的真清单覆盖。")
+              : null,
             skillOffList.length > 0
               ? h("div", { className: "dshg-hint" }, "skills.off 旧关闭清单（0.1.8 口径；0.3.0 起「关闭」写成能力条目 skill:<名字>）：" + skillOffList.join("、"))
               : null,
@@ -1365,7 +1410,13 @@ window.__ModuleLoader__.load({
               }),
               h("button", { className: "dshg-btn", onClick: () => setSkillQuery(""), disabled: skillQuery.length === 0 }, "清除筛选")),
             filteredSkills.length === 0
-              ? h("div", { className: "dshg-empty" }, visibleSkillCount === 0 ? (state.agent ? "本会话还没有装配过一次：技能清单在第一次请求后出现。" : "还没有技能：gate 没拿到宿主技能，也没有导入目录。") : "没有匹配的技能。")
+              ? h("div", { className: "dshg-empty" }, visibleSkillCount > 0
+                ? "没有匹配的技能。"
+                : prescanActive
+                  ? "预扫描读到了清单，但没有一条通过过滤。"
+                  : state.agent
+                    ? "本会话还没有装配过一次：技能清单在第一次请求后出现（宿主 skills 服务此刻不可读，见上方说明）。"
+                    : "还没有技能：gate 没拿到宿主技能，也没有导入目录。")
               : h("div", { className: "dshg-tableWrap" },
                   h("table", { className: "dshg-table" },
                     h("thead", null, h("tr", null,
@@ -1375,7 +1426,16 @@ window.__ModuleLoader__.load({
                       h("th", null, "档位"),
                       h("th", { className: "dshg-hideSm" }, "描述"),
                       h("th", null, "能力"))),
-                    h("tbody", null, filteredSkills.map(renderSkillRow)))),
+                    h("tbody", null, skillGroupList.map((entry) => {
+                      const key = "skills:" + entry[0];
+                      const open = groupIsOpen(key, skillSearching);
+                      return [
+                        h("tr", { className: "dshg-groupRow", key: key },
+                          h("td", { colSpan: 6 },
+                            groupHead(key, entry[0], entry[1], tierChips(entry[1], skillTierOf), skillSearching))),
+                        ...(open ? entry[1].map(renderSkillRow) : []),
+                      ];
+                    })))),
             skillsDirty
               ? h("div", { className: "dshg-preview" },
                   Object.keys(pendingSkills).map((name) => {
@@ -1429,6 +1489,22 @@ window.__ModuleLoader__.load({
                   : h("button", { className: "dshg-btn", key: "del", disabled: !mcpWritable, onClick: () => setMcpConfirm(name) }, "删除"))
             : h("span", { className: "dshg-hint" }, "宿主配置，gate 只能观察")));
       };
+
+      /* MCP 页：一级按 state（gate 托管 / 宿主托管 / 已停止 / 不可用）；只有一组时平铺，不制造空目录。 */
+      const MCP_STATE_ORDER = ["owned", "external", "stopped", "unavailable"];
+      const mcpGroupList = (() => {
+        const buckets = new Map();
+        for (const row of mcpServers) {
+          const stateName = row && typeof row.state === "string" ? row.state : "unavailable";
+          if (!buckets.has(stateName)) buckets.set(stateName, []);
+          buckets.get(stateName).push(row);
+        }
+        return Array.from(buckets.entries()).sort((left, right) => {
+          const leftOrder = MCP_STATE_ORDER.indexOf(left[0]);
+          const rightOrder = MCP_STATE_ORDER.indexOf(right[0]);
+          return (leftOrder < 0 ? 9 : leftOrder) - (rightOrder < 0 ? 9 : rightOrder);
+        });
+      })();
 
       const renderMcpTab = () => {
         if (mcpStatus === "missing") {
@@ -1502,15 +1578,112 @@ window.__ModuleLoader__.load({
                       h("th", null, "enabled"),
                       h("th", null, "工具数"),
                       h("th", null, "操作"))),
-                    h("tbody", null, mcpServers.map(renderMcpRow)))),
+                    h("tbody", null, mcpGroupList.length <= 1
+                      ? mcpServers.map(renderMcpRow)
+                      : mcpGroupList.map((entry) => {
+                          const key = "mcp:" + entry[0];
+                          const open = groupIsOpen(key, false);
+                          const label = MCP_STATE_LABEL[entry[0]] || entry[0];
+                          return [
+                            h("tr", { className: "dshg-groupRow", key: key },
+                              h("td", { colSpan: 7 }, groupHead(key, label, entry[1], null, false))),
+                            ...(open ? entry[1].map(renderMcpRow) : []),
+                          ];
+                        })))),
             h("div", { className: "dshg-hint" }, "连接态（连上/超时）由宿主 MCP 客户端给；gate 只观察，不谎报。")));
+      };
+
+      /* ── 0.5.0 一级「来源目录」：三页签共用一套折叠头 ────────────────────────
+       * 口径（票 01 用户裁决 + 票 03 实测）：能力页一级按 kind、大桶再按档位收一层；
+       * 技能页一级按 provider（宿主/导入）；MCP 页一级按 state，只有一组时平铺。
+       * 未写过的展开态跟随搜索：搜索有词自动展开，没词默认收起（省眼优先）。
+       */
+      const groupIsOpen = (key, searching) => {
+        const stored = openGroups[key];
+        if (stored === undefined) return searching === true;
+        return stored === true;
+      };
+      const toggleGroup = (key) => setOpenGroups((previous) => Object.assign({}, previous, {
+        [key]: !(previous[key] === undefined ? false : previous[key] === true),
+      }));
+      const tierChips = (list, tierOfRow) => {
+        const counts = { 0: 0, 1: 0, 2: 0 };
+        for (const row of list) {
+          const tier = Number(tierOfRow(row));
+          if (tier === 0 || tier === 1 || tier === 2) counts[tier] += 1;
+        }
+        return TIER_ORDER.filter((tier) => counts[tier] > 0)
+          .map((tier) => h("span", { className: "dshg-tag", key: "tier" + tier, title: "这一组里「" + tierLabel(tier) + "」的条数" }, tierLabel(tier) + " " + counts[tier]));
+      };
+      const groupHead = (key, name, list, counts, searching) => {
+        const open = groupIsOpen(key, searching);
+        return h("button", {
+          key: "head:" + key,
+          type: "button",
+          className: "dshg-groupHead",
+          "aria-expanded": open,
+          title: open ? "收起这一组" : "展开这一组（" + list.length + " 条）",
+          onClick: () => toggleGroup(key),
+        },
+          h("span", { className: "dshg-groupCaret" }, open ? "▾" : "▸"),
+          h("span", { className: "dshg-groupName" }, name),
+          h("span", { className: "dshg-groupCount" }, list.length + " 条"),
+          counts || null);
+      };
+      const groupBody = (key, open, children) => (open
+        ? h("div", { className: "dshg-groupBody", key: "body:" + key }, children)
+        : null);
+
+      /* 能力页：一级 kind；超过 24 行的大桶（实测只有 native 84 行）桶内再按档位收一层。 */
+      const capsSearching = query.trim().length > 0;
+      const capsGroupList = (() => {
+        const buckets = new Map();
+        for (const row of filteredRows) {
+          const kind = KIND_LABEL[row.kind] === undefined ? kindOf(row.id) : row.kind;
+          if (!buckets.has(kind)) buckets.set(kind, []);
+          buckets.get(kind).push(row);
+        }
+        return Array.from(buckets.entries()).sort((left, right) => {
+          const leftOrder = KIND_ORDER[left[0]] === undefined ? 9 : KIND_ORDER[left[0]];
+          const rightOrder = KIND_ORDER[right[0]] === undefined ? 9 : KIND_ORDER[right[0]];
+          if (leftOrder !== rightOrder) return leftOrder - rightOrder;
+          return left[0] < right[0] ? -1 : 1;
+        });
+      })();
+
+      const renderCapsGroup = (kind, list) => {
+        const key = "caps:" + kind;
+        const open = groupIsOpen(key, capsSearching);
+        const counts = tierChips(list, rowTargetTier);
+        let children;
+        if (list.length <= 24) {
+          children = list.map(renderRow);
+        } else {
+          const tiers = new Map();
+          for (const row of list) {
+            const tier = Number(rowTargetTier(row));
+            if (!tiers.has(tier)) tiers.set(tier, []);
+            tiers.get(tier).push(row);
+          }
+          children = TIER_ORDER.filter((tier) => tiers.has(tier)).map((tier) => {
+            const subKey = key + "/" + tier;
+            const subList = tiers.get(tier);
+            const subOpen = groupIsOpen(subKey, capsSearching);
+            return h("div", { className: "dshg-group", key: subKey },
+              groupHead(subKey, "档位 · " + tierLabel(tier), subList, null, capsSearching),
+              groupBody(subKey, subOpen, subList.map(renderRow)));
+          });
+        }
+        return h("div", { className: "dshg-group", key: key },
+          groupHead(key, KIND_LABEL[kind] || kind, list, counts, capsSearching),
+          groupBody(key, open, children));
       };
 
       const renderCapsTab = () => h("div", { className: "dshg-tabBody" },
         h("div", { className: "dshg-card" },
           h("div", { className: "dshg-cardHead" },
             h("span", null, "能力（" + filteredRows.length + " / " + rows.length + "）"),
-            h("span", { className: "dshg-note" }, "一个能力一个开关；点档位先看影响再确认")),
+            h("span", { className: "dshg-note" }, capsGroupList.length + " 个来源目录 · 一个能力一个开关；点档位先看影响再确认")),
           h("div", { className: "dshg-cardBody" },
             h("div", { className: "dshg-filters" },
               h("input", {
@@ -1529,8 +1702,9 @@ window.__ModuleLoader__.load({
                 disabled: query.length === 0 && sourceFilter === "all" && statusFilter === "all",
               }, "清除筛选"))),
           filteredRows.length > 0
-            ? h("div", { className: "dshg-list" }, filteredRows.map(renderRow))
-            : h("div", { className: "dshg-empty" }, "没有匹配的能力。换个关键词、来源或档位试试。")),
+            ? h("div", { className: "dshg-list" }, capsGroupList.map((entry) => renderCapsGroup(entry[0], entry[1])))
+            : h("div", { className: "dshg-empty" }, "没有匹配的能力。换个关键词、来源或档位试试。"),
+          h("div", { className: "dshg-hint" }, "一级目录按来源（kind）收：点目录头展开，「为什么在这一层」仍逐行可看；搜索框有词时命中组会自动展开。")),
         h("div", { className: "dshg-card" },
           h("div", { className: "dshg-cardHead" },
             h("span", null, "待保存变更" + (pendingTotal > 0 ? "（" + pendingTotal + "）" : "（无）")),
@@ -1626,7 +1800,9 @@ window.__ModuleLoader__.load({
           stat(policy.migrated ? "v" + (policy.fromVersion || 2) + " → v3" : "v3", "策略文件版本")),
         alerts.length > 0 ? h("div", { className: "dshg-alerts" }, alerts) : null,
         state.agent && sectionRows.length === 0 && visibleSkillCount === 0
-          ? h("div", { className: "dshg-note" }, "本会话还没有产生过一次请求：段落与技能清单要等第一次装配后才出现，工具档位与告警已按策略生效。")
+          ? h("div", { className: "dshg-note" }, prescanActive
+            ? "本会话还没有产生过一次请求：技能页已是预扫描清单（装配后会被真清单覆盖），段落仍要等第一次装配。"
+            : "本会话还没有产生过一次请求：段落与技能清单要等第一次装配后才出现，工具档位与告警已按策略生效。")
           : null,
         h("div", { className: "dshg-tabs", role: "tablist" },
           TABS.map((item) => h("button", {

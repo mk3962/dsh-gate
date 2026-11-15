@@ -179,8 +179,20 @@ ln -s "$HOME_DIR/local-plugins/dsh-gate" "$PROFILE/node_modules/dsh-gate"   # Wi
 > 归层以服务端权威表 `state.tiers` 为准。`run_code`、五个 `gate_*`、团队工具这类
 > **agent 自身注册**的工具（`state.own`）标「自身层」：`restrict` 管不到它们，永远常驻，面板不给无效按钮。
 
-0.2.0 起另有 `GET /api/dsh-gate/capabilities`（能力视图：来源置信度 / 命中链 / 例外偏离 / 上游隐藏），
-面板暂时还是三列；按能力切换的 UI 在工单 05。
+0.2.0 起另有 `GET /api/dsh-gate/capabilities`（能力视图：来源置信度 / 命中链 / 例外偏离 / 上游隐藏）；
+0.3.x 起面板分四个页签：**能力 / 技能 / MCP / 策略 JSON**。
+
+0.5.0 起三个列表页各多一层**来源目录**：默认全部收起，点组行展开或收起，组行写「N 条 · 档位分布」，
+搜索词命中时自动展开命中的组（清空搜索后回到你手动开的组）。
+
+- 能力页按**来源类型**分组（`mcp` / `plugin` / `native` / `section` / 其它）；`native` 这一桶行数最多
+  （本机 84 条），超过 24 行时桶内再按档位分两页收起。
+- 技能页按 `provider` 分组，导入目录进来的归「导入」组。
+- MCP 页按状态分组（自有 / 外部 / 已停 / 不可用）；只有一个状态时不折叠，平铺照旧。
+
+技能页在**还没发第一条消息**的会话里也能列技能：服务端直接读宿主 registry 做一次预扫描
+（`GET /api/dsh-gate/skills` 的 `prescan` 段），这些行带「预扫描」标记；没取到 preset 作用域时页面会明说
+「provider 归属可能与装配后不同」。
 
 ### 策略文件
 

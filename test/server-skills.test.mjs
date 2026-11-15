@@ -2,10 +2,13 @@
  * /api/dsh-gate/skills 用例（0.3.0 工单 16 的服务端面）。
  *
  * 覆盖：
- *  - GET 形状：{skills, imports, off, takeover}，行带 provider/origin/path/tier/shadowed/capability；
+ *  - GET 形状：{skills, imports, off, takeover, prescan}，行带 provider/origin/path/tier/shadowed/capability；
  *  - POST 四种动作：tier（写/删单技能条目）、off、imports（校验目录）、takeover；
  *  - 非法参数 400、闸门禁用 409、未启用时不动文件；
- *  - 整份替换保存 /policy 不能把 skills 接管配置抹掉（0.2.0 基线的 policy.js 不认识这个键）。
+ *  - 整份替换保存 /policy 不能把 skills 接管配置抹掉（0.2.0 基线的 policy.js 不认识这个键）；
+ *  - 冷启动预扫描（票 04）：无 agent（或 agent 已挂但技能表还空）时用假 skills.snapshot +
+ *    假 agentPresets.acquireScope 填表、行标 prescan；skills/change 立刻失效缓存；
+ *    服务缺失降级成 200 + active:false。
  *
  * 跑法：node test/server-skills.test.mjs
  */
@@ -27,12 +30,26 @@ const fakeRes = () => {
   return res;
 };
 
-/** 注册路由并返回按路径取 handler 的函数。 */
+/**
+ * 注册路由并返回按路径取 handler 的函数。
+ * options.services 是假的宿主服务表（skills / agentPresets / workingDirectory）；
+ * 返回的 emit 用来自造 ctx 事件（验 skills/change 失效缓存）。
+ */
 const mountRoutes = (options) => {
   const routes = [];
+  const services = options.services || {};
+  const listeners = new Map();
   const ctx = {
-    get(name) { return name === "connection" ? { requestRejection: () => undefined } : undefined; },
+    get(name) {
+      if (name === "connection") return { requestRejection: () => undefined };
+      return services[name];
+    },
     reflect: { get() { return undefined; } },
+    on(event, handler) {
+      if (!listeners.has(event)) listeners.set(event, []);
+      listeners.get(event).push(handler);
+      return () => undefined;
+    },
     inject(_names, callback) {
       callback({ webServer: { register(route) { routes.push(route); return () => undefined; } } });
     },
@@ -43,7 +60,8 @@ const mountRoutes = (options) => {
     assert.ok(route, "路由没注册: " + routePath);
     return route;
   };
-  return { routes, routeOf };
+  const emit = (event) => { for (const handler of listeners.get(event) || []) handler(); };
+  return { routes, routeOf, emit };
 };
 
 const request = async (route, method, body, url) => {
@@ -96,7 +114,12 @@ const ok = (label) => { passed += 1; console.log("  ok    " + label); };
   const res = await request(routeOf("/api/dsh-gate/skills"), "GET");
   assert.equal(res.code, 200, res.body && JSON.stringify(res.body));
   const body = res.body;
-  assert.deepEqual(Object.keys(body).sort(), ["agent", "defaults", "imports", "off", "skills", "takeover", "warnings"]);
+  assert.deepEqual(Object.keys(body).sort(), ["agent", "defaults", "imports", "off", "prescan", "skills", "takeover", "warnings"]);
+  // 技能表已经非空（真清单在手）：不做预扫描，reason 说明为什么没扫。
+  assert.equal(body.prescan.active, false);
+  assert.equal(body.prescan.reason, "agent-live");
+  assert.equal(body.prescan.scoped, false);
+  assert.equal(body.prescan.at, null);
   assert.equal(body.agent, "session-fake");
   assert.equal(body.skills.length, 2);
   const alpha = body.skills.find((row) => row.name === "alpha-skill");
@@ -106,6 +129,7 @@ const ok = (label) => { passed += 1; console.log("  ok    " + label); };
   assert.equal(alpha.capability, "skillpack:alpha");
   assert.equal(alpha.description, "A 技能的描述", "描述来自快照 skillEntries");
   assert.equal(alpha.shadowed, false);
+  assert.equal(alpha.prescan, false, "真行不带预扫描标记");
   const beta = body.skills.find((row) => row.name === "beta-skill");
   assert.equal(beta.origin, "import");
   assert.equal(beta.path, "D:\\skills\\beta\\SKILL.md");
@@ -241,6 +265,181 @@ const ok = (label) => { passed += 1; console.log("  ok    " + label); };
   assert.equal(routes.some((row) => row.path === "/api/dsh-gate/mcp"), true, "票 15 之后 /mcp 必须注册");
   await gate.release(host.agent);
   ok("服务端注册 /mcp（UI 对旧宿主仍按 404 降级）");
+}
+
+/* ── 4. 冷启动预扫描（票 04）：没有 agent 时用宿主 registry 直接填表 ────────── */
+{
+  const dir = tmpDir();
+  const file = path.join(dir, "gate.json");
+  const host = makeHost({ names: ["read"], id: "session-cold" });
+  const policy = resolvePolicy({ policyFile: file }, { logger: host.logger });
+  // 不 attach：listAgents() 为空 = 本会话还没装配过，正是预扫描要覆盖的场景。
+  const gate = createGate({ ctx: host.rootCtx, logger: host.logger, policy });
+  const scopeKey = { id: "preset:ptc" };
+  const seen = {};
+  let snapshotCalls = 0;
+  let disposeCalls = 0;
+  const skillsService = {
+    async snapshot(request) {
+      snapshotCalls += 1;
+      Object.assign(seen, request);
+      return {
+        complete: true,
+        skills: [
+          { name: "cold-skill", description: "冷启动技能", provider: "filesystem", invocation: { modelInvocable: true, userInvocable: false } },
+          { name: "hidden-skill", description: "模型不可调用（invocation）", provider: "filesystem", invocation: { modelInvocable: false } },
+          { name: "hidden-flat", description: "模型不可调用（扁平字段，老宿主）", provider: "filesystem", modelInvocable: false },
+        ],
+      };
+    },
+  };
+  const presetsService = {
+    defaultId: "ptc",
+    async acquireScope(id) {
+      seen.preset = id;
+      return { key: scopeKey, [Symbol.asyncDispose]: async () => { disposeCalls += 1; } };
+    },
+  };
+  const { routeOf, emit } = mountRoutes({
+    gate,
+    policy,
+    logger: host.logger,
+    config: { policyFile: file },
+    services: { skills: skillsService, agentPresets: presetsService },
+  });
+  const skillsRoute = routeOf("/api/dsh-gate/skills");
+
+  let res = await request(skillsRoute, "GET");
+  assert.equal(res.code, 200, JSON.stringify(res.body));
+  let body = res.body;
+  assert.equal(body.agent, null);
+  assert.equal(body.prescan.active, true, "无 agent + 可扫 ⇒ 预扫描生效");
+  assert.equal(body.prescan.scoped, true, "拿到 preset 的 standing scope");
+  assert.equal(body.prescan.preset, "ptc");
+  assert.equal(body.prescan.cwd, null, "cwd 默认 undefined（不猜工作区根）");
+  assert.equal(body.prescan.complete, true);
+  assert.equal(body.prescan.reason, null);
+  assert.equal(typeof body.prescan.at, "number");
+  assert.equal(body.skills.length, 1, "模型不可调用的技能不进预扫描清单（invocation 与扁平字段两种形状）");
+  assert.equal(body.skills.some((row) => row.name === "hidden-flat"), false, "老宿主的扁平 modelInvocable:false 也要过滤");
+  const cold = body.skills[0];
+  assert.equal(cold.name, "cold-skill");
+  assert.equal(cold.prescan, true, "预扫描行必须带标记");
+  assert.equal(cold.provider, "filesystem");
+  assert.equal(cold.origin, "host");
+  assert.equal(cold.description, "冷启动技能");
+  assert.equal(cold.capability, "skillpack:filesystem", "预扫描行同样按来源组归组");
+  assert.equal(cold.tier, 2, "档位仍走 defaults.skillpack");
+  assert.equal(seen.preset, "ptc", "acquireScope 用默认 preset");
+  assert.equal(seen.scope, scopeKey, "snapshot 必须带 preset 的 standing scope");
+  assert.equal(seen.cwd, undefined);
+  assert.ok(seen.signal instanceof AbortSignal, "必须带超时 signal");
+  assert.equal(disposeCalls, 1, "租约扫描完立刻释放");
+
+  // 4.1 TTL 内复用缓存；skills/change 立刻失效
+  await request(skillsRoute, "GET");
+  assert.equal(snapshotCalls, 1, "10s 内复用缓存");
+  emit("skills/change");
+  await request(skillsRoute, "GET");
+  assert.equal(snapshotCalls, 2, "skills/change 必须立刻失效缓存");
+  assert.equal(disposeCalls, 2);
+
+  // 4.2 POST 的返回值同样带预扫描（保存后 UI 不该闪回空表）
+  res = await request(skillsRoute, "POST", { action: "takeover", value: false });
+  assert.equal(res.code, 200, JSON.stringify(res.body));
+  assert.equal(res.body.skills.prescan.active, true);
+  assert.equal(res.body.skills.skills[0].prescan, true);
+
+  ok("冷启动预扫描：prescan.active/scoped 正确、行标 prescan、TTL + skills/change 失效、POST 同样接上");
+}
+
+/* ── 5. acquireScope 抛错：退回无 scope 读，仍然列出，但标 scoped:false ──────── */
+{
+  const dir = tmpDir();
+  const file = path.join(dir, "gate.json");
+  const host = makeHost({ names: ["read"], id: "session-noscope" });
+  const policy = resolvePolicy({ policyFile: file }, { logger: host.logger });
+  const gate = createGate({ ctx: host.rootCtx, logger: host.logger, policy });
+  const seen = {};
+  const skillsService = {
+    async snapshot(request) {
+      Object.assign(seen, request);
+      return { complete: true, skills: [{ name: "cold-skill", description: "冷", provider: "archify-plugin" }] };
+    },
+  };
+  const presetsService = {
+    defaultId: "standard",
+    async acquireScope() { throw new Error("agent-preset/invalid"); },
+  };
+  const { routeOf } = mountRoutes({
+    gate,
+    policy,
+    logger: host.logger,
+    config: { policyFile: file },
+    services: { skills: skillsService, agentPresets: presetsService },
+  });
+  const res = await request(routeOf("/api/dsh-gate/skills"), "GET");
+  assert.equal(res.code, 200, JSON.stringify(res.body));
+  assert.equal(res.body.prescan.active, true, "拿不到 scope 也要列（只是来源可能不准）");
+  assert.equal(res.body.prescan.scoped, false);
+  assert.equal(res.body.prescan.preset, "standard", "仍要说明原本想用的 preset");
+  assert.equal(seen.scope, undefined, "退回无 scope 读");
+  ok("acquireScope 抛错 ⇒ 无 scope 读、active:true、scoped:false（不当成失败）");
+}
+
+/* ── 6. skills 服务缺失：200 + active:false（服务缺失 ≠ 没有技能）────────────── */
+{
+  const dir = tmpDir();
+  const file = path.join(dir, "gate.json");
+  const host = makeHost({ names: ["read"], id: "session-noskills" });
+  const policy = resolvePolicy({ policyFile: file }, { logger: host.logger });
+  const gate = createGate({ ctx: host.rootCtx, logger: host.logger, policy });
+  const { routeOf } = mountRoutes({
+    gate,
+    policy,
+    logger: host.logger,
+    config: { policyFile: file },
+    services: {},
+  });
+  const res = await request(routeOf("/api/dsh-gate/skills"), "GET");
+  assert.equal(res.code, 200, "服务缺失不许 500");
+  assert.equal(res.body.prescan.active, false);
+  assert.equal(res.body.prescan.reason, "no-skills-service");
+  assert.deepEqual(res.body.skills, []);
+  ok("skills 服务缺失 ⇒ 200 + prescan.active:false + reason:no-skills-service");
+}
+
+/* ── 7. 已挂 agent 但技能表还是空（新建会话、未发消息）：也要预扫描 ─────────── */
+{
+  const dir = tmpDir();
+  const file = path.join(dir, "gate.json");
+  const host = makeHost({ names: ["read"], id: "session-attached" });
+  const policy = resolvePolicy({ policyFile: file }, { logger: host.logger });
+  const gate = createGate({ ctx: host.rootCtx, logger: host.logger, policy });
+  // 宿主 agent/created 就会 attach：新建会话也是「有 agent」，但技能表要等 pre-step 才填。
+  await gate.attach(host.agent);
+  const skillsService = {
+    async snapshot() {
+      return { complete: true, skills: [{ name: "cold-skill", description: "冷", provider: "filesystem" }] };
+    },
+  };
+  const { routeOf } = mountRoutes({
+    gate,
+    policy,
+    logger: host.logger,
+    config: { policyFile: file },
+    services: { skills: skillsService },
+  });
+  const res = await request(routeOf("/api/dsh-gate/skills"), "GET");
+  assert.equal(res.code, 200, JSON.stringify(res.body));
+  assert.equal(res.body.agent, "session-attached", "agent 已挂上（不是无会话）");
+  assert.equal(res.body.prescan.active, true, "空表就要预扫描，别让新建会话的技能页还是空的");
+  assert.equal(res.body.prescan.reason, null);
+  assert.equal(res.body.prescan.scoped, false, "没有 agentPresets 服务 ⇒ scoped:false");
+  assert.equal(res.body.skills.length, 1);
+  assert.equal(res.body.skills[0].prescan, true);
+  await gate.release(host.agent);
+  ok("已挂 agent + 空技能表（新建会话）：预扫描填表并标 prescan");
 }
 
 console.log("\n全部通过 (" + passed + ")");
