@@ -2,6 +2,19 @@
 
 版本号遵循语义化版本；格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [0.5.2] — 2026-11-18
+
+### Docs — 成本口径勘误正式发版
+
+- 0.5.1 的内容（目录签名摘要 + README「PTC 语义边界」）未变，本版**只补发版**：
+  0.5.1 当时版本号已升、提交已推，但没打 tag，市场把它读成「有新提交（未发版）」而不是更新。
+- 文档勘误正式进版：README 成本表下已注明 **「净省 ≈26.7k / 请求」是 `estimateTokens` 折算的前缀差，
+  不是账单上的每请求省额**；v4 会话日志其实**带** usage 字段（`assistant/message.data.usage`：
+  `inputTokens / outputTokens / totalTokens / cacheReadTokens`），此前研究包判「无该字段」有误。
+- 实测（0.5.x 期 PTC）：单请求上下文（input + cacheRead）中位 107,014 tok，其中 cacheRead 中位 104,576
+  （≈98% 命中）；fresh input 中位 1,233 → 1,075。**判据 C 的「省费用」一半记为样本不足、不予判定。**
+- 代码零改动，与 0.5.1 逐字节相同。
+
 ## [0.5.1] — 2026-11-18
 
 ### Added — 目录签名摘要（`catalog.signatureSummary`，默认开）
