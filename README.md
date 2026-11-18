@@ -45,11 +45,12 @@ PTC 的 SDK 声明段是按 `sdkSchemas(scope)` **现渲染**的，所以隐藏�
 | `gate_status` | 看当前分层、目录体积、段落清单、已加载的工具 |
 | `gate_search <query>` | 在按需工具里按名字/描述检索 |
 | `gate_load <names>` | 把按需工具提到常驻（当前会话内保持）；`section:` 前缀把段落搬到末尾声明 |
-| `gate_invoke <tool> <arguments>` | PTC 冻结下的唯一执行口：走宿主完整执行管线执行一个已加载工具，不把声明加回工具表 |
+| `gate_invoke <tool> <arguments>` | PTC 冻结下的日常执行口：走宿主完整执行管线执行一个已知工具（常驻 / 目录里的按需工具都行，**不必先 `gate_load`**），不把声明加回工具表 |
 | `gate_call <name> <args>` | 临时撤限制 → 走宿主完整执行管线 → 立刻恢复，用于一次性的重型工具 |
 
-> `gate_call` 与 `gate_invoke` 的区别：前者按**任意已知工具**执行、不要求先 `gate_load`（一次性重型工具）；
-> 后者只执行**已加载 / 常驻**的工具（未知或上游隐藏的会被拒），是冻结下日常调用的口子。
+> `gate_call` 与 `gate_invoke` 现在是**同一个执行口的两个键名**：同一份准入判据（已知、未被 `off`、未被上游藏），
+> 同一条 `callThrough` 管线，差别只在参数键（`gate_call` 用 `name`、`gate_invoke` 用 `tool`）。两个都**不要求先 `gate_load`**；
+> `gate_load` 买的是声明正文，不是调用权（展开见「PTC 语义边界」）。
 
 ### 两种会话模式：native 与 PTC
 
@@ -212,7 +213,12 @@ ln -s "$HOME_DIR/local-plugins/dsh-gate" "$PROFILE/node_modules/dsh-gate"   # Wi
   },
   "sources": { "plugin:dsh-gate": { "tools": ["gate_status", "gate_load"], "sections": ["gate-catalog"] } },
   "legacy": { "unknownOverrides": { "ws_mcp_call": 1 } },
-  "catalog": { "groupByPlugin": true, "maxDescriptionLength": 64, "skillGroups": false },
+  "catalog": {
+    "groupByPlugin": true,
+    "maxDescriptionLength": 64,
+    "skillGroups": false,
+    "signatureSummary": { "enabled": true, "tools": [] }
+  },
   "narrowPassThrough": 12,
   "protected": [],
   "skills": { "takeover": true, "off": [], "imports": [{ "id": "local", "path": "~/skills" }] }
@@ -242,6 +248,21 @@ ln -s "$HOME_DIR/local-plugins/dsh-gate" "$PROFILE/node_modules/dsh-gate"   # Wi
   却会把「委派协议的必需工具」一起剥光。`0` = 关闭豁免（子代理也照策略藏）。
   典型受害者：`dsh-mnemon` 的写记忆子代理（白名单只有 `mnemon_*` + `mnemon_subagent_result`），
   被藏掉后子代理只能纯文本收尾，父会话抛 `memory subagent completed without recording its result`。
+
+`catalog.*` 是目录渲染的四个键（默认值就是内置默认，文件里写了哪个字段才覆盖哪个）：
+
+| 键 | 默认 | 作用 |
+|---|---|---|
+| `catalog.groupByPlugin` | `true` | 目录按来源分组（`[mcp]` / `[univer]` / `[技能]` …）；`false` 时全部归 `[其他]` |
+| `catalog.maxDescriptionLength` | `64` | 每行描述截断到多少字符 |
+| `catalog.skillGroups` | `false` | 技能行按来源折叠成一行（0.4.1，见「catalog.skillGroups（0.4.1）」） |
+| `catalog.signatureSummary` | `{ "enabled": true, "tools": [] }` | PTC 冻结下给点名的按需工具出一行参数摘要（0.5.1，见「目录签名摘要（0.5.1）」） |
+
+`catalog.signatureSummary` 默认**开**、名单为空 —— 空名单时一个字都不渲染，所以「默认开」不改任何既有部署的目录字节；只有点过名的工具才会在 PTC 冻结的目录里多一行。支持布尔简写（`true` / `false`），关掉用 `false` 或 `{ "enabled": false }`（后者保留名单）：
+
+```json
+"catalog": { "signatureSummary": { "enabled": true, "tools": ["web_fetch", "univer_doc"] } }
+```
 
 ### 技能接管（0.3.0）
 
@@ -341,6 +362,90 @@ ln -s "$HOME_DIR/local-plugins/dsh-gate" "$PROFILE/node_modules/dsh-gate"   # Wi
 | 子 agent | 继承同一套全局策略；闸门按 agent 分别记账。**例外**：`origin=subagent` 且授予工具数 ≤ `narrowPassThrough` 的子代理整台跳过闸门（见「策略文件」），`gate_status.passthrough` 可查 |
 | 工具热插拔 | 监听 `tools/change` 重算限制，不会留下过期 deny |
 | 插件卸载 | 所有 `restrict` 的 disposer 挂在插件 fiber 上，卸载即全部撤销 |
+
+### PTC 语义边界
+
+PTC 下工具表里只有 `run_code`。冻结最容易让人把两件事混成一件：**看得见什么**（闸门改的）和**一轮能做几件**（宿主的执行模型，闸门改不了）。下面四段把这层边界说透。
+
+**① 冻结只改「看得见什么」，不改执行模型**
+
+一轮 = 一次模型调用 = 一个 `run_code` 程序。程序里串行、并发调多少次 `tools.名字(...)` 和 `gate_invoke` 都不产生额外往返；冻结只决定哪些名字能直接 `tools.` 调。
+
+`gate_load` 过的工具**仍在 deny 集合里**：冻结时 `resolveTier` 把 `loaded` 恒当 `false`，工具留在第二层继续被 deny，`view(agent).visible` 不变 ⇒ `tools:sdk` 声明段逐字节不变。本机 2026-11 实测（宿主 0.2.2-rc.3，54 个 PTC 会话）：52 个会话全程只有一个声明哈希，最长 355 步的样本哈希也唯一；两个例外都来自宿主自己注册面的增删（`compress` 条件注册、`remote_*` 后注册），不是 `gate_load`。
+
+编排能力同样没被削：30 天 1,231 个跑过 `run_code` 的 PTC 会话里 `tool/ptc-dispatch` 共 145,925 次（1.49 次/次 `run_code`），20.3% 的派遣步在同一程序体内调了 ≥2 个不同工具（最多 5 个）。
+
+**② 常驻与按需可以混在同一段程序里**
+
+```ts
+// 常驻：工具表里本来就有，直接调
+const code = await tools.read({ file_path: "lib/gate.js" });
+
+// 按需：工具表里没有，走 gate_invoke —— 不需要先 gate_load
+const policy = await tools.gate_invoke({
+  tool: "mcp__<server>__<tool>",        // 目录里列着的按需工具名
+  arguments: { /* 该工具自己的参数 */ },
+});
+```
+
+`gate_invoke` 的准入**不是「已加载」**，而是三件事（`canInvoke` 的判据）：名字在候选集里、没被 `off` 关掉、没被上游 `restrict` 藏掉。所以目录里列着的按需工具可以直接 `gate_invoke`；`gate_load` 买的是**声明正文**（签名、描述、段落正文、技能全文），不是调用权。被关闭 / 被上游藏掉的名字会当场抛错（「已被闸门关闭」/「被上游隐藏」），未知名字报「未知工具」—— 这几条属于程序错误，值得用 `try/catch` 兜住。
+
+> `gate_call` 与 `gate_invoke` 现在是同一个执行口的两个键名（同一份 `canInvoke` 准入、同一条 `callThrough` 管线），差别只在参数键（`name` / `tool`）。
+
+**③ 「程序先行」：程序写死在执行之前**
+
+`run_code` 的程序在执行前就固定了，`tools.*` 也按步渲染：同一次程序里 `gate_load` 返回的声明**只能给下一次程序用**，本次程序里 `tools.新名字` 根本不存在。没见过的按需工具有两条路：
+
+| 做法 | 代价 | 什么时候选 |
+|---|---|---|
+| 盲写参数：`gate_invoke({ tool, arguments })` | 参数错就拿 `{ isError: true }`（宿主 `defineTool` 的原文报错），这一步白花 | 参数简单、名字可猜（`{ path }`、`{ query }`） |
+| 先 `gate_load(["名字"])` 看签名，下一步再写程序 | 多一步（只加载、不干别的 = +1 轮） | 参数多 / 嵌套 / 枚举（MCP 工具常见） |
+
+实测（最近 58 次加载）：44.8%（26 次）独占一步、实付 1 轮，其余 55.2% 与别的调用挤在同一步（不额外计费）—— 这就是「**交叉税**」的具体形态：非常驻工具首用要先加载，上界是每任务 +1 轮。`gate_invoke` 的 `isError` 率 1.1%（30 天 1,008 次），与原生派遣的 1.8% 同量级：盲写参数不是高危动作，但报错后应改用「先加载」。
+
+**④ 尾块与目录的分工**
+
+- **目录**（`<gate-catalog>`）：每请求固定注入一次，列全部按需能力（名字 + 截断描述 + 档位），技能可按 `catalog.skillGroups` 折叠。它待在系统提示最末尾，一次变化只报废尾部。
+- **尾块**（`<gate-loaded>`）：只在清单变化时追加一条 user 消息。0.4.0 起只放一行「本次会话已加载 N 个：a, b, c」索引（签名已在 `gate_load` 的工具结果里给过）；清单没变就一条都不追加。
+
+成本账（本机 2026-11 实测，PTC 常驻中位 26 工具；token 为插件自身估算式折算，不是账单口径）：
+
+| 项 | ≈tok | 口径 |
+|---|---:|---|
+| 常驻声明段 | 6.3k | 23,736 字符（`estimateTokens` 折算） |
+| `<gate-catalog>` | 3.1k | 150 条 / 11,670 字符 |
+| **固定注入合计** | **9.4k** | 上两项相加，每请求重付 |
+| 未启用时全量声明 | 36.1k | 145 工具 / 134,866 字符（10 月未冻结样本） |
+| **净省** | **≈26.7k / 请求** | 中位口径，含目录 |
+
+token 用 `estimateTokens` 的估算式（CJK×0.7 + ASCII/3.75）折算，绝对值和账单不完全相等；比例可以照用。
+口径与「效果」一节不同：那里是单会话**首轮总量**的对比，这里是**每请求都要重付的固定前缀**中位。
+
+### 目录签名摘要（0.5.1）
+
+**为什么**：上一节 ③ 里「先 `gate_load` 看签名」那条路，在 PTC 冻结下是纯开销 —— 程序先行，加载来的声明只能给下一次程序用，而 `gate_invoke` 的参数名原本只能从 `gate_load` 的结果里拿：多一轮，也多一次写错参数的机会。
+
+**正文长什么样**：`catalog.signatureSummary.tools` 点名的**按需**工具，在 `<gate-catalog>` 的用法说明之后、各分组之前多一段：
+
+```text
+[签名] 按需工具参数（? 表示可选；gate_invoke 的 arguments 照此写）
+- univer_doc(doc, sheet?)
+- web_fetch(url)
+```
+
+行格式 `名字(必填参数, 可选参数?)`：必填在前，其余按 schema 声明顺序，可选带 `?`；单个工具最多 6 个参数（`SIGNATURE_MAX_PARAMS`）。照抄进 `gate_invoke({ tool, arguments })` 就是对的参数名。
+
+**三条硬约束**（`lib/catalog.js` 注释里也写着，别顺手「优化」掉）：
+
+| 约束 | 行为 |
+|---|---|
+| 只给点名的按需工具 | 名单只来自 `catalog.signatureSummary.tools`；没点名的、以及常驻的工具一个字符都不多 |
+| 无 `required` 不出行 | 没有必填参数时摘要没有信息增量，只是白占前缀 —— 整行不出，`[签名]` 段也随之消失 |
+| 只在 PTC 冻结渲染 | `ptcFrozen === true` 才渲染；native 会话的目录与 0.4.1 **逐字节相同** |
+
+**成本**：签名几乎全是 ASCII，按 `estimateTokens` 的 3.75 字符/token 反推，预算 = **7,500 字符 ≈ 2k tok / 请求**（`SIGNATURE_BUDGET_CHARS`）；满预算就**停整行** —— 不截半行、不加省略号，同一策略重复渲染逐字节一致。
+
+**怎么挑名单**：按本机会话统计的调用频率取 Top-N（高频 + 参数难猜的那几个），别把全部按需工具都点进去 —— 长尾点进来只是每请求重付前缀。注意**渲染顺序**用的是名字字典序、不是频率：同一策略 + 同一工具集重复渲染必须逐字节一致，而频率会随会话漂移（今天 A 在前、明天 B 在前 = 每次都断前缀缓存）。
 
 ---
 
