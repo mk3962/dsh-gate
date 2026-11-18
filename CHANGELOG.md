@@ -25,6 +25,16 @@
 - `gate_status` 键集不变；`canInvoke` / 冻结判定 / `gate_invoke` 转发零改动。
 - 未配置或名单为空时 `gate-catalog` 与 0.4.1 逐字节一致。
 
+### Docs — 成本口径勘误（2026-11-18 用真实 usage 复核）
+
+- README「PTC 语义边界」④ 的成本表下补一条：**「净省 ≈26.7k / 请求」是 `estimateTokens` 折算的前缀差，
+  不是账单上的每请求省额**。v4 会话日志其实**带** usage 字段（`assistant/message.data.usage`：
+  `inputTokens / outputTokens / totalTokens / cacheReadTokens`），此前研究包判「无该字段」有误。
+- 实测：0.5.x 期 PTC 单请求上下文（input + cacheRead）中位 107,014 tok，其中 cacheRead 中位 104,576
+  （≈98% 命中）⇒ 冻结态声明段命中后按 cacheRead 计费。声明仍影响**首次未命中量**（分桶中位
+  23,037 / 25,591 / 22,956 / 35,180 / 48,998）。
+- 代码零改动，仅文档；证据见 `.scratch/ptc-gate-roundtrip-20261118/research/01-roundtrip-facts.md` §5。
+
 ## [0.5.0] — 2026-11-15
 
 ### Added — 面板三页签按来源折叠（能力 / 技能 / MCP）
