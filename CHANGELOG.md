@@ -2,6 +2,29 @@
 
 版本号遵循语义化版本；格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [0.5.1] — 2026-11-18
+
+### Added — 目录签名摘要（`catalog.signatureSummary`，默认开）
+
+- **动机**：PTC 冻结下模型写 `run_code` 只能用 `gate_invoke({ tool, arguments })`，而目录原来
+  只有名字 + 一句说明 —— 参数名得先 `gate_load` 拿签名，多一次往返、多一次写错参数的机会。
+- **修法**：`renderCatalog` 新增签名段（`名字(必填参数, 可选参数?)`）；参数取 `required` 列表 +
+  `properties` 名，必填在前、其余按 schema 声明顺序，可选带 `?`，单个工具最多 6 个参数。
+- **选择口径**：只对 `catalog.signatureSummary.tools` 点名的工具出摘要，**按名字字典序**
+  （不按频率：同一策略 + 同一工具集重复渲染必须逐字节一致）；无 `required` 的工具不出行。
+- **只在 PTC 冻结下渲染**：native 会话的目录与不开这项时逐字节相同。
+- **预算**：目录增量 ≤ +2k tok ⇒ 按 3.75 字符/tok 反推 **7,500 字符**；满预算即停，不截半行。
+- **配置**：`catalog.signatureSummary: { enabled: true, tools: [] }`（挂在 `POLICY_KEYS` 的 catalog
+  下，支持 `true` / `false` 简写）；名单为空时零输出，所以「默认开」不改任何既有部署的目录字节。
+  面板新增「目录 · 签名摘要」卡片（开关 + 工具名单 + 只提交该键的合并保存）。
+- **回归**：`test/catalog-signature.test.mjs` 新增 9 组（出现/不出现、参数顺序、预算截断、字节稳定、
+  native 不变、配置归一、策略默认、gate 级 PTC 与 native 各一）。
+
+### Compatibility
+
+- `gate_status` 键集不变；`canInvoke` / 冻结判定 / `gate_invoke` 转发零改动。
+- 未配置或名单为空时 `gate-catalog` 与 0.4.1 逐字节一致。
+
 ## [0.5.0] — 2026-11-15
 
 ### Added — 面板三页签按来源折叠（能力 / 技能 / MCP）
