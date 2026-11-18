@@ -338,6 +338,8 @@ window.__ModuleLoader__.load({
       // 0.5.0：一级「来源目录」的展开态。键形如 caps:native / caps:native/2 / skills:宿主:univer / mcp:external。
       // 未写过的键 = 跟随搜索：搜索有词就自动展开，没搜索词就默认收起。
       const [openGroups, setOpenGroups] = react.useState({});
+      // 0.5.1 票 01：目录签名摘要（catalog.signatureSummary）草稿；undefined = 没改过。
+      const [pendingSignature, setPendingSignature] = react.useState(undefined);
 
       const reload = react.useCallback(async (message) => {
         setLoading(true);
@@ -365,6 +367,7 @@ window.__ModuleLoader__.load({
           setPendingSkills({});
           setPendingImports(null);
           setPendingTakeover(undefined);
+          setPendingSignature(undefined);
           setImportConfirm(null);
           setMcpConfirm(null);
           setConfirm(null);
@@ -728,11 +731,12 @@ window.__ModuleLoader__.load({
         setPendingCaps({});
         setPendingExceptions({});
         setPendingSkillpack(undefined);
+        setPendingSignature(undefined);
         setConfirm(null);
         setNotice({ tone: "ok", text: "已放弃面板里未保存的改动" });
       };
       const requestReload = () => {
-        if (hasChanges || jsonDirty) {
+        if (hasChanges || jsonDirty || signatureDirty === true) {
           setReloadConfirm(true);
           return;
         }
@@ -1679,6 +1683,52 @@ window.__ModuleLoader__.load({
           groupBody(key, open, children));
       };
 
+      /* ── 目录签名摘要（0.5.1 票 01）：catalog.signatureSummary ────────────────
+       * 只影响 gate-catalog 的渲染：PTC 冻结下给「点名的按需工具」加一行
+       * 「名字(必填参数, 可选?)」，让模型一次写对 gate_invoke 的 arguments。
+       * 不碰任何权限逻辑（canInvoke / 冻结判定 / 转发都在服务端，与这里无关）。
+       * 保存走 /policy 的合并保存：只提交 catalog.signatureSummary，其它策略键不动。
+       */
+      const signatureCatalog = isObject(policy.content) && isObject(policy.content.catalog) ? policy.content.catalog : {};
+      const signatureRaw = signatureCatalog.signatureSummary;
+      const signatureBase = isObject(signatureRaw)
+        ? { enabled: signatureRaw.enabled !== false, tools: listOf(signatureRaw.tools).filter((name) => typeof name === "string") }
+        : { enabled: signatureRaw !== false, tools: [] };
+      const signatureEnabled = pendingSignature === undefined ? signatureBase.enabled : pendingSignature.enabled;
+      const signatureToolsText = pendingSignature === undefined ? signatureBase.tools.join(", ") : pendingSignature.toolsText;
+      const signatureTools = signatureToolsText.split(/[,\s]+/).map((name) => name.trim())
+        .filter((name) => name.length > 0)
+        .filter((name, index, all) => all.indexOf(name) === index);
+      const signatureDirty = pendingSignature !== undefined;
+      const signatureActive = frozen && signatureEnabled && signatureTools.length > 0;
+      const stageSignature = (enabled, toolsText) => {
+        setPendingSignature({ enabled: enabled, toolsText: toolsText });
+        setNotice(null);
+      };
+      const discardSignature = () => {
+        setPendingSignature(undefined);
+        setNotice({ tone: "ok", text: "已放弃签名摘要的未保存改动" });
+      };
+      const saveSignature = async () => {
+        if (!signatureDirty) {
+          setNotice({ tone: "warn", text: "签名摘要没有待保存改动" });
+          return;
+        }
+        setSaving(true);
+        setNotice(null);
+        try {
+          // 合并保存：只提交 catalog.signatureSummary（signatureSummary 是整条替换的清单/开关）。
+          const body = { catalog: { signatureSummary: { enabled: signatureEnabled, tools: signatureTools } } };
+          const result = await api("/api/dsh-gate/policy", { method: "POST", body: JSON.stringify(body) });
+          if (result && result.ok) await reload("签名摘要已保存，下一次装配生效");
+          else setNotice({ tone: "error", text: "保存失败：" + ((result && result.message) || "未知原因") });
+        } catch (failure) {
+          setNotice({ tone: "error", text: "保存失败：" + String((failure && failure.message) || failure) });
+        } finally {
+          setSaving(false);
+        }
+      };
+
       const renderCapsTab = () => h("div", { className: "dshg-tabBody" },
         h("div", { className: "dshg-card" },
           h("div", { className: "dshg-cardHead" },
@@ -1714,6 +1764,41 @@ window.__ModuleLoader__.load({
               ? h("div", { className: "dshg-preview" }, previewNodes)
               : h("div", { className: "dshg-hint" }, "面板改动只改内存草稿；点「保存能力改动」后写入策略文件，下一轮生效。"),
             h("div", { className: "dshg-note" }, "保存按服务端 v3 规范化后落盘（UTF-8 无 BOM）；本会话已经加载的工具保持常驻。"))),
+        h("div", { className: "dshg-card" },
+          h("div", { className: "dshg-cardHead" },
+            h("span", null, "目录 · 签名摘要（catalog.signatureSummary）"),
+            h("span", { className: "dshg-note" }, signatureDirty ? "有未保存改动" : "与策略文件同步"),
+            h("button", {
+              className: "dshg-switch",
+              "data-on": signatureEnabled ? "true" : "false",
+              onClick: () => stageSignature(!signatureEnabled, signatureToolsText),
+              disabled: saving,
+              title: "catalog.signatureSummary.enabled：关掉后目录不再出签名行（名单保留）",
+            }, h("i", null), "签名摘要 " + (signatureEnabled ? "开" : "关")),
+            h("button", { className: "dshg-btn", onClick: discardSignature, disabled: !signatureDirty || saving }, "放弃改动"),
+            h("button", {
+              className: "dshg-btn is-primary",
+              onClick: saveSignature,
+              disabled: !signatureDirty || saving,
+              title: "只写 catalog.signatureSummary，其它策略键不动",
+            }, saving ? "保存中…" : "保存签名摘要")),
+          h("div", { className: "dshg-cardBody" },
+            h("input", {
+              className: "dshg-input",
+              placeholder: "工具名，逗号分隔（例如 univer_sheet, web_fetch）",
+              value: signatureToolsText,
+              disabled: saving,
+              onChange: (event) => stageSignature(signatureEnabled, event.target.value),
+            }),
+            h("div", { className: "dshg-hint" }, "只对这里点名的按需工具出一行「名字(必填参数, 可选参数?)」，按名字字典序；无 required 参数的工具不出行。"),
+            h("div", { className: "dshg-hint" }, "只在 PTC 冻结（run_code）下渲染：native 会话的目录字节与不开这项时完全相同。预算按「目录增量 ≤ 2k tok」反推 ≈ 7,500 字符，单个工具最多 6 个参数。"),
+            h("div", { className: "dshg-hint" }, frozen
+              ? (signatureActive
+                ? "本会话是 PTC 冻结：目录里正输出 " + signatureTools.length + " 个工具的签名行。"
+                : signatureEnabled
+                  ? "本会话是 PTC 冻结，但名单为空（或都无 required 参数）：目录里没有签名行。"
+                  : "本会话是 PTC 冻结，但签名摘要已关闭：目录里没有签名行。")
+              : "本会话不是 PTC 冻结（" + executorKind + "）：目录里不渲染签名行，配置只对 PTC 会话生效。"))),
         h("div", { className: "dshg-card" },
           h("div", { className: "dshg-cardHead" },
             h("span", null, "工作原理 · 解析链与生效时机"),
@@ -1796,6 +1881,7 @@ window.__ModuleLoader__.load({
           stat(mcpOwnedCount, "MCP 托管", mcpOwnedCount > 0 ? "" : ""),
           stat(mcpExternalCount, "MCP 外部"),
           stat(executorKind + (frozen ? " · 冻结" : ""), "PTC 执行器"),
+          stat(signatureEnabled ? String(signatureTools.length) : "关", "签名摘要"),
           stat(savedAtText, "最后保存"),
           stat(policy.migrated ? "v" + (policy.fromVersion || 2) + " → v3" : "v3", "策略文件版本")),
         alerts.length > 0 ? h("div", { className: "dshg-alerts" }, alerts) : null,
