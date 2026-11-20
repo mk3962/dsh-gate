@@ -2,6 +2,34 @@
 
 版本号遵循语义化版本；格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [0.5.5] — 2026-11-20
+
+### Fixed — 技能激活信号逐个派发（office_* 也点亮）
+
+0.5.4 真机验收：univer 族 14 个工具全部可执行（`univer_status` 返回 `INVALID_FILE_PATH` 而不是
+`unknown tool`），但同形的 office 族 3 个工具仍 `unknown tool`。查宿主源码：
+
+- office 工具由宿主内置 `@deepseek-ai/dsh-tool-office` 注册，激活门与 univer **一字不差**：
+  `ctx.on("tools/result", …)` 置 `marked`，`when = marked.has(agent) || requestHeader().tools.some(…)`；
+- cordis 的 `emit` 是 `dispatch().map(cb => cb(...args))` —— **一个监听者抛错，排在后面的一律收不到**
+  （0.5.3 复审在 dsh-agent-instructions 上踩过一次，只修了 exec 形状）；
+- 两家形状相同、结局不同 ⇒ 差别只在排队位置：有监听者夹在中间抛错。
+
+改法：不再用 `ctx.emit`，改走 cordis 自己的 per-listener 通道 `ctx.events.dispatch("emit", …)`
+（宿主 `emitPluginDisposed` 同款用法）：拿回绑定好的回调后**逐个调用 + 各自 try/catch**，
+谁抛只记进 `failed`，后面那家照样收到信号。没有 `events.dispatch` 时（老宿主/测试桩）退回 `ctx.emit`。
+
+- **Added — 加载回执带激活诊断**：`gate_load` 的结果新增 `activation: { relay: { mode, listeners, delivered, failed[] }, conditional, skill }`。
+  真机看不到 `ctx.logger`，这条回执让「信号没送到 / 送了但 when 仍是假 / 压根没认出 conditional」三种失败可区分，不必再发诊断版。
+- **Fixed — `unknown tool` 提示覆盖 promoted 工具**：同一步里 `gate_load` 之后立刻 `gate_invoke`
+  （那一步的 `toolSet` 冻结在放行之前）现在也给「先激活、新一步再调」的可执行提示，不再原样抛宿主文案。
+
+### 测试
+
+- `test/host.mjs`：可选 `isolatedEvents`（暴露 `ctx.events.dispatch`，语义同 cordis：只取回调、不执行）。
+- `test/activation.test.mjs` 第 6 组：排在前面的监听者抛 `TypeError`，后面的照收；断言
+  `mode=isolated`、`listeners=2`、`delivered=1`、`failed=["boom"]`，且 `exec.signal` 仍在。
+
 ## [0.5.4] — 2026-11-20
 
 ### Fixed — 技能激活族的工具真正可执行（D2 收口）

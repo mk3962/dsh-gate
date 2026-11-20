@@ -272,6 +272,23 @@ export function makeHost(options) {
     effect: (callback) => callback(),
   };
 
+  /**
+   * cordis 的 per-listener 通道（0.5.5 · 激活信号隔离派发）。
+   *
+   * 真实宿主里 ctx.events.dispatch("emit", args) 只把绑定好的回调取出来、不执行；
+   * 执行与 try/catch 由调用方负责（宿主自己的 emitPluginDisposed 就是这么用的）。
+   * 这里按同一语义暴露：事件名从 args[0] 取（gate 传的是 ["tools/result", exec, result]）。
+   */
+  if (opts.isolatedEvents === true) {
+    rootCtx.events = {
+      dispatch(type, args) {
+        if (type !== "emit" || !Array.isArray(args)) return [];
+        if (args[0] !== "tools/result") return [];
+        return listeners("tools/result").slice();
+      },
+    };
+  }
+
   return {
     tools,
     rootCtx,

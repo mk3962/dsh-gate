@@ -140,4 +140,48 @@ ok("off / 常驻：都不放，且幂等");
   ok("activationPromote=false：可一键退回 0.5.3（工具面不动）");
 }
 
+// ---- 6) 激活信号逐个派发：前面监听者抛错，不能吃掉后面那家的信号 ----
+{
+  const defs = { univer: { name: "univer", provider: "pkg-u", description: "Univer。", content: "UNIVER BODY" } };
+  const host = makeHost({
+    names: ["pwsh", "skill", "univer_status", "web_search"],
+    conditional: ["univer_status"],
+    isolatedEvents: true,
+  });
+  host.rootCtx.get = (name) => {
+    if (name === "skills") {
+      return {
+        async list() { return [{ ...defs.univer, content: undefined }]; },
+        async get(key) { return defs[key] ? { ...defs[key] } : undefined; },
+        async snapshot() { return { skills: await this.list(), complete: true }; },
+      };
+    }
+    if (name === "workingDirectory") return { ensure: async () => tmp() };
+    return undefined;
+  };
+  // 第一位监听者模拟 dsh-agent-instructions 那类「读 exec.signal / 缺字段就抛」的监听者。
+  const seen = [];
+  host.rootCtx.on("tools/result", () => { throw new TypeError("boom"); });
+  // 第二位才是真正要收信号的（univer / office 的技能激活门）。
+  host.rootCtx.on("tools/result", (exec) => { seen.push(exec); });
+
+  const policy = resolvePolicy(
+    { version: 3, defaults: { capability: TIER_ONDEMAND, section: TIER_RESIDENT, skillpack: TIER_ONDEMAND }, skills: { takeover: true } },
+    { logger: host.logger, dshHome: tmp() },
+  );
+  const gate = createGate({ ctx: host.rootCtx, logger: host.logger, policy });
+  await gate.attach(host.agent);
+  const loaded = await gate.loadSkill(host.agent, "univer");
+  assert.equal(loaded.ok, true);
+  assert.equal(loaded.activation.relay.mode, "isolated", "有 events.dispatch 时走逐个派发");
+  assert.equal(loaded.activation.relay.listeners, 2, "两个监听者都要被枚举到");
+  assert.equal(loaded.activation.relay.delivered, 1, "抛错的那位不算送达，后面那位仍然送达");
+  assert.deepEqual(loaded.activation.relay.failed, ["boom"], "失败原因要能回给调用方（真机诊断靠它）");
+  assert.equal(seen.length, 1, "后面的监听者必须真的收到 exec");
+  assert.equal(seen[0].name, "skill");
+  assert.deepEqual(seen[0].arguments, { name: "univer" });
+  assert.ok(seen[0].signal && typeof seen[0].signal.aborted === "boolean", "exec.signal 不能省（0.5.3 复审 B1）");
+  ok("激活信号逐个派发：前排抛错不吃后排，失败原因可回读");
+}
+
 console.log("\n  通过 " + passed + " 组");

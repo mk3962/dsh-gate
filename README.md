@@ -319,6 +319,12 @@ ln -s "$HOME_DIR/local-plugins/dsh-gate" "$PROFILE/node_modules/dsh-gate"   # Wi
   ② `gate_invoke` / `gate_call` 转发时，目标若是 conditional 注册，就把**本步的 `exec.toolSet`** 一起交给
   `executeToolBatch`，宿主才按 admission 解析。拿不到 `toolSet` 时给出可执行的提示（先 `gate_load`，
   下一步再调），不再原样抛 `unknown tool`。`"activationPromote": false` 可整体退回 0.5.3 行为。
+- **激活信号逐个派发（0.5.5）**：0.5.4 真机只有 univer 被点亮、office 仍是 unknown tool —— 两家插件的激活门写法
+  一模一样，差别只在**排队位置**：cordis 的 `emit` 是 `dispatch().map(cb => cb(...args))`，一个监听者抛错就中断
+  后面所有监听者。0.5.5 改走 cordis 自己的 per-listener 通道 `ctx.events.dispatch("emit", …)`（宿主
+  `emitPluginDisposed` 同款），拿回回调后逐个调用、各自 try/catch：谁抛只记进回执，后面那家照样收到信号；
+  没有 `events.dispatch` 的环境退回 `ctx.emit`。`gate_load` 的返回值新增
+  `activation: { relay: { mode, listeners, delivered, failed[] }, conditional, skill }`，真机可直接读回执定位。
 - **不完整名单**：宿主 `skills.snapshot()` 返回 `complete: false`（provider 发现超时/被 abort）时，
   闸门沿用上一份可用名单并告警一次，不拿部分名单覆盖（否则技能会先消失再回来，两次改字节 = 两次断缓存）。
 - **旧会话残留**：升级前就存在的会话里，历史中的旧技能目录消息（`source.kind=skill-catalog`）已经写进
