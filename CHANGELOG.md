@@ -2,6 +2,82 @@
 
 版本号遵循语义化版本；格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [0.5.3] — 2026-11-20
+
+### Added — 重复调用护栏（`repeatGuard`，**默认关**）
+
+- **动机**：宿主自带的 `@deepseek-ai/dsh-repeat-tool-reminder` 判据只有「**连续**同样调用」，而 PTC 会话里
+  `run_code`（外层）与内层 `pwsh` 交替落事件，每来一条别的调用就把链重置为 1。实测 7dff3468：402 次
+  `pwsh`、107 处同命令重复、最长连续 run 只有 2 —— 现行 3/5/8 判据**一次都没触发**。
+- **判据换代**（`lib/guardrail.js`）：① 身份仍是精确签名 `(工具名, 深键序 JSON(args))`（换参数 = 新签名，
+  这是误伤免疫器，禁模糊/家族归一）；② 相邻性换成**窗口** `windowSize=20`（中间夹几条别的调用仍算同一条链）；
+  ③ **结果指纹** `len + sha1(前/中/后各 4KB) + isError` —— 文件改了重读、job 出新输出自动重置 episode，
+  「参数一样 + 结果一字未变」才是真低效。deny / `UNKNOWN_TOOL` 用固定哨兵：对着拒绝硬撞同样该被看见。
+- **触发**：第 `windowThreshold`（默认 3）、2×、3× … 次各提醒一条，每个 episode 最多
+  `maxRemindersPerEpisode`（默认 2）条；首条只给事实 + 三个替代动作，第二条补上出现位置。
+- **只降级提示，不 block**：护栏挂在 `tools/post-execute`，调用已经发生，在这里拦只能罚下一次 ——
+  误拦一次 = 任务中断，误提示一次 ≈ 150 token。消息折在 `additionalContexts` 最前面，下游决策（含 block）原样保留。
+- **transparent exclude**：`wait_agent` / `todo_write` / `list_agents` / `job_list` / `team_task_list` 不计数、
+  也不推进时钟（不打断别人的链）；支持 `*` 通配符。
+- **默认关**：`repeatGuard.enabled` 只认显式 `true`。打开前**必须**在 profile 的 `cordis.patch.yml` 里停用
+  宿主那一行（`- id: repeat-tool-reminder` + `disabled: true`），否则每条提醒发两次（状态是进程内 per-agent）。
+- **用户插话即刷新**：`agent/pre-step` 看到 `source.kind === 'user'` 的消息就清掉该 agent 的状态。
+
+### Added — `skills.activationRelay`（默认开）
+
+- **修的能力丢失**：`univer_*` 14 + `office_*` 3 共 17 个工具「目录里可见、`gate_load` 报成功、执行报
+  unknown tool」。根因是 `dsh-univer-office` 这类插件的**技能激活门**只认宿主 `skill` 工具的
+  `tools/result(exec.name === "skill")` 信号；技能接管后那个工具被 deny，信号永远不来 ⇒ 工具永不注册。
+- **修法**：`loadSkill` 成功（`reapply(agent)` 之后）补发一条 `tools/result` 伪事件，
+  `toolCallId = "gate-load-skill-<name>"`（可识别、可排查重复计数）；失败只 warn。
+- **逃生门**：`skills.activationRelay: false` 一键关掉（万一有监听者把伪事件当真结果写进历史，改文件 + 重启即可止血；
+  故意不进面板）。
+
+### Fixed — 0.5.3 代码复审（blocker 1 + major 4，全部已修并入测试）
+
+- **伪事件的 exec 形状补齐**（blocker）：cordis 的 `emit` 是 `dispatch().map(cb => cb(...args))`，**没有 try/catch** ——
+  一个监听者抛错就中断后续监听者并把异常抛回发射方。宿主 `dsh-agent-instructions` 的监听者会读
+  `exec.signal.aborted`，只发 `{agent,name,arguments,toolCallId}` 会让它抛 TypeError，排在它后面的
+  univer/office 激活门**永远收不到信号**（转发等于失效）。现在伪 exec 带 `callId / rootCallId / signal / parent`。
+- **`repeatGuard` 进 `POLICY_KEYS` / `V3_KEYS`**（major）：不进键表时 `mergePolicyFile` 只遍历表内键，
+  面板/接口**非 replace 保存**与「恢复默认」都会把 `repeatGuard` 静默丢掉。现在读、规范化、保存、禁用态四处同源。
+- **结果抖动不再白拿提醒**（major）：结果指纹变化只重置 `copies`、**不清 `fired`** —— 否则「结果每次带个时间戳/进度」
+  的循环每轮都能重拿两条，`maxRemindersPerEpisode` 形同虚设。配额属于这条链。
+- **`exclude` = 默认五项恒在 + 追加项**（major）：原来「用户写了 exclude 就整体替换」，只加一个 `gate_*` 就把
+  `wait_agent` / `job_list` 放回计数，第一次轮询就被当循环提醒。
+- **提醒 id 加 agent 级序号**（major）：同一签名第二次走到同一个 `copies` 时，id 与上一轮逐字节相同；
+  上游同职责实现用 randomUUID，说明 id 被当唯一键用。现在 seed = 签名 + 链起点 + copies + 该 agent 提醒序号
+  （同一段历史重放仍逐字节稳定，不破前缀缓存）。
+- **`windowSize` 语义修正**：允许夹在中间的**其它**调用条数（原来 `now - lastPos` 少给一条，注释与实现不一致）。
+- **测试**：`test/guardrail.test.mjs` 8 → 10 组（新增「抖动不白拿提醒」「`repeatGuard` 走保存/规范化/解析全链不丢」），
+  转发用例新增两个按真实形状写的监听者（读 `exec.signal.aborted` / 排在后面的激活门），
+  `test/host.mjs` 把监听者异常记进 `emittedErrors` 供断言；`policy` / `mcp-int` 的键表断言同步。
+- **注意**：护栏配置在挂载时读一次 —— **面板/文件改 `repeatGuard` 后要重启 DSH 才生效**（与 `gate.json` 其它键一致）。
+
+### Changed — PTC 目录的用法句按会话模式分叉（`lib/catalog.js`）
+
+- 原句「先 `gate_load` 加载，下一步即可直接调用」在 PTC 冻结下是错的：加载不改工具表，模型照做会撞
+  `UNKNOWN_TOOL`。冻结时改为「先 `gate_load`，再用 `gate_invoke({ tool, arguments })` 调用（工具表已冻结）」。
+  native 会话逐字节不变。
+
+### Refactor — 注入消息统一到 `lib/messages.js`
+
+- 技能正文 / 尾部声明 / 护栏提醒共用一份 `createGateUserMessage`：优先宿主 `createUserMessage`，
+  拿不到才退化成**确定性 id**（前缀 + 正文 sha1 前 12 位）的同形状对象 —— id 每步都变就会从这条消息处断前缀缓存。
+
+### Compatibility
+
+- 策略层新增两个键（`repeatGuard`、`skills.activationRelay`）：老 `gate.json` 不需要改，缺省即 0.5.2 行为
+  （护栏关、转发开）。`gate_status` 键集、`gate_invoke` / `canInvoke` / 冻结判定零改动。
+- 与宿主护栏**不要同时开**：`repeat-tool-reminder` 那一行请先 `disabled: true`。
+
+### Tests
+
+- 新增 `test/guardrail.test.mjs`（8 组）：配置归一与默认关闭、深键序签名与指纹、触发节奏 3/6 与封顶、
+  结果变了重置、窗口内/外、exclude 透明、用户插话重置 + 无 agent 降级、技能激活转发（发一次 / 失败不发 / 可关）。
+- `test/migrate.test.mjs`、`test/server-skills.test.mjs` 的 `skills` 形状断言补 `activationRelay: true`。
+- `test/host.mjs` 补 `postExecute` 运行器与 `emit` 记录、`preStep` 传 `messages`（护栏与转发都要能被断言）。
+
 ## [0.5.2] — 2026-11-18
 
 ### Docs — 成本口径勘误正式发版

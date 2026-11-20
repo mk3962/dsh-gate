@@ -223,7 +223,8 @@ const readJson = (file) => JSON.parse(fs.readFileSync(file, "utf8"));
   assert.equal(saved.sections, undefined, "保存后不许再有 v2 的 sections 表");
   // 0.3.0：v2 的 skills 表被吸收（tier → defaults.skillpack），落盘的是 v3 接管配置的默认值。
   // 这里曾经断言 undefined，语义变更后改为断言「不再是 v2 形状、且带上默认的 takeover/off/imports」。
-  assert.deepEqual(saved.skills, { takeover: true, off: [], imports: [] }, "v2 skills 表应迁成 v3 接管配置默认值");
+  // 0.5.3（上游票 B2）：多一个 activationRelay，默认 true —— 老文件里没有这个键时迁移必须补上默认值。
+  assert.deepEqual(saved.skills, { takeover: true, activationRelay: true, off: [], imports: [] }, "v2 skills 表应迁成 v3 接管配置默认值");
   assert.equal(saved.skills.tier, undefined, "v3 的 skills 里不该再有 tier（只读别名只在运行时）");
   assert.equal(saved.capabilities["native:read"].tier, TIER_RESIDENT, "旧 UI 的 read:1 要翻译成 native:read 能力");
   assert.equal(saved.capabilities["plugin:dsh-univer-office"].tier, TIER_RESIDENT, "旧 UI 的 univer_sheet:1 要翻译成插件能力（最宽松 1）");

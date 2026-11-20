@@ -180,6 +180,26 @@ export function makeHost(options) {
     return handlers.get(event);
   };
 
+  /**
+   * ctx.emit：与 cordis 同语义 —— 记一笔然后同步派发给同名监听者。
+   * 0.5.3 起要测「技能激活转发」（gate_load 成功后补发 tools/result），所以这里必须能
+   * 断言「发出了什么」，而不只是「谁能收」。
+   */
+  const emitted = [];
+  /**
+   * 监听者抛错会被记下来而不是静默吞掉（真实 cordis 的 emit 没有 try/catch：一个监听者抛错
+   * 就中断后续监听者）。这里保留「继续派发」以免单个坏桩打断用例，但把异常交给用例断言 ——
+   * 0.5.3 复审 B1 正是「伪事件的 exec 缺字段、真实监听者抛 TypeError、后面的监听者收不到」，
+   * 这条记录就是抓它的钩子。
+   */
+  const emittedErrors = [];
+  const emit = (event, ...args) => {
+    emitted.push({ event, args });
+    for (const handler of listeners(event).slice()) {
+      try { handler(...args); } catch (error) { emittedErrors.push({ event, error }); }
+    }
+  };
+
   const on = (event, handler, subscribeOptions) => {
     const list = listeners(event);
     if (subscribeOptions && subscribeOptions.prepend) list.unshift(handler);
@@ -202,6 +222,7 @@ export function makeHost(options) {
     agent.ctx = {
       tools: scopedTools,
       on,
+      emit,
       effect: (callback) => callback(),
       // 与宿主同：拿 scoped ctx 的唯一正路是 agent.ctx.plugin({inject:["tools"]})。
       plugin(descriptor) {
@@ -226,6 +247,7 @@ export function makeHost(options) {
     logger,
     agents: { roots: () => agents.slice() },
     on,
+    emit,
     inject(_deps, callback) { return callback(rootCtx); },
     effect: (callback) => callback(),
   };
@@ -241,6 +263,8 @@ export function makeHost(options) {
     registry,
     preset: presetNames,
     calls,
+    emitted,
+    emittedErrors,
     addAgent,
     makeAgent,
     addPreset(name, definition) {
@@ -275,14 +299,31 @@ export function makeHost(options) {
       }
       return current();
     },
-    /** 跑一次「agent 前-step」，返回决策结果。 */
-    preStep(decision, agent) {
+    /**
+     * 跑一次「工具执行后」（tools/post-execute），返回最终决策。
+     * 与真实宿主同签名：(exec, result, next) —— 护栏这类监听者要先委派再折上下文。
+     */
+    postExecute(exec, result) {
+      const list = listeners("tools/post-execute");
+      let current = async () => ({ kind: "accept" });
+      for (let i = list.length - 1; i >= 0; i -= 1) {
+        const handler = list[i];
+        const inner = current;
+        current = () => handler(exec, result, inner);
+      }
+      return current();
+    },
+    /**
+     * 跑一次「agent 前-step」，返回决策结果。
+     * messages 要能传：护栏靠「这一步有没有用户插话」决定是否清状态（0.5.3）。
+     */
+    preStep(decision, agent, messages) {
       const list = listeners("agent/pre-step");
       let current = async () => decision;
       for (let i = list.length - 1; i >= 0; i -= 1) {
         const handler = list[i];
         const inner = current;
-        current = () => handler({ agent }, inner);
+        current = () => handler({ agent, messages }, inner);
       }
       return current();
     },

@@ -44,7 +44,8 @@ const tmpDir = () => fs.mkdtempSync(path.join(os.tmpdir(), "gate-policy-"));
   // 0.3.0 起 skills 回到顶层，但装的是接管配置（takeover/off/imports），档位真源仍是 defaults.skillpack；
   // v2 只写 { tier } 的老文件由 isV2SkillsShape 识别后迁移，不会当成 v3 配置。
   // 0.3.0 工单 15：mcp 成为顶层键（MCP 接管声明），键集断言同步加一项。
-  assert.deepEqual([...tableKeys].sort(), ["capabilities", "catalog", "defaults", "enabled", "freezePtcToolset", "legacy", "mcp", "narrowPassThrough", "protected", "skills", "sources", "version"]);
+  // 0.5.3（体检票 04 / 复审 M4）：repeatGuard 进表 —— 不进表就会被非 replace 保存静默丢掉。
+  assert.deepEqual([...tableKeys].sort(), ["capabilities", "catalog", "defaults", "enabled", "freezePtcToolset", "legacy", "mcp", "narrowPassThrough", "protected", "repeatGuard", "skills", "sources", "version"]);
   for (const spec of POLICY_KEYS) {
     assert.equal(typeof spec.kind, "string", spec.key + " 缺 kind");
     assert.equal(typeof spec.merge, "string", spec.key + " 缺 merge");
@@ -197,6 +198,9 @@ const tmpDir = () => fs.mkdtempSync(path.join(os.tmpdir(), "gate-policy-"));
       case "skills": return { takeover: false, off: ["mutated-skill"], imports: [{ id: "mut", path: "./skills/mut" }] };
       // 0.3.0 工单 15：MCP 声明 —— servers 整表替换（提交了就换，不逐项拼）。
       case "mcp": return { servers: { mutated: { transport: "stdio", command: "npx" } } };
+      // 0.5.3（票 04）：护栏配置 —— 逐字段覆盖；只提交 enabled 也要保住阈值与 exclude 默认项。
+      // exclude 是「默认五项 + 追加项」，不是逐字覆盖 —— 这里不提交它，专门另有用例锁那个语义。
+      case "guardrail": return { enabled: true, windowThreshold: 4 };
       default: throw new Error("未知 kind: " + spec.kind);
     }
   };

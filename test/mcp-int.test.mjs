@@ -76,7 +76,9 @@ const quiet = { warn() { /* 用例自己断言结果对象 */ }, info() { /* noo
 // ── 3. 保存合并：mcp 整表替换（删除真的生效），没提交时保留旧表 ───────────────
 {
   assert.deepEqual(emptyPolicyTemplate().mcp, { servers: {} }, "空模板要有 mcp.servers");
-  assert.equal(POLICY_KEYS[POLICY_KEYS.length - 1].key, "mcp", "mcp 追加在键表末尾");
+  // 0.5.3 起 mcp 不再是最后一行（repeatGuard 追加在它后面）；断言改成「mcp 在表里且顺序稳定」。
+  assert.equal(POLICY_KEYS.filter((spec) => spec.key === "mcp").length, 1, "mcp 在键表里只能出现一次");
+  assert.ok(POLICY_KEYS.findIndex((spec) => spec.key === "mcp") > POLICY_KEYS.findIndex((spec) => spec.key === "skills"), "mcp 仍排在 skills 之后（顺序稳定）");
   const merged = mergePolicyFile(
     { mcp: { servers: { old: { command: "x" } } } },
     { mcp: { servers: { next: { command: "y" } } } },

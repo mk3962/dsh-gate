@@ -304,6 +304,13 @@ ln -s "$HOME_DIR/local-plugins/dsh-gate" "$PROFILE/node_modules/dsh-gate"   # Wi
   `origin` / `path` / `tier` / `shadowed`），并 warn 一次；导入之间同名也是先声明的赢。
 - **逃生门**：`"takeover": false` 完整退回 0.1.8 —— 宿主照常注入目录、`skill` 工具照常可见、
   `gate_load(["skill:x"])` 照旧转发宿主 `skill` 工具，闸门只按 `defaults.skillpack` 决定要不要摘目录。
+- **技能激活转发（0.5.3，`skills.activationRelay`，默认 `true`）**：`univer_*` 14 + `office_*` 3 共 17 个工具
+  曾经「目录里可见、`gate_load` 报成功、执行报 unknown tool」—— 那些插件的**技能激活门**只认宿主 `skill` 工具的
+  `tools/result(exec.name === "skill")` 信号，接管后那个工具被 deny，信号永不到达。现在 `gate_load` 加载成功会在
+  `reapply(agent)` 之后补发一条 `tools/result` 伪事件（`toolCallId = gate-load-skill-<name>`，失败只 warn）。
+  万一有监听者把伪事件当真结果写进历史，改 `"activationRelay": false` + 重启即可止血（故意不进面板）。
+  伪 exec **按真实形状发**（`callId` / `rootCallId` / `signal` / `parent`）：cordis 的 `emit` 没有 try/catch，
+  宿主的 `dsh-agent-instructions` 监听者会读 `exec.signal.aborted`，少一个字段就会抛错并中断排在后面的激活门。
 - **不完整名单**：宿主 `skills.snapshot()` 返回 `complete: false`（provider 发现超时/被 abort）时，
   闸门沿用上一份可用名单并告警一次，不拿部分名单覆盖（否则技能会先消失再回来，两次改字节 = 两次断缓存）。
 - **旧会话残留**：升级前就存在的会话里，历史中的旧技能目录消息（`source.kind=skill-catalog`）已经写进
@@ -345,6 +352,44 @@ ln -s "$HOME_DIR/local-plugins/dsh-gate" "$PROFILE/node_modules/dsh-gate"   # Wi
 - **限制**：挂载会 `await` 初始连接（多个 server 并发，不会串行叠加等待）；`update` 是「先卸再挂」，
   新配置启动失败不会回滚旧实例；loader 行识别依赖包名 `dsh-mcp-client`；宿主没有连接状态 API，
   「有没有工具」是唯一的连接证据。
+
+### 重复调用护栏（0.5.3）
+
+**为什么自己做**：宿主自带的 `@deepseek-ai/dsh-repeat-tool-reminder` 判据只有「**连续**同样调用」。PTC 会话里
+`run_code`（外层）与内层 `pwsh` 交替落事件，每来一条别的调用就把链重置成 1 —— 实测一条 402 次 `pwsh` 的会话里
+107 处同命令重复、最长连续 run 只有 2，**现行判据一次都没触发**。判据只能改在源码层，所以并进 gate。
+
+```json
+"repeatGuard": {
+  "enabled": true,
+  "windowSize": 20,
+  "windowThreshold": 3,
+  "maxRemindersPerEpisode": 2,
+  "exclude": ["wait_agent", "todo_write", "list_agents", "job_list", "team_task_list"]
+}
+```
+
+- **三道判据**：① 身份是精确签名 `(工具名, 深键序 JSON(args))` —— 换参数就是新签名，天然不触发
+  （任何「家族/模糊/语义归一」都会把「换 filter 重试」的真进展判成重复）；② 相邻性换成**窗口**：
+  同一签名两次出现之间允许夹 `windowSize` 条被跟踪调用；③ **结果指纹** `len + sha1(前/中/后各 4KB) + isError`：
+  结果变了就是进展、episode 重置，于是「文件改了重读」「job 有新输出」不触发，而「结果一字未变」是强低效证据。
+- **触发节奏**：第 `windowThreshold`（3）、6、9 … 次各一条，每个 episode 最多 `maxRemindersPerEpisode`（2）条。
+  首条只给事实句 + 三个替代动作（`job_output({job_id, wait:true})` / 直接进入下一步 / 换 path-offset-filter-limit），
+  第二条补上出现位置。被策略拒绝（`UNKNOWN_TOOL` / `*DENIED*` / `CANCELED`）的调用用固定哨兵进指纹 ——
+  对着一个 deny 反复硬撞同样该被看见。
+- **只提示不拦截**：监听 `tools/post-execute`，此刻调用已经发生，block 只能罚下一次。提醒作为一条 user 消息折在
+  `additionalContexts` 最前面，下游决策（含 block）原样保留。
+- **`exclude` 是透明语义**：命中的工具不计数、也不推进时钟（不打断别人的链）；支持 `*` 通配符。
+  ⚠️ 默认五个（`wait_agent` / `todo_write` / `list_agents` / `job_list` / `team_task_list`）**恒在**，
+  你写 `exclude` 只是往后面追加 —— 只写一个 `gate_*` 不会把轮询类放回计数。
+- **提醒配额属于这条链**：结果变了只重置计数、不重置已发条数（否则「结果每次带个时间戳」的循环每轮白拿两条）。
+- **用户插话即刷新**：`agent/pre-step` 看到 `source.kind === "user"` 的消息就清掉该 agent 的状态
+  （跨插话的「重复」不是循环）。
+- ⚠️ **打开前先停用宿主那一行**：profile 的 `cordis.patch.yml` 里加 `- id: repeat-tool-reminder` +
+  `disabled: true`。护栏状态是进程内 per-agent，两套监听器同时挂 = 每条提醒发两次。默认 `enabled: false` 就是为了
+  让「没做这一步的人」不会踩双提醒。
+- ℹ️ 护栏配置在**挂载时读一次**：改 `gate.json` 的 `repeatGuard`（或面板保存）后要重启 DSH 才生效，
+  与其它策略键一致（不是 rebug，别当故障查）。
 
 ### 语义边界（都是实测的宿主行为）
 
