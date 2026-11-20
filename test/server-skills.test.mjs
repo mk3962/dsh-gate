@@ -235,7 +235,7 @@ const ok = (label) => { passed += 1; console.log("  ok    " + label); };
   res = await request(policyRoute, "POST", { version: 3, replace: true, enabled: true, defaults: { capability: 2, section: 1, skillpack: 2 }, capabilities: {}, sources: {}, legacy: { unknownOverrides: {} } });
   assert.equal(res.code, 200, JSON.stringify(res.body));
   saved = readJson(file);
-  assert.deepEqual(saved.skills, { takeover: false, activationRelay: true, off: ["alpha-skill", "beta-skill"], imports: [{ path: importDir }, { id: "empty", path: emptyDir }] }, "整份替换必须保留接管配置");
+  assert.deepEqual(saved.skills, { takeover: false, activationRelay: true, activationPromote: true, off: ["alpha-skill", "beta-skill"], imports: [{ path: importDir }, { id: "empty", path: emptyDir }] }, "整份替换必须保留接管配置");
 
   // 2.9 无 BOM、无 CRLF
   const text = fs.readFileSync(file, "utf8");

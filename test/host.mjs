@@ -15,6 +15,10 @@
  *   const host = makeHost({ id: "a1", names: [...] }); // 指定首个 agent 的 id 与工具面
  *   const child = host.addAgent({ id: "c", origin: "subagent", names: [...], own: [...] });
  *   host.setExecutor(agent, makePtcExecutor());   // 选中 PTC / native 执行器（工单 07）
+ *   const host = makeHost({ conditional: ["univer_status"] }); // 带 when 的 conditional 注册（0.5.4）
+ *
+ * view(scope) 还带 registrations（name → {definition, when}）：真实宿主把 when 留在注册面上，
+ * restriction 只影响 visible —— 技能激活放行（gate.js conditionalNamesOf）读的就是这一份。
  */
 
 /** PTC 传输：只进 visible，不进 restrictableNames（所以闸门把它算成自有层）。 */
@@ -59,6 +63,16 @@ export function makeHost(options) {
   const presetNames = new Set(opts.preset || []);
   const registry = new Map();
   for (const name of opts.names || DEFAULT_TOOL_NAMES) registry.set(name, definitionOf(name));
+  // conditional 注册：真实宿主 registration.when 是 step admission 的谓词（dsh-tools resolve()）。
+  // 测试里固定 true —— 闸门只看「有没有 when」，不看它此刻求值成什么。
+  const conditional = new Set(opts.conditional || []);
+  const whenOf = (name) => (conditional.has(name) ? () => true : undefined);
+  /** 与真实 view() 同形：registrations 覆盖 visible 的每个名字（when 可 undefined）。 */
+  const registrationsOf = (visible) => {
+    const out = new Map();
+    for (const [name, definition] of visible) out.set(name, { definition, when: whenOf(name) });
+    return out;
+  };
 
   const logs = [];
   const logger = {
@@ -93,7 +107,12 @@ export function makeHost(options) {
     visible.set(TRANSPORT, { name: TRANSPORT, description: "ptc transport" });
     // 真实宿主：run_code 只进 visible，不进 restrictableNames / knownNames（所以闸门把它算自有层）。
     const restrictable = new Set([...visible.keys()].filter((name) => name !== TRANSPORT));
-    return { visible, restrictableNames: restrictable, knownNames: new Set(restrictable) };
+    return {
+      visible,
+      registrations: registrationsOf(visible),
+      restrictableNames: restrictable,
+      knownNames: new Set(restrictable),
+    };
   };
 
   /** agent 视图：registry（含 preset 平面）∪ 自有层，减去该 agent 身上生效的 restrict。 */
@@ -114,6 +133,7 @@ export function makeHost(options) {
     const registered = Array.isArray(agent.registered) ? agent.registered : namesOf(agent);
     return {
       visible,
+      registrations: registrationsOf(visible),
       restrictableNames: restrictable,
       knownNames: new Set([...registered, ...ownOf(agent)].filter((name) => name !== TRANSPORT)),
     };

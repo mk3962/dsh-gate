@@ -2,6 +2,39 @@
 
 版本号遵循语义化版本；格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [0.5.4] — 2026-11-20
+
+### Fixed — 技能激活族的工具真正可执行（D2 收口）
+
+0.5.3 的 `activationRelay` 只补了「信号」，实测 `gate_load(["skill:univer"])` 成功（正文 9,322 字）后
+`gate_invoke({ tool: "univer_status" })` 仍返回 `Error: unknown tool`。根因是宿主执行面的第二道限制，
+与信号有没有发出去无关：
+
+- `dsh-tools/lib/index.js:531-535` → `executable(name, scope, toolSet)`：`toolSet === undefined` 时，
+  `view.registrations.get(name)?.when === void 0` 才返回定义，**带 `when` 的 conditional 注册一律 undefined**；
+- `gate.callThrough` 的 `tools.execute({callId,name,agent,arguments,signal})` 正是无 `toolSet` 调用
+  （它发生在模型 step 之外），所以 univer/office 那 17 个工具永远 `UNKNOWN_TOOL`；
+- 而且这些工具被闸门 deny ⇒ 不进 `tools.resolve()` 的 admission ⇒ 即使 `when` 为真也没有「步内」执行口。
+
+两半一起修（缺一不可）：
+
+- **Added — `skills.activationPromote`（默认开）**：`gate_load("skill:x")` 成功后，按「技能名第一段 = 工具族前缀」
+  （`univer` / `univer-sheet` → `univer_*`；`office-docx` → `office_*`）把该族**带 `when` 的注册**从 deny 放出，
+  在 `planFor` 里按常驻处理 —— 下一步它们才会被声明并进 admission。只放 conditional（没有 `when` 的工具按档位走），
+  绝不碰 explicit `off`，已常驻的不再放（幂等）。`false` 可整体退回 0.5.3 行为。
+- **Fixed — 转发带上本步 `toolSet`**：`gate_invoke` / `gate_call` 把自身 `exec.toolSet` 交下去；
+  `callThrough` 只在目标是 conditional 注册时才带（非 conditional 工具保持 0.5.3 语义，第二层工具照样能转发）。
+  拿不到 `toolSet` 时返回可执行提示（先 `gate_load`，**下一步 / 新程序**里再调），不再原样抛宿主那句
+  `unknown tool`（模型会以为名字写错，跑去换名字）。
+- **Fixed — 归层表与工具面同口径**：`tierMap` 对已放出的工具报常驻，面板不再显示「按需」而工具其实已在工具表里。
+- **新增 `lib/activation.js`**（纯判断，可单测）：`skillFamilyOf` / `familyToolNames` / `pickPromotable`；
+  族切分只认标识符形状 + 第一段，匹配只认「名字就是族」与「族_ 前缀」—— 误放等于把用户藏的工具塞回工具表。
+- **测试**：`test/activation.test.mjs` 6 组（族切分 / 族内判据 / 只放 conditional / off 与幂等 /
+  端到端「加载技能 ⇒ 该族工具进常驻面、从 deny 消失」/ `activationPromote=false` 退回）；
+  `test/host.mjs` 增加 conditional 注册与 `view().registrations`（与真实宿主同形）；
+  `migrate` / `server-skills` 的 skills 形状断言同步。`npm run verify` 全绿。
+- **注意**：仍要**重启 DSH** 才生效（插件代码随市场更新落盘）；本次不需要改 `gate.json`（默认值就是开）。
+
 ## [0.5.3] — 2026-11-20
 
 ### Added — 重复调用护栏（`repeatGuard`，**默认关**）

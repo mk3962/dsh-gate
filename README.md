@@ -311,6 +311,14 @@ ln -s "$HOME_DIR/local-plugins/dsh-gate" "$PROFILE/node_modules/dsh-gate"   # Wi
   万一有监听者把伪事件当真结果写进历史，改 `"activationRelay": false` + 重启即可止血（故意不进面板）。
   伪 exec **按真实形状发**（`callId` / `rootCallId` / `signal` / `parent`）：cordis 的 `emit` 没有 try/catch，
   宿主的 `dsh-agent-instructions` 监听者会读 `exec.signal.aborted`，少一个字段就会抛错并中断排在后面的激活门。
+- **技能激活放行（0.5.4，`skills.activationPromote`，默认 `true`）**：0.5.3 只补了信号，实测仍不可执行 ——
+  宿主 `dsh-tools` 的 `executable(name, scope, toolSet)` 在 `toolSet === undefined` 时对**带 `when` 的注册**
+  一律返回 undefined（`dsh-tools/lib/index.js:531-535`），而 `gate_invoke` 的转发发生在 step 之外。0.5.4 两半一起修：
+  ① 加载成功后把该族（技能名第一段，`univer-sheet` → `univer_*`）**conditional 工具**从 deny 放出并当常驻处理
+  （下一步才会被声明、才会进 `tools.resolve()` 的 admission；explicit `off` 绝不放）；
+  ② `gate_invoke` / `gate_call` 转发时，目标若是 conditional 注册，就把**本步的 `exec.toolSet`** 一起交给
+  `executeToolBatch`，宿主才按 admission 解析。拿不到 `toolSet` 时给出可执行的提示（先 `gate_load`，
+  下一步再调），不再原样抛 `unknown tool`。`"activationPromote": false` 可整体退回 0.5.3 行为。
 - **不完整名单**：宿主 `skills.snapshot()` 返回 `complete: false`（provider 发现超时/被 abort）时，
   闸门沿用上一份可用名单并告警一次，不拿部分名单覆盖（否则技能会先消失再回来，两次改字节 = 两次断缓存）。
 - **旧会话残留**：升级前就存在的会话里，历史中的旧技能目录消息（`source.kind=skill-catalog`）已经写进
