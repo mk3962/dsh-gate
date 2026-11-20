@@ -323,8 +323,16 @@ ln -s "$HOME_DIR/local-plugins/dsh-gate" "$PROFILE/node_modules/dsh-gate"   # Wi
   一模一样，差别只在**排队位置**：cordis 的 `emit` 是 `dispatch().map(cb => cb(...args))`，一个监听者抛错就中断
   后面所有监听者。0.5.5 改走 cordis 自己的 per-listener 通道 `ctx.events.dispatch("emit", …)`（宿主
   `emitPluginDisposed` 同款），拿回回调后逐个调用、各自 try/catch：谁抛只记进回执，后面那家照样收到信号；
-  没有 `events.dispatch` 的环境退回 `ctx.emit`。`gate_load` 的返回值新增
-  `activation: { relay: { mode, listeners, delivered, failed[] }, conditional, skill }`，真机可直接读回执定位。
+  没有 `events.dispatch` 的环境退回 `ctx.emit`。
+- **族内全放 + 回执真的送到模型（0.5.6）**：0.5.5 真机 `gate_load(["skill:office"])` 报成功，但 `activation`
+  是 `undefined`、resident 不增、`office_render` 仍 unknown tool。两个独立的错：
+  ① `gate_load` 的 `output.schema` 是 `additionalProperties: false` 且只列 5 个键，回执在 proxy 层就被裁掉了 ——
+  诊断信息写了却永远到不了模型；0.5.6 把 `activation` 写进 schema（并新增 `promoted[]`、relay 失败行）。
+  ② 放行判据用「我们认出了它的 `when`」（`conditionalNamesOf`）做闸，真机只认得出 univer、认不出 office
+  （两家写法一字不差，原因仍未查明）⇒ office 族永远放不出来。0.5.6 改成**族内全放**：注册在案 + 族内
+  （名字=族 或 族_ 前缀）+ 不在 explicit `off` + 还没常驻就放，族外一个不碰；能不能执行交给宿主判
+  （plain 工具放出来照样能跑，conditional 工具下一步才有机会进 `toolSet`）。
+  `gate_invoke` / `gate_call` 转发时，`promoted` 里的名字同样带 step `toolSet`。
 - **不完整名单**：宿主 `skills.snapshot()` 返回 `complete: false`（provider 发现超时/被 abort）时，
   闸门沿用上一份可用名单并告警一次，不拿部分名单覆盖（否则技能会先消失再回来，两次改字节 = 两次断缓存）。
 - **旧会话残留**：升级前就存在的会话里，历史中的旧技能目录消息（`source.kind=skill-catalog`）已经写进

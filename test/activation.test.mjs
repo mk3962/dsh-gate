@@ -5,7 +5,9 @@
  *  1) 族切分只取技能名第一段：univer-sheet → univer、office-docx → office、browser-skill → browser；
  *     切不出标识符形状（空串、数字开头、中文）时返回空串 —— 宁可不放，也不误放。
  *  2) 族内判据只有「名字就是族」与「族_ 前缀」两条：univerx 不算 univer 族。
- *  3) pickPromotable 只放 conditional（带 when）的注册；非 conditional 放它没有意义。
+ *  3) pickPromotable 放「族内 + 在案」的名字，不再要求 ==我们认出它的 when==（0.5.6）：
+ *     0.5.4 用 conditional 集合做闸，真机只认得出 univer、认不出 office（写法相同），
+ *     结果 office 族永远放不出来；族内让宿主自己判能不能执行。
  *  4) explicit off / 已常驻 绝不放；结果排序，同一输入两次结果一致。
  *
  * 跑法：node --import ./test/stub-loader.mjs test/activation.test.mjs
@@ -46,35 +48,34 @@ assert.deepEqual(familyToolNames("office", names), ["office_render"]);
 assert.deepEqual(familyToolNames("", names), [], "没有族 ⇒ 一个都不匹配");
 ok("族内判据：精确名字 or 族_ 前缀");
 
-// ---- 3) 只放 conditional ----
+// ---- 3) 族内全放（0.5.6）：不再要求「我们认出了它的 when」 ----
 const conditional = new Set(["univer_status", "univer_api", "office_render"]);
-let picked = pickPromotable({ skillName: "univer", names, conditional });
-assert.deepEqual(picked, ["univer_api", "univer_status"], "非 conditional 的 univer 不放；结果排序");
+let picked = pickPromotable({ skillName: "univer", names });
+assert.deepEqual(picked, ["univer", "univer_api", "univer_status"],
+  "族内全放（名字=族 或 族_ 前缀）；univerx_probe 不是本族；结果排序");
 picked = pickPromotable({ skillName: "univer", names, conditional: new Set() });
-assert.deepEqual(picked, [], "没有 conditional 注册 ⇒ 不放（等价 0.5.3 行为）");
-picked = pickPromotable({ skillName: "univer", names, conditional: undefined });
-assert.deepEqual(picked, [], "conditional 不是 Set ⇒ 不放（形状防御）");
-ok("只放 conditional：没有 when 的工具不碰");
+assert.deepEqual(picked, ["univer", "univer_api", "univer_status"],
+  "认不出 conditional（真机 office 就是这样）也必须放：族内让宿主自己判能不能执行");
+picked = pickPromotable({ skillName: "office", names });
+assert.deepEqual(picked, ["office_render"], "换族只出本族");
+ok("族内全放：不靠 conditional 认门，plain 工具也放出");
 
 // ---- 4) off / 已常驻 不放 ----
 picked = pickPromotable({
   skillName: "univer",
   names,
-  conditional,
   off: new Set(["univer_status"]),
 });
-assert.deepEqual(picked, ["univer_api"], "explicit off 绝不放（关掉必须真的关）");
+assert.deepEqual(picked, ["univer", "univer_api"], "explicit off 绝不放（关掉必须真的关）");
 const firstPick = pickPromotable({
   skillName: "univer",
   names,
-  conditional,
   resident: new Set(["univer_api"]),
 });
-assert.deepEqual(firstPick, ["univer_status"], "已经常驻的不必再放（幂等）");
+assert.deepEqual(firstPick, ["univer", "univer_status"], "已经常驻的不必再放（幂等）");
 const again = pickPromotable({
   skillName: "univer",
   names,
-  conditional,
   resident: new Set(["univer_api", ...firstPick]),
 });
 assert.deepEqual(again, [], "第二次加载同一技能：一个都不放");
@@ -115,7 +116,7 @@ ok("off / 常驻：都不放，且幂等");
   const loaded = await rig.gate.loadSkill(rig.host.agent, "univer");
   assert.equal(loaded.ok, true, "univer 技能应能加载");
   assert.deepEqual(loaded.promoted, ["univer_api", "univer_status"],
-    "只放本族 conditional 工具（office_render 不属于 univer 族）");
+    "放本族全部工具（这个宿主的工具表里没有名为 univer 的工具；office_render 不属于本族）");
 
   const after = rig.gate.snapshot(rig.host.agent).tiers;
   assert.equal(after.univer_status, TIER_RESIDENT, "放出的工具按常驻处理（下一步被声明、进 admission）");
@@ -127,7 +128,34 @@ ok("off / 常驻：都不放，且幂等");
 
   const again = await rig.gate.loadSkill(rig.host.agent, "univer");
   assert.deepEqual(again.promoted, [], "第二次加载同一个技能：一个都不再放（幂等）");
-  ok("端到端：加载技能把该族 conditional 工具放进常驻面并从 deny 移除");
+  ok("端到端：加载技能把该族工具放进常驻面并从 deny 移除");
+
+  // 真机 office 的样子：注册者写的 when 我们认不出来（conditionalNamesOf 为空），族内仍须放行。
+  {
+    const blind = makeHost({ names: ["pwsh", "skill", "office_render", "web_search"], conditional: [] });
+    blind.rootCtx.get = (name) => {
+      if (name === "skills") {
+        return {
+          async list() { return [{ name: "office", provider: "pkg-o", description: "Office。", content: undefined }]; },
+          async get(key) { return key === "office" ? { name: "office", provider: "pkg-o", description: "Office。", content: "OFFICE BODY" } : undefined; },
+          async snapshot() { return { skills: await this.list(), complete: true }; },
+        };
+      }
+      if (name === "workingDirectory") return { ensure: async () => tmp() };
+      return undefined;
+    };
+    const blindPolicy = resolvePolicy(
+      { version: 3, defaults: { capability: TIER_ONDEMAND, section: TIER_RESIDENT, skillpack: TIER_ONDEMAND }, skills: { takeover: true } },
+      { logger: blind.logger, dshHome: tmp() },
+    );
+    const blindGate = createGate({ ctx: blind.rootCtx, logger: blind.logger, policy: blindPolicy });
+    await blindGate.attach(blind.agent);
+    const blindLoaded = await blindGate.loadSkill(blind.agent, "office");
+    assert.equal(blindLoaded.ok, true);
+    assert.deepEqual(blindLoaded.promoted, ["office_render"], "认不出 when 也必须放（真机 office 的坑）");
+    assert.equal(blindGate.snapshot(blind.agent).tiers.office_render, TIER_RESIDENT);
+    ok("端到端：conditionalNamesOf 认不出 when 时，族内工具仍然放行（0.5.6 回归点）");
+  }
 
   // 关掉开关 ⇒ 完整退回 0.5.3 行为（只发信号，不动工具面）
   const offRig = makeRig({ takeover: true, activationPromote: false });

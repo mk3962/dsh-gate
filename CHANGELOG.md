@@ -2,6 +2,41 @@
 
 版本号遵循语义化版本；格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [0.5.6] — 2026-11-20
+
+### Fixed — 技能族「族内全放」+ 激活回执真的送到模型
+
+0.5.5 真机：`gate_load(["skill:office-pptx"])` 报成功，但返回对象里 `activation` 是 `undefined`，
+`gate_status` 的 resident 不增，`gate_invoke({ tool: "office_render" })` 仍 `unknown tool`。
+对照 univer 正常 ⇒ 两个独立的错叠在一起：
+
+1. **回执被 schema 裁掉**：`lib/proxy.js` 的 `gate_load` `output.schema` 是 `additionalProperties: false` 且只列
+   `loaded / unknown / denied / skillText / deltaText`，0.5.5 写进结果的 `activation` 在 proxy 层就丢了。
+   诊断信息写了却永远到不了模型 —— 这本身是 0.5.5 的设计缺陷。
+2. **放行判据认不出 office 的门**：`pickPromotable` 当时要求「名字在我们认出的 `conditional` 集合里」，
+   而 `conditionalNamesOf()` 真机只认得出 univer 的 `when`、认不出 office 的（`dsh-tool-office` 与
+   `dsh-univer-office` 的激活门源码一字不差，原因仍未查明）⇒ office 族永远放不出来，与「信号有没有送到」无关。
+
+改法：
+
+- **族内全放**（`lib/activation.js`）：`pickPromotable` 不再读 `conditional`。判据变成
+  「注册在案 + 族内（名字 = 族 或 `族_` 前缀）+ 不在 explicit `off` + 不在 resident」，结果排序返回。
+  族外一个不碰；能不能执行交给宿主自己判（plain 工具放出来照样能跑，conditional 工具下一步才有机会进 `toolSet`）。
+- **`promoteSkillFamily` 不再因「认不出 conditional」整体放弃**（删掉 `conditional.size === 0` 的早退）。
+- **回执进 schema**（`lib/proxy.js`）：`gate_load` 的 `output.schema` 新增
+  `activation: { skill, conditional, promoted[], relay: { mode, listeners, delivered, failed[] } }`（仍 `additionalProperties: false`）；
+  成功加载多条技能时取最后一条。render 在 `relay.failed.length > 0` 时追加一行
+  「激活信号：送到 N/M 个监听者（mode）；失败 K 个：…」。
+- **转发带 toolSet 的范围放宽**（`lib/gate.js` `callThrough`）：`promoted` 里的名字与 conditional 注册同待遇，
+  转发时一并交出本步 `exec.toolSet`。
+
+### 测试
+
+- `test/activation.test.mjs` 第 3 组改写：不再断言「非 conditional 不放」，改为断言族内全放 + 换族只出本族。
+- 第 4 组（off / 常驻）按新判据重算期望值，幂等与 `off` 语义不变。
+- 第 5 组新增回归点：宿主工具表里**没有**能认出的 `when`（`conditional: []`，真机 office 的样子）时，
+  `loadSkill("office")` 仍须把 `office_render` 放进 resident 并从 deny 移除。
+
 ## [0.5.5] — 2026-11-20
 
 ### Fixed — 技能激活信号逐个派发（office_* 也点亮）
