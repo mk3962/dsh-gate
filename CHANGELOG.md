@@ -2,6 +2,23 @@
 
 版本号遵循语义化版本；格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [0.5.7] — 2026-11-20
+
+### Fixed — 激活回执带 `promoted`（0.5.6 的同一类错换了个位置）
+
+0.5.6 真机验收通过（office 族 3 个工具进 resident、`office_render` 真执行、`office_convert` 真转出一个 77 B 的 CSV），
+但读回执时发现 `activation` 里**没有 `promoted`**：`loadSkill` 只把 `promoted` 放在返回对象顶层，而 `gate_load`
+经 proxy 只透出 `activation` 这一个字段 ⇒ 「让用户去看 `activation.promoted`」在真机上等于没发生。
+与 0.5.5 回执被 schema 裁掉是同一类错：**诊断字段必须落在模型真正看得到的那个对象里**。
+
+- `lib/gate.js`：`activation` 增加 `promoted`（与顶层同源，不再两处各自演化）。
+- `test/activation.test.mjs`：端到端与「认不出 when」两条回归点都断言 `activation.promoted === promoted`。
+
+### 流程变更（用户 2026-11-20 16:53）
+
+gate 的升级修复改为**先在 WSL 里的 dsh 完成验收、通过后才推 GitHub**（WSL 里可装插件复刻 office/univer 的技能激活场景）。
+本版即第一个走该流程的版本：本地 `npm run verify` 全绿 → WSL 验收 → 通过后才 push + tag + Release。
+
 ## [0.5.6] — 2026-11-20
 
 ### Fixed — 技能族「族内全放」+ 激活回执真的送到模型

@@ -117,6 +117,8 @@ ok("off / 常驻：都不放，且幂等");
   assert.equal(loaded.ok, true, "univer 技能应能加载");
   assert.deepEqual(loaded.promoted, ["univer_api", "univer_status"],
     "放本族全部工具（这个宿主的工具表里没有名为 univer 的工具；office_render 不属于本族）");
+  assert.deepEqual(loaded.activation.promoted, loaded.promoted,
+    "0.5.7：回执本身要带 promoted（否则 proxy 只透出 activation，模型永远看不到这次放出了什么）");
 
   const after = rig.gate.snapshot(rig.host.agent).tiers;
   assert.equal(after.univer_status, TIER_RESIDENT, "放出的工具按常驻处理（下一步被声明、进 admission）");
@@ -153,6 +155,7 @@ ok("off / 常驻：都不放，且幂等");
     const blindLoaded = await blindGate.loadSkill(blind.agent, "office");
     assert.equal(blindLoaded.ok, true);
     assert.deepEqual(blindLoaded.promoted, ["office_render"], "认不出 when 也必须放（真机 office 的坑）");
+    assert.deepEqual(blindLoaded.activation.promoted, ["office_render"], "回执同源");
     assert.equal(blindGate.snapshot(blind.agent).tiers.office_render, TIER_RESIDENT);
     ok("端到端：conditionalNamesOf 认不出 when 时，族内工具仍然放行（0.5.6 回归点）");
   }
