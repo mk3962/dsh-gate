@@ -2,7 +2,7 @@
  * 重复调用护栏（0.5.3 · 体检票 04 / R2 合并进 gate）用例。
  *
  * 锁住七条口径（改 lib/guardrail.js 前先读）：
- *  1) 默认关闭：策略里没有 repeatGuard 或 enabled 不是显式 true ⇒ 一个监听器都不挂。
+ *  1) 热生效（C38）：监听器**始终挂**（默认关闭也挂），开关每事件现读；关闭时不计数、不提醒。
  *  2) 身份是精确签名：只差属性顺序的 args 归一到同一签名；换参数 = 新签名 = 不触发。
  *  3) 结果指纹：正文变了就重置 episode（文件重读、job 出新输出）；deny 类结果用固定哨兵。
  *  4) 窗口：同一签名两次出现之间夹 ≤ windowSize 条被跟踪调用仍算同一条链；超了就重开。
@@ -25,6 +25,8 @@ import {
   fingerprintOf,
   mountRepeatGuard,
   normalizeRepeatGuardConfig,
+  repeatGuardDiagnostics,
+  resetRepeatGuardDiagnostics,
   signatureOf,
   wildcardToRegExp,
 } from "../lib/guardrail.js";
@@ -90,14 +92,24 @@ const ENABLED = { enabled: true };
   const custom = normalizeRepeatGuardConfig({ exclude: ["wait_agent", 7, "", "gate_*"] });
   assert.deepEqual(custom.exclude, [...DEFAULT_EXCLUDE, "gate_*"], "exclude = 默认五项 + 追加项（去重、只留非空字符串）");
 
-  // 默认关闭 = 零监听器（不是「挂上但不提醒」——挂上就会和宿主那条一起算）。
+  // C38：关闭时也挂监听器（否则 UI 里打开开关必须重挂插件才生效）。关闭 = 不计数。
   const off = makeRig(undefined);
-  assert.equal(off.host.hookCount("tools/post-execute"), 0, "默认关闭时不许挂 post-execute");
-  assert.equal(off.host.hookCount("agent/pre-step"), 0, "默认关闭时不许挂 pre-step");
+  assert.equal(off.host.hookCount("tools/post-execute"), 1, "默认关闭也要挂 post-execute（热生效）");
+  assert.equal(off.host.hookCount("agent/pre-step"), 1, "默认关闭也要挂 pre-step（重置入口始终存在）");
   const quiet = await off.run("pwsh", { command: "ls" }, "SAME");
   assert.equal(quiet.notice, undefined, "关闭时重复调用不产生提醒");
+  // 就地打开（server.persistPolicy 就是这么改策略对象的）：下一次事件立刻开始计数，不重挂。
+  off.policy.repeatGuard = { ...off.policy.repeatGuard, enabled: true };
+  await off.run("read", { path: "x" }, "SAME");
+  await off.run("read", { path: "x" }, "SAME");
+  assert.ok((await off.run("read", { path: "x" }, "SAME")).notice !== undefined, "热保存后同一进程内立刻生效（C38）");
+  // 再关回去：立刻停（不是「挂上就一直算」）。
+  const before = repeatGuardDiagnostics().counted;
+  off.policy.repeatGuard = { ...off.policy.repeatGuard, enabled: false };
+  await off.run("task", { command: "y" }, "SAME");
+  assert.equal(repeatGuardDiagnostics().counted, before, "关闭后新增的事件一条都不计数（C38）");
   off.dispose();
-  ok("配置归一：默认关闭且零监听器；只认显式 true；越界值夹紧；exclude 只留非空字符串");
+  ok("配置归一：只认显式 true；越界值夹紧；exclude 只留非空字符串；开关热生效（C38）");
 }
 
 // ── 2. 精确签名与指纹 ────────────────────────────────────────────────────────
@@ -234,15 +246,26 @@ const ENABLED = { enabled: true };
   const args = { command: "ps" };
   await rig.run("pwsh", args);
   await rig.run("pwsh", args);
-  await rig.host.preStep({ kind: "continue" }, rig.host.agent, [{ role: "user", source: { kind: "user" }, content: [] }]);
+  // C44：重置的真源是**本轮决策结果**的 messages（不是 payload.messages）。
+  const userTurn = { kind: "enter", messages: [{ role: "user", source: { kind: "user" }, content: [] }] };
+  const decision = await rig.host.preStep(userTurn, rig.host.agent);
+  assert.equal(decision, userTurn, "重置不改决策（护栏只读）");
   await rig.run("pwsh", args);   // 状态已清 ⇒ copies=1
   assert.equal((await rig.run("pwsh", args)).notice, undefined, "用户插话后重新计数，第 2 次不该提醒");
   assert.ok((await rig.run("pwsh", args)).notice !== undefined, "插话后的新 episode 满 3 次仍要提醒");
 
+  // C44：入口消息为空 ⇒ 显式降级（不重置）并计数，绝不把「没拿到消息」当成「用户插话了」。
+  await rig.run("pwsh", { command: "ps2" }, "SAME");
+  await rig.run("pwsh", { command: "ps2" }, "SAME");
+  const emptyBefore = repeatGuardDiagnostics().emptyInput;
+  await rig.host.preStep({ kind: "enter", messages: [] }, rig.host.agent);
+  assert.equal(repeatGuardDiagnostics().emptyInput, emptyBefore + 1, "空入口消息必须记降级计数（C44）");
+  assert.ok((await rig.run("pwsh", { command: "ps2" }, "SAME")).notice !== undefined, "空入口消息不得重置 episode");
+
   // 直接 ctx.tools.execute() 的调用者没有 agent：无从提醒，也不能抛。
-  const decision = await rig.host.postExecute({ name: "pwsh", arguments: { command: "ps" } }, resultOf("SAME"));
-  assert.equal(decision.kind, "accept", "没有 agent 的调用必须安全降级");
-  assert.equal(noticeOf(decision), undefined, "没有 agent 就不发提醒");
+  const noAgent = await rig.host.postExecute({ name: "pwsh", arguments: { command: "ps" } }, resultOf("SAME"));
+  assert.equal(noAgent.kind, "accept", "没有 agent 的调用必须安全降级");
+  assert.equal(noticeOf(noAgent), undefined, "没有 agent 就不发提醒");
   rig.dispose();
   ok("用户插话重置状态；没有 agent 的调用安全降级");
 }
@@ -287,8 +310,8 @@ const ENABLED = { enabled: true };
   assert.equal(loaded.ok, true, "alpha 应该能加载");
   assert.equal(on.relays().length, 1, "加载成功必须补发一次 tools/result（技能激活门只认这个）");
   const [row] = on.relays();
-  assert.equal(row.args[0].callId, "gate-load-skill-alpha", "伪事件的 callId 必须可识别");
-  assert.equal(row.args[0].rootCallId, "gate-load-skill-alpha", "rootCallId 与 callId 同源");
+  assert.equal(row.args[0].callId, "gate-load-skill-alpha-1", "伪事件的 callId 必须可识别且带递增序号（C46）");
+  assert.equal(row.args[0].rootCallId, "gate-load-skill-alpha-1", "rootCallId 与 callId 同源");
   assert.deepEqual(row.args[0].arguments, { name: "alpha" }, "arguments 照宿主 skill 工具的形状");
   assert.equal(row.args[1].isError, false, "转发的是成功结果");
   assert.ok(row.args[0].callId !== undefined && row.args[0].rootCallId !== undefined, "伪 exec 必须带 callId / rootCallId");
@@ -297,6 +320,10 @@ const ENABLED = { enabled: true };
   assert.equal(on.host.emittedErrors.length, 0, "任何监听者都不该因为伪 exec 形状不全而抛错");
   assert.equal(await on.gate.loadSkill(on.host.agent, "nope").then((out) => out.ok), false, "未知技能加载失败");
   assert.equal(on.relays().length, 1, "加载失败不发信号（假激活比不激活更糟）");
+  // C46：二次加载同一个技能必须是一次**新**激活事件（旧实现 id 恒定，监听者会去重掉第二次）。
+  assert.equal((await on.gate.loadSkill(on.host.agent, "alpha")).ok, true);
+  assert.equal(on.relays().length, 2, "二次加载必须再发一次");
+  assert.notEqual(on.relays()[1].args[0].callId, row.args[0].callId, "激活事件 id 必须逐个不同（技能名 + 递增序号）");
 
   const off = makeRelay({ takeover: true, activationRelay: false });
   await off.gate.attach(off.host.agent);
@@ -306,7 +333,7 @@ const ENABLED = { enabled: true };
 }
 
 
-// ── 9. 结果抖动不白拿提醒（复审 M1）：配额属于这条链，不是每次结果变化都重开 ─────
+// ── 9. 结果变了两个计数一起归零（C39）：结果稳定后按同一阈值重新提醒，配额按结果封顶 ──
 {
   const rig = makeRig({ enabled: true, windowThreshold: 3, maxRemindersPerEpisode: 2 });
   const args = { command: "npm run verify" };
@@ -315,23 +342,28 @@ const ENABLED = { enabled: true };
   const first = (await rig.run("pwsh", args, "out")).notice;
   assert.ok(first !== undefined, "第 3 条相同结果必须提醒（对照组）");
 
-  // 结果每两次抖一次（带时间戳/进度那种循环）：copies 重置，但 fired 不清。
-  for (const [text, round] of [["out-1", 2], ["out-2", 3]]) {
-    for (let index = 0; index < round; index += 1) {
-      assert.equal((await rig.run("pwsh", args, text)).notice, undefined, "抖动阶段第 " + (index + 1) + " 次不该提醒");
-    }
-  }
-  // 到这里 out-2 已连续 3 次（copies=3），但配额已用 1 条 ⇒ 下一次 due 是 6。
-  assert.equal((await rig.run("pwsh", args, "out-2")).notice, undefined, "copies=4 < due 6，静默");
-  assert.equal((await rig.run("pwsh", args, "out-2")).notice, undefined, "copies=5 < due 6，静默");
-  const second = (await rig.run("pwsh", args, "out-2")).notice;
-  assert.ok(second !== undefined, "copies=6 才发第二条（不是每轮抖动都发一条）");
-  assert.notEqual(second.id, first.id, "第二条提醒的 id 必须与第一条不同");
+  // 结果变了一次（out-1）：consecutiveSameCount 与 remindedCount **一起归零**（C39）。
+  assert.equal((await rig.run("pwsh", args, "out-1")).notice, undefined, "结果刚变，copies=1，不提醒");
+  assert.equal((await rig.run("pwsh", args, "out-1")).notice, undefined, "copies=2，仍未到阈值 3");
+  const second = (await rig.run("pwsh", args, "out-1")).notice;
+  assert.ok(second !== undefined, "结果变化后再次重复到阈值 3 必须重新提醒（C39：不是每轮抖动都提醒，也不是永久封顶）");
+  assert.notEqual(second.id, first.id, "两条提醒的 id 必须不同");
+  // 同一份结果的配额上限仍是 maxRemindersPerEpisode=2：copies 4、5 静默，copies 6 发第 2 条（due 翻了倍），
+  // 之后必须彻底静默 —— 不是「每轮抖动都发一条」。
+  assert.equal((await rig.run("pwsh", args, "out-1")).notice, undefined, "copies=4 < due 6，静默");
+  assert.equal((await rig.run("pwsh", args, "out-1")).notice, undefined, "copies=5 < due 6，静默");
+  const secondOfOut1 = (await rig.run("pwsh", args, "out-1")).notice;
+  assert.ok(secondOfOut1 !== undefined, "copies=6 发这一份结果的第 2 条（配额 2）");
+  assert.notEqual(secondOfOut1.id, second.id, "同链的两条提醒 id 必须不同");
   for (let index = 0; index < 6; index += 1) {
-    assert.equal((await rig.run("pwsh", args, "out-2")).notice, undefined, "两条封顶后必须静默（第 " + (7 + index) + " 次）");
+    assert.equal((await rig.run("pwsh", args, "out-1")).notice, undefined, "同一结果封顶 2 条后必须静默（copies=" + (7 + index) + "）");
   }
+  // 结果又变了 ⇒ 计数再次一起归零，重新能提醒（证明配额不属于签名）。
+  assert.equal((await rig.run("pwsh", args, "out-2")).notice, undefined);
+  assert.equal((await rig.run("pwsh", args, "out-2")).notice, undefined);
+  assert.ok((await rig.run("pwsh", args, "out-2")).notice !== undefined, "换了一份结果后仍按阈值重新提醒（C39）");
   rig.dispose();
-  ok("结果抖动：重置 copies 但不重置配额，仍只发 2 条（M1）");
+  ok("结果抖动：指纹变化时两个计数一起归零；同一份结果按阈值重新提醒且配额封顶（C39）");
 }
 
 // ── 10. 策略持久化：repeatGuard 走保存 / 规范化 / 解析全链不丢（复审 M4）───────

@@ -208,6 +208,100 @@ await check("没有施加手段时不假装限制着（否则同样被幂等短�
   assert.equal(restriction.state().count, 0);
 });
 
+// ── C30（D8）：租约状态机 —— 引用计数 / 待生效目标 / 幂等释放令牌 ──────────────
+/** 直接打限制对象这个 seam 的假宿主：记下真正施加了哪些 deny 集。 */
+const makeLeaseHost = () => {
+  const applied = [];
+  const state = { current: undefined };
+  const restriction = createRestriction({
+    restrict(filter) {
+      applied.push(filter.deny.slice());
+      state.current = filter.deny.slice();
+      return () => { state.current = undefined; };
+    },
+    logger: undefined,
+  });
+  return { restriction, applied, current: () => state.current };
+};
+
+await check("C30：两个并发租约 —— 第一个结束不落地，最后一个结束才施加最新目标", async () => {
+  const { restriction, applied } = makeLeaseHost();
+  restriction.apply({ mode: MODE_LIMITED, deny: ["read"] });
+  assert.deepEqual(applied, [["read"]], "无租约时立刻施加");
+  const first = restriction.acquireLease();
+  const second = restriction.acquireLease();
+  assert.equal(restriction.leases(), 2, "引用计数 = 2");
+  // 窗口内重算：只登记，不施加（正在跑的慢工具不会被 deny 掉）。
+  restriction.apply({ mode: MODE_LIMITED, deny: ["read", "write"] });
+  restriction.apply({ mode: MODE_LIMITED, deny: ["pwsh"] });
+  assert.equal(applied.length, 1, "窗口内一次都不许施加（C30/C31）");
+  assert.equal(restriction.leases(), 2);
+  first();
+  assert.equal(restriction.leases(), 1, "先结束的只减计数");
+  assert.equal(applied.length, 1, "不是最后一个就不落地");
+  second();
+  assert.equal(restriction.leases(), 0);
+  assert.deepEqual(applied, [["read"], ["pwsh"]], "最后一个释放时才落地**最新**目标");
+  // 幂等：重复释放同一个令牌不再减计数，也不会再次施加。
+  first();
+  second();
+  assert.equal(restriction.leases(), 0);
+  assert.equal(applied.length, 2, "重复释放不重复施加");
+});
+
+await check("C30：0→1 撤销当前限制并记住被撤销目标，1→0 恢复它", async () => {
+  const { restriction, applied, current } = makeLeaseHost();
+  restriction.apply({ mode: MODE_LIMITED, deny: ["read", "write"] });
+  assert.deepEqual(current(), ["read", "write"]);
+  const token = restriction.acquireLease();
+  assert.equal(current(), undefined, "进入窗口先撤销当前限制（慢工具不被 deny）");
+  assert.equal(restriction.state().mode, MODE_NONE);
+  assert.deepEqual(restriction.state().revoked.deny, ["read", "write"], "被撤销目标要记住");
+  token();
+  assert.deepEqual(applied, [["read", "write"], ["read", "write"]], "没有 pending 时恢复被撤销目标");
+  assert.equal(restriction.state().windowOpen, false);
+});
+
+await check("C30：非撤销句柄不记账、退回 none 并记诊断，同样目标必须能重试", async () => {
+  let calls = 0;
+  const restriction = createRestriction({ restrict() { calls += 1; return undefined; }, logger: undefined });
+  restriction.apply({ mode: MODE_LIMITED, deny: ["univer_sheet"] });
+  assert.equal(restriction.state().mode, MODE_NONE, "非撤销句柄不能报成 limited");
+  assert.equal(restriction.state().count, 0);
+  assert.ok(restriction.diagnostics().some((row) => row.code === "restrict-no-handle"), "必须记 restrict-no-handle");
+  restriction.apply({ mode: MODE_LIMITED, deny: ["univer_sheet"] });
+  assert.equal(calls, 2, "同样的目标在没句柄后必须再试一次（不能被幂等短路）");
+});
+
+await check("C30：受保护名永不进 deny（也不会被撤销）", async () => {
+  const applied = [];
+  const restriction = createRestriction({
+    restrict(filter) { applied.push(filter.deny.slice()); return () => {}; },
+    protectedNames: ["tools:sdk"],
+    logger: undefined,
+  });
+  restriction.apply({ mode: MODE_LIMITED, deny: ["read", "tools:sdk", "write"] });
+  assert.deepEqual(applied, [["read", "write"]], "受保护名必须被剔除");
+  assert.deepEqual(restriction.state().deny, ["read", "write"]);
+});
+
+await check("C30：窗口开/关信号每次只发一次，卸载 destroy 清租约", async () => {
+  const { restriction } = makeLeaseHost();
+  let opens = 0;
+  let closes = 0;
+  restriction.onWindowOpen(() => { opens += 1; });
+  restriction.onWindowClose(() => { closes += 1; });
+  const a = restriction.acquireLease();
+  restriction.acquireLease();
+  assert.equal(opens, 1, "0→1 才发开信号");
+  a();
+  restriction.release === undefined; // 公开面没有裸 release：令牌才是释放口
+  assert.equal(closes, 0, "不是最后一个不发关信号");
+  restriction.destroy();
+  assert.equal(restriction.leases(), 0, "destroy 清租约");
+  assert.equal(restriction.state().windowOpen, false);
+});
+
 const failed = results.filter((entry) => !entry.ok);
 for (const entry of results) console.log((entry.ok ? "  ok    " : "  FAIL  ") + entry.label + (entry.ok ? "" : "  →  " + entry.error));
 console.log("\n" + (results.length - failed.length) + "/" + results.length + " passed");
