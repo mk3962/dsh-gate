@@ -352,10 +352,15 @@ await check("POST /policy：宿主放行但 content-type 不是 JSON 仍 415", a
   assert.equal(res.code, 415, "body=" + res.body);
 });
 await check("POST /policy：宿主判 403 时接口也 403", async () => {
-  const res = await runRoute({ requestRejection: () => 403 }, "/api/dsh-gate/policy", {
+  // #06 的八步顺序是"读体 → 鉴权"（规格固定顺序），所以给一个合法 JSON 体，
+  // 让请求真的走到鉴权那一步；空体会先被判 400 INVALID_BODY（见 s3-http-contract 的"顺序证据"）。
+  const req = Object.assign(plainReq({
     method: "POST",
     headers: { host: "evil.example", "content-type": "application/json" },
+  }), {
+    async *[Symbol.asyncIterator]() { yield Buffer.from("{}"); },
   });
+  const res = await runRoute({ requestRejection: () => 403 }, "/api/dsh-gate/policy", req);
   assert.equal(res.code, 403, "body=" + res.body);
 });
 

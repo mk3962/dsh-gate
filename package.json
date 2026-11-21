@@ -55,7 +55,7 @@
     "test:seams": "node --import ./test/stub-loader.mjs --test test/seams/*.test.mjs",
     "test:seam:s1": "node --import ./test/stub-loader.mjs test/seams/s1-host-contract.test.mjs",
     "test:seam:s2": "node --import ./test/stub-loader.mjs test/seams/s2-storage-contract.test.mjs",
-    "test:seam:s3": "node --import ./test/stub-loader.mjs test/seams/s3-control-plane-contract.test.mjs",
+    "test:seam:s3": "node --import ./test/stub-loader.mjs test/seams/s3-http-contract.test.mjs",
     "test:seam:s4": "node --import ./test/stub-loader.mjs test/seams/s4-frontend-contract.test.mjs",
     "test:seam:s5": "node --import ./test/stub-loader.mjs test/seams/s5-deploy-contract.test.mjs",
     "test:probe:s1b": "node --import ./test/stub-loader.mjs test/seams/s1b-real-host-probe.mjs",

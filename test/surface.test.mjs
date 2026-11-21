@@ -98,7 +98,8 @@ await check("内部条目里的字段不再被外部模块读到", async () => {
     assert.equal(/\.restriction\.state\(/.test(source), false, rel + " 还在直接读限制对象");
   }
   // server 挑会话必须走 listAgents，不许自己遍历。
-  const server = read("lib/server.js");
+  // #06：listAgents 的调用点在 lib/control/core.js（server.js 只做装配）。
+  const server = read("lib/server.js") + read("lib/control/core.js");
   assert.ok(server.includes("gate.listAgents("), "server.js 必须用公开的 agent 清单挑会话");
   assert.equal(/touchedAt\)/.test(server), false, "server.js 不该自己比较 touchedAt");
 });

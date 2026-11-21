@@ -278,7 +278,8 @@ const tmpDir = () => fs.mkdtempSync(path.join(os.tmpdir(), "gate-policy-"));
   assert.ok(!haystack.includes("maxNameLength"), "maxNameLength 是死键（全仓零读取），必须删干净");
   assert.ok(!/\bhint\s*:/.test(haystack), "catalog.hint 是死键（全仓零读取），必须删干净");
 
-  const server = read("lib/server.js");
+  // #06：控制面拆四层后，保存/兜底/迁移的实现在 lib/control/core.js；守卫合并读两个文件。
+  const server = read("lib/server.js") + read("lib/control/core.js");
   assert.ok(!server.includes("emptyPolicyFile"), "server.js 不许再手抄一份空策略模板");
   assert.ok(!/const mergePolicy\s*=/.test(server), "server.js 不许再手抄一份合并白名单");
   assert.ok(server.includes("mergePolicyFile"), "server.js 的保存必须走 policy.js 的表驱动合并");

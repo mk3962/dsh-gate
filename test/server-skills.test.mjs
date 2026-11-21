@@ -232,7 +232,8 @@ const ok = (label) => { passed += 1; console.log("  ok    " + label); };
   }
 
   // 2.8 整份替换保存 /policy 不能抹掉 skills（0.2.0 基线 policy.js 不认识这个键）
-  res = await request(policyRoute, "POST", { version: 3, replace: true, enabled: true, defaults: { capability: 2, section: 1, skillpack: 2 }, capabilities: {}, sources: {}, legacy: { unknownOverrides: {} } });
+  // #06：整份替换会删键，属于保护性写入 —— 必须带 acknowledge: true（否则 409 CONFIRMATION_REQUIRED）。
+  res = await request(policyRoute, "POST", { version: 3, replace: true, acknowledge: true, enabled: true, defaults: { capability: 2, section: 1, skillpack: 2 }, capabilities: {}, sources: {}, legacy: { unknownOverrides: {} } });
   assert.equal(res.code, 200, JSON.stringify(res.body));
   saved = readJson(file);
   assert.deepEqual(saved.skills, { takeover: false, activationRelay: true, activationPromote: true, off: ["alpha-skill", "beta-skill"], imports: [{ path: importDir }, { id: "empty", path: emptyDir }] }, "整份替换必须保留接管配置");
