@@ -302,6 +302,105 @@ await check("C30：窗口开/关信号每次只发一次，卸载 destroy 清租
   assert.equal(restriction.state().windowOpen, false);
 });
 
+await check("P0 重入回归：acquireLease 撤销句柄同步重入 apply 时不重挂限制、不泄漏句柄", async () => {
+  // 模拟真实宿主（DSH 0.2.2-rc.1）：disposer 与 restrict() 同步派发 tools/change → 重入 apply()。
+  let activeHandles = 0;
+  let reentryCount = 0;
+  let applyingDuringLift = false;
+  let leasesDuringLift = -1;
+  let windowOpenDuringLift = false;
+  let restriction;
+  restriction = createRestriction({
+    restrict(filter) {
+      activeHandles += 1;
+      let released = false;
+      const snapshotDeny = filter.deny.slice();
+      // restrict() 同步触发 tools/change 重入
+      reentryCount += 1;
+      restriction.apply({ mode: MODE_LIMITED, deny: snapshotDeny });
+      return () => {
+        if (released) return;
+        released = true;
+        activeHandles -= 1;
+        applyingDuringLift = restriction.isApplying();
+        leasesDuringLift = restriction.leases();
+        windowOpenDuringLift = restriction.isWindowOpen();
+        // disposer 同步触发 tools/change 重入（即使外部没有 isApplying 守卫）
+        reentryCount += 1;
+        restriction.apply({ mode: MODE_LIMITED, deny: snapshotDeny });
+      };
+    },
+    logger: undefined,
+  });
+
+  restriction.apply({ mode: MODE_LIMITED, deny: ["ssh_exec", "univer_sheet"] });
+  assert.equal(activeHandles, 1, "初次限制后宿主侧恰有 1 个活句柄");
+  assert.equal(restriction.state().mode, MODE_LIMITED);
+
+  // 连续两次 suspend：窗口内不得有活句柄，释放后恢复为 1 个活句柄。
+  for (let round = 0; round < 2; round += 1) {
+    await restriction.suspend(async () => {
+      assert.equal(applyingDuringLift, true, "撤旧句柄期间 isApplying() 必须为 true");
+      assert.equal(leasesDuringLift, 1, "撤旧句柄前 leases 必须先递增为 1");
+      assert.equal(windowOpenDuringLift, true, "撤旧句柄前 windowOpen 必须已打开");
+      assert.equal(activeHandles, 0, "转发窗口内宿主侧不得残留或重挂 restriction 句柄");
+      assert.equal(restriction.state().mode, MODE_NONE);
+    });
+    assert.equal(activeHandles, 1, "第 " + (round + 1) + " 次窗口关闭后必须恢复且仅恢复 1 个句柄");
+    assert.equal(restriction.state().mode, MODE_LIMITED);
+    assert.deepEqual(restriction.state().deny, ["ssh_exec", "univer_sheet"]);
+    assert.equal(restriction.isApplying(), false);
+  }
+  assert.equal(reentryCount > 0, true, "必须真的触发过同步重入");
+
+  restriction.destroy();
+  assert.equal(activeHandles, 0, "destroy 后不得残留活句柄");
+  assert.equal(restriction.isApplying(), false);
+});
+
+await check("P0 重入回归：applyNow / destroy 中 disposer 或 restrict 同步重入均无句柄泄漏", async () => {
+  let activeHandles = 0;
+  let hijackOnce = true;
+  let restriction;
+  restriction = createRestriction({
+    restrict(filter) {
+      activeHandles += 1;
+      let released = false;
+      const dispose = () => {
+        if (released) return;
+        released = true;
+        activeHandles -= 1;
+      };
+      // 模拟在 restrict() 返回前同步重入 acquireLease：刚建的句柄已过时，必须立即释放。
+      if (hijackOnce && filter.deny.includes("univer_doc")) {
+        hijackOnce = false;
+        const lease = restriction.acquireLease();
+        assert.equal(restriction.leases(), 1);
+        // 租约保持打开直到外层 applyNow 返回后手动释放
+        restriction._hijackLease = lease;
+      }
+      return dispose;
+    },
+    logger: undefined,
+  });
+
+  restriction.apply({ mode: MODE_LIMITED, deny: ["ssh_exec"] });
+  assert.equal(activeHandles, 1);
+
+  // 切换目标时 restrict() 内部打开了租约：外层拿到的过时句柄必须被立即撤销，不能泄漏。
+  restriction.apply({ mode: MODE_LIMITED, deny: ["univer_doc"] });
+  assert.equal(activeHandles, 0, "restrict() 期间被同步重入开租约时，过时句柄必须立即释放");
+  assert.equal(restriction.leases(), 1);
+  assert.equal(restriction.isApplying(), false);
+
+  // 释放租约后恢复，再 destroy：活句柄归零。
+  restriction._hijackLease();
+  assert.equal(restriction.leases(), 0);
+  restriction.destroy();
+  assert.equal(activeHandles, 0, "destroy 后活句柄必须归零");
+  assert.equal(restriction.isApplying(), false);
+});
+
 const failed = results.filter((entry) => !entry.ok);
 for (const entry of results) console.log((entry.ok ? "  ok    " : "  FAIL  ") + entry.label + (entry.ok ? "" : "  →  " + entry.error));
 console.log("\n" + (results.length - failed.length) + "/" + results.length + " passed");

@@ -27,6 +27,7 @@ import {
   TARGET_ALLOW,
 } from "../host.mjs";
 import { createGate } from "../../lib/gate.js";
+import { apply as applyGatePlugin } from "../../lib/index.js";
 import { resolvePolicy } from "../../lib/policy.js";
 import { mountTailGate } from "../../lib/prestep.js";
 import {
@@ -560,6 +561,77 @@ await check("P2-1 冻结视图与快照一致：PTC 冻结下已加载工具仍�
   assert.ok(row, "能力视图必须包含该工具");
   assert.equal(row.bucket, "ondemand", "能力视图的桶必须与快照层值一致");
   await gate.releaseAll();
+});
+
+await check("P0 实机回归：restrict 与 disposer 同步派发 tools/change 时 gate_invoke 正常转发且无句柄泄漏", async () => {
+  const host = makeHost({ id: "p0-reentry-e2e" });
+  const agent = host.agent;
+  host.setExecutor(agent, makePtcExecutor());
+
+  // 模拟真实 DSH 0.2.2-rc.1 宿主：tools.restrict() 与其返回的 disposer 均同步派发 internal/dispatch tools/change。
+  let syncDispatchCount = 0;
+  const origRestrict = agent.ctx.tools.restrict;
+  agent.ctx.tools.restrict = (filter) => {
+    const dispose = origRestrict(filter);
+    syncDispatchCount += 1;
+    host.rootCtx.emit("internal/dispatch", "emit", "tools/change");
+    return () => {
+      const lifted = dispose();
+      syncDispatchCount += 1;
+      host.rootCtx.emit("internal/dispatch", "emit", "tools/change");
+      return lifted;
+    };
+  };
+
+  const disposePlugin = applyGatePlugin(host.rootCtx, {
+    policyFile: path.join(s1PolicyDir("p0-reentry-e2e"), "gate.json"),
+    defaults: { capability: 2, section: 1, skillpack: 2 },
+    capabilities: {
+      "native:read": { tier: 1 },
+      "native:pwsh": { tier: 1 },
+      "native:office_docx": { tier: 0 },
+    },
+    http: { enabled: false },
+  });
+  // 等 agent attach 里的 microtask（entry.ready）落地初始限制。
+  await new Promise((resolve) => setTimeout(resolve, 20));
+
+  const statusTool = host.tool("gate_status");
+  const loadTool = host.tool("gate_load");
+  const invokeTool = host.tool("gate_invoke");
+  assert.ok(statusTool && loadTool && invokeTool, "gate_* 工具必须已注册");
+
+  const baseline = await statusTool.execute({}, { agent });
+  assert.equal(baseline.onDemand > 0, true, "基线应有按需工具");
+  assert.equal(baseline.off > 0, true, "基线应有显式关闭工具");
+  assert.equal(baseline.gated > 0, true, "基线应有受限工具");
+  assert.equal(host.activeTargets(agent).length, 1, "基线宿主侧恰有 1 个活动限制句柄");
+  assert.equal(host.visibleOf(agent).has("ssh_exec"), false, "按需工具在基线态被限制隐藏");
+
+  // 连续多次 gate_load + gate_invoke 转发按需工具，每次必须成功且不泄漏句柄、不清零按需工具面。
+  for (const target of ["ssh_exec", "univer_sheet", "mnemon_recall"]) {
+    const loadRes = await loadTool.execute({ names: [target] }, { agent });
+    assert.deepEqual(loadRes.loaded, [target], "gate_load(" + target + ") 必须成功");
+
+    const invokeRes = await invokeTool.execute(
+      { tool: target, arguments: { probe: target } },
+      { agent },
+    );
+    assert.equal(invokeRes.isError, false, "gate_invoke(" + target + ") 不得报 unknown tool: " + invokeRes.text);
+    assert.equal(invokeRes.text, target + ' ok {"probe":"' + target + '"}');
+
+    const after = await statusTool.execute({}, { agent });
+    assert.equal(after.onDemand, baseline.onDemand, target + " 转发后 onDemand 计数不得清零或漂移");
+    assert.equal(after.off, baseline.off, target + " 转发后 off 计数不得变化");
+    assert.equal(after.gated, baseline.gated, target + " 转发后 gated 计数必须完整恢复");
+    assert.equal(host.activeTargets(agent).length, 1, target + " 转发后宿主侧不得有泄漏句柄");
+    assert.equal(host.visibleOf(agent).has(target), false, target + " 转发窗口关闭后限制必须恢复");
+  }
+
+  assert.equal(syncDispatchCount > 0, true, "测试必须真的触发了同步 tools/change 派发");
+  disposePlugin();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(host.activeTargets(agent).length, 0, "插件卸载后宿主侧不得残留任何限制句柄");
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
