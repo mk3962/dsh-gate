@@ -135,7 +135,13 @@ export const defects = [
     symptom: "glob:* 在工具轴展开时把段落/技能轴的同名条目一起吞掉，轴边界失效。",
     replay: { file: "test/seams/s1-host-contract.test.mjs", case: "P1-4 glob 不跨轴" },
     deleteBranch: "轴过滤分支被删 ⇒ 跨轴条目进入结果集 ⇒ 断言红。",
-    state: "registered",
+    state: "verified",
+    verifiedBy: {
+      file: "test/seams/s1-host-contract.test.mjs",
+      case: "P1-4 glob 不跨轴：一条工具通配不得连带关掉段落与技能",
+      also: "test/decide.test.mjs · glob 只作用于工具轴",
+      commit: "先红提交 3537080（lib 回退到 0.5.7 时 5 条全红）",
+    },
   },
   {
     id: "P1-5",
@@ -148,7 +154,13 @@ export const defects = [
     symptom: "段落被激活时提层不看用户显式 off，关闭的段落照样常驻。",
     replay: { file: "test/seams/s1-host-contract.test.mjs", case: "P1-5 激活不得绕过 off" },
     deleteBranch: "『显式 off 优先』判定被删 ⇒ 激活条目透出 ⇒ 断言红。",
-    state: "registered",
+    state: "verified",
+    verifiedBy: {
+      file: "test/seams/s1-host-contract.test.mjs",
+      case: "P1-5 激活不得绕过 off：技能加载不得把显式关闭的工具装回工具表",
+      also: "test/activation.test.mjs · explicit off 绝不放",
+      commit: "先红提交 3537080（lib 回退到 0.5.7 时 5 条全红）",
+    },
   },
   {
     id: "P1-6",
@@ -161,7 +173,13 @@ export const defects = [
     symptom: "关闭只影响展示，不改实际装配；off 段落还能被 load 进系统提示词。",
     replay: { file: "test/seams/s1-host-contract.test.mjs", case: "P1-6 off 必须不可 load" },
     deleteBranch: "装配期『off 段落不进计划对象』过滤被删 ⇒ 段落出现 ⇒ 断言红。",
-    state: "registered",
+    state: "verified",
+    verifiedBy: {
+      file: "test/seams/s1-host-contract.test.mjs",
+      case: "P1-6 off 必须不可 load：关闭段落不得从加载口取正文",
+      also: "test/decide.test.mjs · 段落 tier0 → loadable:false",
+      commit: "先红提交 3537080（lib 回退到 0.5.7 时 5 条全红）",
+    },
   },
   {
     id: "P1-7",
@@ -174,7 +192,13 @@ export const defects = [
     symptom: "只要插件已加载，off 就被忽略，必须重启才生效。",
     replay: { file: "test/seams/s1-host-contract.test.mjs", case: "P1-7 重载后 off 仍生效" },
     deleteBranch: "『off 优先于已加载状态』判定被删 ⇒ 重载后条目仍在 ⇒ 断言红。",
-    state: "registered",
+    state: "verified",
+    verifiedBy: {
+      file: "test/seams/s1-host-contract.test.mjs",
+      case: "P1-7 重载后 off 仍生效：已加载不得压过显式关闭",
+      also: "test/decide.test.mjs · 关闭压过 loaded/frozen",
+      commit: "先红提交 3537080（lib 回退到 0.5.7 时 5 条全红）",
+    },
   },
   {
     id: "P1-8",
@@ -226,7 +250,13 @@ export const defects = [
     symptom: "PTC 执行器冻结了工具表，但 gate_status 仍按计划对象报 tiers，两处口径不一致。",
     replay: { file: "test/seams/s1-host-contract.test.mjs", case: "P2-1 冻结视图与快照一致" },
     deleteBranch: "快照投影分支被删 ⇒ 两处口径分叉 ⇒ 断言红。",
-    state: "registered",
+    state: "verified",
+    verifiedBy: {
+      file: "test/seams/s1-host-contract.test.mjs",
+      case: "P2-1 冻结视图与快照一致：PTC 冻结下已加载工具仍是按需",
+      also: "test/planner.test.mjs · frozen-loaded 层值与桶",
+      commit: "先红提交 3537080（lib 回退到 0.5.7 时 5 条全红）",
+    },
   },
   {
     id: "P2-2",
