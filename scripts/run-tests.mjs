@@ -152,7 +152,12 @@ function runOne(entry, timeoutMs) {
         exitCode: code,
         reason,
         output: args.verbose ? output : undefined,
-        tail: output.trim().split(/\r?\n/).slice(-4).join("\n"),
+        tail: (() => {
+          const lines = output.trim().split(/\r?\n/);
+          const keyLines = lines.filter((line) => /\b(?:FAIL|not ok|AssertionError|Error:|ERR_)\b/i.test(line));
+          if (keyLines.length > 0) return keyLines.slice(0, 10).join("\n");
+          return lines.slice(-6).join("\n");
+        })(),
       });
     });
   });
@@ -176,8 +181,11 @@ async function main() {
   const must = registry.MUST_RUN;
   const probe = registry.PROBE;
   const nonSuite = registry.NON_SUITE;
-  const budget = args.noBudget ? Number.POSITIVE_INFINITY : (Number.isFinite(args.budget) ? args.budget : registry.TOTAL_BUDGET_MS);
-  const fileBudget = Number.isFinite(args.fileBudget) ? args.fileBudget : registry.FILE_BUDGET_MS;
+  // GitHub Actions windows-latest 共享虚拟核启动 PowerShell / Node 较本地慢 2–3 倍：
+  // 仅在 CI=true 且 win32 下按 3x 放宽默认预算，本地开发机与 Linux 仍严格执行 12s / 2s / 18s。
+  const ciWinScale = process.env.CI === "true" && process.platform === "win32" ? 3 : 1;
+  const budget = args.noBudget ? Number.POSITIVE_INFINITY : (Number.isFinite(args.budget) ? args.budget : registry.TOTAL_BUDGET_MS * ciWinScale);
+  const fileBudget = Number.isFinite(args.fileBudget) ? args.fileBudget : registry.FILE_BUDGET_MS * ciWinScale;
 
   // —— 注册表 × 磁盘 双向核对（与 check-spec 同源，runner 自己也要能独立发现漂移）——
   const scanned = [
@@ -274,7 +282,7 @@ async function main() {
         results[index] = { entry: item.entry, result: { status: "skip", ms: 0, assertions: 0, skips: 0, exitCode: 0, reason: item.skip } };
         continue;
       }
-      const limit = args.noBudget ? Number.POSITIVE_INFINITY : (item.entry.budgetMs || fileBudget);
+      const limit = args.noBudget ? Number.POSITIVE_INFINITY : (item.entry.budgetMs ? item.entry.budgetMs * ciWinScale : fileBudget);
       results[index] = { entry: item.entry, result: await runOne(item.entry, limit) };
     }
   }

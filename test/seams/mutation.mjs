@@ -20,13 +20,17 @@ export const MUTATION_DIR = path.join(MUTATION_PARENT, String(process.pid));
 
 /** 把 mutations 依次作用到源码上；find 必须真的命中，否则直接报错（变异过期必须显性失败）。 */
 export function applyMutations(source, mutations) {
-  let text = source;
+  // 归一化 CRLF -> LF：Windows CI (core.autocrlf=true) 检出文件含 \r\n，
+  // 而多行 mutation.find 统一以 \n 书写，不归一化会导致假失败。
+  let text = String(source).replace(/\r\n/g, "\n");
   const applied = [];
   for (const mutation of mutations) {
     const label = mutation.label || "mutation";
-    const hits = countOccurrences(text, mutation.find);
-    if (hits === 0) throw new Error("mutation target missing: " + label + " :: " + String(mutation.find).slice(0, 80));
-    text = text.split(mutation.find).join(mutation.replace === undefined ? "" : mutation.replace);
+    const needle = String(mutation.find).replace(/\r\n/g, "\n");
+    const replacement = mutation.replace === undefined ? "" : String(mutation.replace).replace(/\r\n/g, "\n");
+    const hits = countOccurrences(text, needle);
+    if (hits === 0) throw new Error("mutation target missing: " + label + " :: " + needle.slice(0, 80));
+    text = text.split(needle).join(replacement);
     applied.push({ label, hits });
   }
   return { text, applied };

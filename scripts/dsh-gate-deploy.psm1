@@ -20,6 +20,9 @@ $script:PatchRowId = 'surface-gate'
 $script:LF = [string][char]10
 $script:CRLF = [string][char]13 + [string][char]10
 $script:Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+# 英文代码页（如 GitHub Actions windows-latest 的 CP437/CP1252）下 PowerShell 5.1 重定向输出会把中文变 '?'，
+# 模块加载时统一将控制台输出编码切为无 BOM UTF-8，避免跨区域输出乱码。
+try { [Console]::OutputEncoding = $script:Utf8NoBom } catch { }
 
 # 唯一模式：允许行首任意空白缩进，整行锚定插件行名（容忍行尾注释）。
 # 安装判定、卸载摘除、回读校验三处共用这一条；历史版本写坏的顶层裸行同样命中。
