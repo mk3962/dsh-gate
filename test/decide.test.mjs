@@ -112,6 +112,19 @@ check("D4 段落真值：0 摘除且不可加载；1 不摘不目录；2 摘除�
   assert.equal(gateSection.removed, false, "gate 自己的技能段永不摘除");
 });
 
+check("D4 段落真值：显式关闭对已加载/冻结一律优先（与工具轴一致）", () => {
+  for (const frozen of [false, true]) {
+    const decision = decideSection({ name: "pwsh-notes", tier: 0, loaded: true, frozen });
+    assert.equal(decision.tier, 0, "关闭必须压过 loaded (frozen=" + frozen + ")");
+    assert.equal(decision.bucket, "off");
+    assert.equal(decision.removed, true, "关闭的段落必须摘除 (frozen=" + frozen + ")");
+    assert.equal(decision.catalog, true, "关闭的段落仍在目录可查 (frozen=" + frozen + ")");
+    assert.equal(decision.loadable, false, "关闭的段落不可加载 (frozen=" + frozen + ")");
+    assert.equal(decision.reason, "off");
+    assert.equal(decision.removalReason, "off");
+  }
+});
+
 // ── 5. 技能轴真值 ───────────────────────────────────────────────────────────
 check("D4 技能真值：0 关闭不可加载；不可调用不进目录；1 不目录；2 进目录可加载；shadowed 全隐", () => {
   const off = decideSkill({ name: "univer", tier: 0 });

@@ -15,7 +15,7 @@
 |---|---|---|---|---|---|
 | P0-1 | P0 | S2 | I-10 | 策略文件带 BOM 时静默失守，全部工具被当作常驻 | s2-storage-contract · BOM |
 | P0-2 | P0 | S2 | I-10 | 坏文件被空模板覆盖落盘 | s2-storage-contract · 坏文件不覆盖 |
-| P1-1 | P1 | S3 | I-15 | mergePolicyFile 遇 mcp:null 抛 TypeError，HTTP 无响应 | s3-control-plane-contract |
+| P1-1 | P1 | S3 | I-15 | mergePolicyFile 遇 mcp:null 抛 TypeError，HTTP 无响应 | s3-http-contract |
 | P1-2 | P1 | S2 | I-4 | enabled:true 覆盖不掉显式 false | policy.test |
 | P1-3 | P1 | S2 | I-4 | v2→v3 迁移丢 repeatGuard 段落 | migrate.test |
 | P1-4 | P1 | S1 | I-2 | glob:* 跨轴污染 | capabilities.test |
@@ -24,7 +24,7 @@
 | P1-7 | P1 | S1 | I-3 | 已加载压制 off（重载后关闭被忽略） | planner.test |
 | P1-8 | P1 | S1 | I-8 | 非 text 块被 stringify 破坏 | resource-bounds / normalize.test |
 | P1-9 | P1 | S1 | I-8 | suspend 非重入窗口全量放表 | restriction.test |
-| P1-10 | P1 | S3 | I-15 | POST /skills 的 tier 被强转 0 | s3-control-plane-contract |
+| P1-10 | P1 | S3 | I-15 | POST /skills 的 tier 被强转 0 | s3-http-contract |
 | P2-1 | P2 | S1 | I-5 | PTC 冻结下 tiers 与 status 快照自相矛盾 | snapshot.test |
 | P2-2 | P2 | S1 | I-7 | searchCatalog limit 传 0/-1 返回全量 | catalog-search.test |
 | P2-3 | P2 | S1 | I-7 | firstSentence 截断版本号 | catalog-search.test |
@@ -101,9 +101,9 @@ L143 记录的是「升级后行为会变」的显式清单。0.6.0 的变化如
 
 ### 六、验证记录（0.6.0 发布门）
 
-- npm run check：17 PASS / 0 FAIL / 1 WARN（仅面板文案待 #07），含打包内容、编码、端点表、示例模板、恒真断言、术语。
-- npm test：扫描式 runner（默认 4 并发）覆盖 test/ 与 test/seams/ 全部 39 个必过套件，499 断言，整轮 4.70s（预算 12s），1 项跳过且带原因。
-- npm run test:effectiveness -- --strict：13/13 effective（HF-1–HF-6 + I-10–I-16；I-15 为错误信封契约探针）。
+- npm run check：全量门禁通过（0 FAIL / 0 WARN），覆盖打包内容、编码与 BOM、端点表、示例模板、恒真断言与术语统一。
+- npm test：扫描式 runner（默认 4 并发，LJF 调度）覆盖 test/ 与 test/seams/ 全部必过套件，跳过项均带原因；具体套件数、断言数与用时以实际运行输出为准（总预算 12s）。
+- npm run test:effectiveness -- --strict：全部宿主事实（HF-1–HF-6）与不变量（I-10–I-16）定点破坏用例均为 effective。
 - 装/卸往返：Windows 上 install → uninstall → 再 install，profile 逐字节回到初始状态。
 - 发布红线：只推本地提交，不 push / 不 tag / 不建 Release；发版由维护者按 release.yml 手动触发。
 

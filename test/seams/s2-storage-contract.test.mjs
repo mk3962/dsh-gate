@@ -336,7 +336,7 @@ const mutations = [
   {
     label: "rename 失败不清临时文件",
     audit: "rename",
-    find: "      await adapter.remove(TEMP_FILE);",
+    find: "      await adapter.remove(tempName);",
   },
 ];
 

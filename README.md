@@ -18,17 +18,17 @@ DeepSeek Harness 的工具闸门：按策略把工具分到三个层，决定哪
 
 ## 策略
 
-策略文件是 profile 根下的 `gate.json`（v3）。没写过的键取默认值；写错的文件**不会被空模板覆盖**，而是按 I-10 报错并保持原文件。最小示例：
+策略文件位于 `~/.dsh/gate.json`（若设置了环境变量 `DSH_HOME`，则为 `$DSH_HOME/gate.json`；v3 schema）。没写过的键取默认值；写错的文件**不会被空模板覆盖**，而是按 I-10 报错并保持原文件。最小示例（JSON 中层值用整数 `0` / `1` / `2` 对应层 0 / 层 1 / 层 2）：
 
     {
       "version": 3,
-      "defaults": { "capability": "层 2", "section": "层 1", "skillpack": "层 1" },
+      "defaults": { "capability": 2, "section": 1, "skillpack": 2 },
       "capabilities": {
-        "native:read": "层 1",
-        "native:write": "层 0",
-        "native:exec": "层 0"
+        "native:read": { "tier": 1 },
+        "native:write": { "tier": 0 },
+        "native:pwsh": { "tier": 0 }
       },
-      "skills": { "takeover": "层 2" },
+      "skills": { "takeover": true, "off": [] },
       "mcp": { "servers": {} }
     }
 

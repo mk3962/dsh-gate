@@ -113,7 +113,7 @@ async function checkVersion() {
 }
 
 function checkBomAndEol() {
-  const extensions = [".js", ".mjs", ".cjs", ".json", ".ps1", ".cmd", ".yml", ".yaml", ".md"];
+  const extensions = [".js", ".mjs", ".cjs", ".json", ".ps1", ".psm1", ".cmd", ".yml", ".yaml", ".md"];
   const files = [
     ...walk("lib", { extensions }),
     ...walk("client", { extensions }),
@@ -129,7 +129,7 @@ function checkBomAndEol() {
     const buffer = readFileSync(path.join(ROOT, file));
     const hasBom = buffer.length >= 3 && buffer[0] === 0xef && buffer[1] === 0xbb && buffer[2] === 0xbf;
     const ext = path.extname(file);
-    if (ext === ".ps1") {
+    if (ext === ".ps1" || ext === ".psm1") {
       if (!hasBom) problems.push(file + ": PowerShell 脚本必须是 UTF-8 with BOM（Windows PowerShell 5.1 中文会乱码）");
       else bomOk += 1;
     } else if (hasBom) {
@@ -244,6 +244,12 @@ async function checkTestRegistry() {
   }
   for (const entry of must) {
     if (entry.file.includes(".test.mjs") && entry.file.startsWith("test/") && !scanned.includes(entry.file)) problems.push("登记了扫描集合之外的 .test.mjs: " + entry.file);
+  }
+  if (registry.OVERRIDES instanceof Map) {
+    for (const file of registry.OVERRIDES.keys()) {
+      if (!existsSync(path.join(ROOT, file))) problems.push("OVERRIDES 含悬空键（文件不存在）: " + file);
+      else if (!files.has(file)) problems.push("OVERRIDES 含未登记套件: " + file);
+    }
   }
   if (registry.TOTAL_BUDGET_MS > 12000) problems.push("总预算超过 12s: " + registry.TOTAL_BUDGET_MS);
   if (problems.length > 0) return { status: "FAIL", detail: problems.slice(0, 8).join("；") };

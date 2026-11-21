@@ -296,6 +296,28 @@ describe("S5 部署契约 · 真跑脚本与共享模块", { concurrency: S5_CON
     });
   });
 
+  test("G85 · 仅含历史裸顶层 surface-gate 行时直接卸载必须成功落盘且回读通过", async () => {
+    const legacyOnly = [
+      "# 手工维护的补丁",
+      "- insert:",
+      "    - id: other-plugin",
+      "      name: other-plugin",
+      "      disabled: false",
+      "- id: surface-gate",
+      "  name: dsh-gate",
+      "  disabled: false",
+      "",
+    ].join("\n");
+    await withHome({ patchText: legacyOnly }, async (home) => {
+      const uninstall = await runScriptAsync("uninstall", home, { backupRoot: home.backupRoot });
+      assertOk(uninstall, "legacy-only uninstall");
+      const finalText = fs.readFileSync(home.patchPath, "utf8");
+      assert.equal(FIXED_PATCH_PATTERN.test(finalText), false, "卸载后不许残留裸顶层 surface-gate 行：" + finalText);
+      assert.ok(finalText.includes("other-plugin"), "other-plugin 必须保留：" + finalText);
+      assert.ok(finalText.includes("# 手工维护的补丁"), "注释必须保留：" + finalText);
+    });
+  });
+
   /* ── G82 故障注入回滚 ────────────────────────────────────────────────── */
 
   for (const step of ["preflight", "stage", "stage-copy", "verify", "swap-before-promote", "swap", "patch", "readback"]) {

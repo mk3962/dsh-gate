@@ -123,7 +123,7 @@ dsh-gate 把「模型能看见多少提示面」收成一份策略文件：**层
 | I-12 | 租约期内不得撤/改摘除集；归零后一次施加 | restriction.test、effectiveness I-12 |
 | I-13 | 转发保留结构化结果块，不得字符串化 | resource-bounds、effectiveness I-13 |
 | I-14 | 决策单入口，其余只投影 | decide / planner、effectiveness I-14 |
-| I-15 | 控制面失败必须状态码 + 错误信封 | s3-control-plane-contract、effectiveness I-15 |
+| I-15 | 控制面失败必须状态码 + 错误信封 | s3-http-contract、effectiveness I-15 |
 | I-16 | 部署装卸对称、失败可回滚、patch 行知识单真源 | s5-deploy-contract、effectiveness I-16 |
 
 I-1–I-9 由扫描链回归兜底（test/*.test.mjs + test/seams/*.test.mjs）。I-10–I-16 除回归用例之外，还必须通过 scripts/verify-effectiveness.mjs 的定点破坏：基线绿 → 把守门分支改坏 → 同一探针必须红。

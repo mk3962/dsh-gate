@@ -200,7 +200,7 @@ function Resolve-GateHome {
   if ($envHome) {
     $envHomePath = [System.IO.Path]::GetFullPath($envHome)
     if ($envHomePath -ine $gateHomePath) {
-      $warnings.Add('DSH_HOME=' + $envHomePath + ' 与本次 DSH home=' + $gateHomePath + ' 不一致：策略种子会种到 ' + $gateHomePath + '，而运行时按 DSH_HOME 读 ' + $envHomePath + '（本次来源：' + $sourceLabel[$gateSource] + '）。') | Out-Null
+      $warnings.Add('DSH_HOME=' + $envHomePath + ' 与本次 DSH home=' + $gateHomePath + ' 不一致：插件源码将装到 ' + $gateHomePath + '，策略种子按运行时口径 DSH_HOME 种到 ' + $envHomePath + '（本次来源：' + $sourceLabel[$gateSource] + '）。') | Out-Null
     }
   }
   if ($derivedHome -and $gateSource -ne 'parameter') {
@@ -643,7 +643,6 @@ function New-GateBackupFile {
   $actualStamp = Get-GateBackupStamp -Stamp $Stamp
   $dest = Resolve-GateBackupPath -BackupRoot $BackupRoot -Kind $Kind -Stamp $actualStamp
   Copy-Item -LiteralPath $Path -Destination $dest -Force
-  Remove-GateOldBackups -BackupRoot $BackupRoot -Keep $Keep | Out-Null
   return $dest
 }
 
@@ -653,7 +652,6 @@ function Move-GatePathToBackup {
   $actualStamp = Get-GateBackupStamp -Stamp $Stamp
   $dest = Resolve-GateBackupPath -BackupRoot $BackupRoot -Kind $Kind -Stamp $actualStamp
   Move-Item -LiteralPath $Path -Destination $dest -Force
-  Remove-GateOldBackups -BackupRoot $BackupRoot -Keep $Keep | Out-Null
   return $dest
 }
 
@@ -1312,6 +1310,7 @@ function Invoke-GateInstall {
     $step = 'readback'
     Test-GateFaultPoint -Step 'readback'
     $verified = Invoke-GateInstallReadback -Context $Context -DependencySpec $dependencySpec
+    Remove-GateOldBackups -BackupRoot $Context.BackupRoot -Keep $Context.KeepBackups | Out-Null
     Write-Output ('[6/6] 回读校验通过：JSON 合法、无 BOM、bundles 含 dsh-gate（' + (@($verified.dsh.profile.bundles).Count) + ' 项）、依赖 ' + $dependencySpec + '、junction 就位、patch 行就位')
     return [pscustomobject]@{ Stamp = $stamp; SourceDir = $Context.SourceDir; DependencySpec = $dependencySpec }
   } catch {
@@ -1398,11 +1397,11 @@ function Invoke-GateUninstall {
       $legacy = Convert-GateLegacyPatch -Text $text
       if ($legacy.Migrated -gt 0) { Write-Output ('[6/7] 顺手清掉 ' + $legacy.Migrated + ' 条旧的裸顶层 surface-gate 行') }
       $removed = Remove-GatePatchText -Text $legacy.Text
-      if ($removed.Changed) {
+      if ($removed.Changed -or $legacy.Migrated -gt 0) {
         $structure = Test-GatePatchStructure -Text $removed.Text
         if (-not $structure.Ok) { throw (New-GateError 'PATCH-YAML' ('摘除后 YAML 结构校验失败：' + ($structure.Problems -join '；')) 7) }
         Write-GateTextNoBom -Path $Context.PatchPath -Text $removed.Text
-        Write-Output ('[6/7] 已摘掉 patch 行（removed=' + $removed.Removed + '，pruned=' + $removed.Pruned + '），落盘前结构校验通过')
+        Write-Output ('[6/7] 已摘掉 patch 行（removed=' + $removed.Removed + '，pruned=' + $removed.Pruned + '，legacy=' + $legacy.Migrated + '），落盘前结构校验通过')
       } else {
         Write-Output '[6/7] cordis.patch.yml 没有 surface-gate 行，跳过'
       }
@@ -1412,6 +1411,7 @@ function Invoke-GateUninstall {
 
     $step = 'readback'
     Invoke-GateUninstallReadback -Context $Context | Out-Null
+    Remove-GateOldBackups -BackupRoot $Context.BackupRoot -Keep $Context.KeepBackups | Out-Null
     Write-Output '[7/7] 回读校验通过：bundles/依赖都不含 dsh-gate、junction 已消失、无 BOM、patch 行已清'
   } catch {
     $failure = $_.Exception

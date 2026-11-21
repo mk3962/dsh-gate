@@ -47,13 +47,12 @@ const LEGACY = [
   },
 ];
 
-/** 按文件覆盖：稳定 id、预算、跳过原因（键必须真实存在，否则 runner 报链外）。 */
-const OVERRIDES = new Map([
+/** 按文件覆盖：稳定 id、预算、跳过原因（键必须真实存在，否则 runner 与 check-spec 报 FAIL）。 */
+export const OVERRIDES = new Map([
   ["test/resource-bounds.test.mjs", { budgetMs: 4000 }],
   ["test/seams/s1-host-contract.test.mjs", { id: "seam-s1", budgetMs: 4000 }],
   ["test/seams/s2-policy-store.test.mjs", { id: "seam-s2-policy-store", budgetMs: 4000 }],
   ["test/seams/s2-storage-contract.test.mjs", { id: "seam-s2-storage", budgetMs: 4000 }],
-  ["test/seams/s3-control-plane-contract.test.mjs", { id: "seam-s3-control-plane", budgetMs: 4000 }],
   ["test/seams/s3-http-contract.test.mjs", { id: "seam-s3-http", budgetMs: 4000 }],
   ["test/seams/s4-frontend-contract.test.mjs", { id: "seam-s4-frontend", budgetMs: 4000 }],
   ["test/seams/s4-frontend-v2.test.mjs", { id: "seam-s4-frontend-v2", budgetMs: 7000 }],
@@ -61,9 +60,9 @@ const OVERRIDES = new Map([
     "test/seams/s5-deploy-contract.test.mjs",
     {
       id: "seam-s5",
-      // 25 个用例各自真跑 PowerShell（用例级并发 8），实测 ~6.5s；预算留 4s 余量，
-      // 但仍受 TOTAL_BUDGET_MS=12000 的总闸约束（LJF 调度让 S5 第一个起跑）。
-      budgetMs: 11000,
+      // 26+ 个用例各自真跑 PowerShell（用例级并发 8），实测 ~6.5–7.5s；单文件预算放宽到 18s 防 4 并发下偶发抖动误杀，
+      // 整轮仍受 TOTAL_BUDGET_MS=12000 的总闸约束（LJF 调度让 S5 第一个起跑）。
+      budgetMs: 18000,
       skip: {
         when: "non-win32",
         reason: "S5 部署契约需要 Windows PowerShell 5.1 与 .cmd shim；非 Windows 上打印原因后跳过（CI 的 Ubuntu 矩阵覆盖其余接缝）",

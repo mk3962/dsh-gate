@@ -86,6 +86,7 @@ export function countAssertions(output) {
     /(\d+)\s+passed/gi,
     /通过[:：]\s*(\d+)/g,
     /^(?:\s*)(?:✓|✔)/gm,
+    /^\s*ok\s+\S/gm,
   ];
   let max = 0;
   for (const pattern of patterns) {
@@ -205,6 +206,12 @@ async function main() {
       problems.push("登记了扫描集合之外的 .test.mjs: " + entry.file);
     }
   }
+  if (registry.OVERRIDES instanceof Map) {
+    for (const file of registry.OVERRIDES.keys()) {
+      if (!existsSync(path.join(ROOT, file))) problems.push("OVERRIDES 含悬空键（文件不存在）: " + file);
+      else if (!registered.has(file)) problems.push("OVERRIDES 含未登记套件: " + file);
+    }
+  }
 
   if (args.list) {
     for (const entry of registry.sortedSuites(must)) console.log(entry.file + "\t" + entry.id + "\t" + entry.kind);
@@ -267,7 +274,7 @@ async function main() {
         results[index] = { entry: item.entry, result: { status: "skip", ms: 0, assertions: 0, skips: 0, exitCode: 0, reason: item.skip } };
         continue;
       }
-      const limit = args.noBudget ? Number.POSITIVE_INFINITY : Math.min(item.entry.budgetMs || fileBudget, Number.isFinite(budget) ? budget : Number.POSITIVE_INFINITY);
+      const limit = args.noBudget ? Number.POSITIVE_INFINITY : (item.entry.budgetMs || fileBudget);
       results[index] = { entry: item.entry, result: await runOne(item.entry, limit) };
     }
   }

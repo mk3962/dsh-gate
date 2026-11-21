@@ -38,10 +38,10 @@ jobs:
         run: npm run check
 
       - name: 扫描式测试链（scripts/run-tests.mjs）
-        run: npm test
+        run: npm test -- --json test-report.json
 
       - name: 定点破坏有效性自检（scripts/verify-effectiveness.mjs，I-10–I-16）
-        run: npm run test:effectiveness -- --strict
+        run: npm run test:effectiveness -- --strict --json effectiveness-report.json
 
       - name: S5 部署接缝（Windows）
         if: runner.os == 'Windows'
@@ -63,4 +63,4 @@ jobs:
           path: |
             test-report.json
             effectiveness-report.json
-          if-no-files-found: ignore
+          if-no-files-found: error
