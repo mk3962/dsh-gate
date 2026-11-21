@@ -19,11 +19,16 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
+  SIGNATURE_BLOCK_BUDGET_CHARS,
   SIGNATURE_BUDGET_CHARS,
+  SIGNATURE_BUDGET_MARGIN_CHARS,
+  SIGNATURE_BUDGET_TOKENS,
   SIGNATURE_MAX_PARAMS,
   normalizeSignatureSummary,
   renderCatalog,
   renderSignatureLines,
+  signatureBlockCost,
+  signatureBlockTokens,
   signatureLineOf,
 } from "../lib/catalog.js";
 import { createGate } from "../lib/gate.js";
@@ -96,7 +101,7 @@ const toolOf = (name, required, optional) => ({
   ok("参数顺序：required 在前、其余按声明顺序、可选带 ?；上限 " + SIGNATURE_MAX_PARAMS + " 个");
 }
 
-// ── 3. 预算截断（≤ 2k tok ≈ 7,500 字符） ─────────────────────────────────────
+// ── 3. 预算截断（≤ 2k tok ≈ 7,500 字符，含块头 / "- " 前缀 / 换行，另留安全余量） ──
 {
   const tools = [];
   for (let index = 0; index < 300; index += 1) {
@@ -104,15 +109,18 @@ const toolOf = (name, required, optional) => ({
   }
   const options = { signatureSummary: { enabled: true, tools: tools.map((tool) => tool.name) } };
   const lines = renderSignatureLines(tools, Object.assign({ ptcFrozen: true }, options));
-  const used = lines.reduce((sum, line) => sum + line.length + 1, 0);
+  // 预算按**最终渲染字符串**算：块头 + 每行 "- " 前缀 + 行尾换行（0.6.0 · E65）。
+  const used = signatureBlockCost(lines);
   assert.ok(lines.length > 0, "预算内必须出一些行");
   assert.ok(lines.length < tools.length, "300 个长签名必须被预算截断（实际 " + lines.length + "）");
-  assert.ok(used <= SIGNATURE_BUDGET_CHARS, "签名段总长必须 ≤ " + SIGNATURE_BUDGET_CHARS + " 字符（实际 " + used + "）");
-  // 「满预算就停」：下一条再加就超了。
-  const nextCost = lines.length < tools.length ? renderSignatureLines(tools.slice(lines.length), Object.assign({ ptcFrozen: true }, options)) : [];
-  const firstSkipped = nextCost.length > 0 ? nextCost[0].length + 1 : 0;
-  assert.ok(used + firstSkipped > SIGNATURE_BUDGET_CHARS, "停下的位置必须是「再加一条就超预算」");
-  ok("预算截断：总长 ≤ " + SIGNATURE_BUDGET_CHARS + " 字符，满预算即停（不截半行）");
+  assert.ok(used <= SIGNATURE_BLOCK_BUDGET_CHARS, "签名块增量必须 ≤ " + SIGNATURE_BLOCK_BUDGET_CHARS + " 字符（含块头与前缀；实际 " + used + "）");
+  assert.ok(used + SIGNATURE_BUDGET_MARGIN_CHARS <= SIGNATURE_BUDGET_CHARS, "块增量 + 安全余量必须 ≤ " + SIGNATURE_BUDGET_CHARS + " 字符");
+  assert.ok(signatureBlockTokens(lines) <= SIGNATURE_BUDGET_TOKENS, "签名块 token 估算必须 ≤ " + SIGNATURE_BUDGET_TOKENS + "（实际 " + signatureBlockTokens(lines) + "）");
+  // 「满预算就停」：下一条再加就超了（口径与实现同一份 signatureBlockCost）。
+  const rest = lines.length < tools.length ? renderSignatureLines(tools.slice(lines.length), Object.assign({ ptcFrozen: true }, options)) : [];
+  const firstSkipped = rest.length > 0 ? 2 + rest[0].length + 1 : 0;
+  assert.ok(used + firstSkipped > SIGNATURE_BLOCK_BUDGET_CHARS, "停下的位置必须是「再加一条就超预算」");
+  ok("预算截断：块增量 ≤ " + SIGNATURE_BLOCK_BUDGET_CHARS + " 字符（含块头/前缀/换行 + 余量）且 ≤ " + SIGNATURE_BUDGET_TOKENS + " tok，满预算即停（不截半行）");
 }
 
 // ── 4. 字节稳定 ───────────────────────────────────────────────────────────────
