@@ -178,7 +178,7 @@ describe("S5 部署契约 · 真跑脚本与共享模块", { concurrency: S5_CON
 
       const junctionStat = fs.lstatSync(home.junctionPath);
       assert.ok(junctionStat.isSymbolicLink(), "node_modules\\dsh-gate 必须是 junction/链接");
-      assert.equal(path.resolve(fs.realpathSync(home.junctionPath)), path.resolve(fs.realpathSync(home.sourceDir)), "junction 必须指向 <DSH home>\\local-plugins\\dsh-gate");
+      assert.equal(path.resolve(fs.realpathSync.native(home.junctionPath)).toLowerCase(), path.resolve(fs.realpathSync.native(home.sourceDir)).toLowerCase(), "junction 必须指向 <DSH home>\\local-plugins\\dsh-gate");
       assert.ok(fs.existsSync(path.join(home.sourceDir, "package.json")), "源码目录缺 package.json");
 
       const manifest = readJson(home.manifestPath);
