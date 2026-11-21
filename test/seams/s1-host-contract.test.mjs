@@ -13,16 +13,21 @@
  */
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   makeHost,
+  makePtcExecutor,
   createSessionStore,
   DISPATCH_BROADCAST,
   DISPATCH_ISOLATED,
   TARGET_DENY,
   TARGET_ALLOW,
 } from "../host.mjs";
+import { createGate } from "../../lib/gate.js";
+import { resolvePolicy } from "../../lib/policy.js";
 import { mountTailGate } from "../../lib/prestep.js";
 import {
   DEFECT_COUNT,
@@ -434,6 +439,127 @@ await check("基线清单：18 术语 + 12 ADR + 16 不变量 + 6 条接缝入�
     assert.equal(seam.scripts.length, 1, id + " 必须有一条命令入口");
     assert.equal(seam.blocking, id !== "S1b");
   }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// #03 缺陷回放（P1-4 / P1-5 / P1-6 / P1-7 / P2-1）
+//
+// 这五条是「归层决策被算了四遍」的直接后果：planFor 的候选循环、tierMap 的第二次
+// resolveTier、planSections 的 shouldDrop、load 的 off/knownSections 各判一遍。
+// 每条回放只断言**用户可见的结果**（快照层值 / 桶 / 目录 / 加载回执 / 工具表可见性），
+// 不摸内部函数 —— 这样修复可以把实现整体换掉，而这几条断言原样成立。
+// ─────────────────────────────────────────────────────────────────────────────
+
+const s1PolicyDir = (label) => fs.mkdtempSync(path.join(os.tmpdir(), "gate-s1-" + label + "-"));
+const s1Policy = (label, raw) => resolvePolicy(raw, { dshHome: s1PolicyDir(label) });
+const s1Rig = async ({ label, names, raw, executor }) => {
+  const host = makeHost({ names, id: label });
+  if (executor !== undefined) host.setExecutor(host.agent, executor);
+  const gate = createGate({ ctx: host.rootCtx, logger: host.logger, policy: s1Policy(label, raw) });
+  await gate.attach(host.agent);
+  return { host, gate, agent: host.agent };
+};
+
+await check("P1-4 glob 不跨轴：一条工具通配不得连带关掉段落与技能", async () => {
+  const { gate, agent } = await s1Rig({
+    label: "p1-4",
+    names: ["read", "pwsh", "pwsh_probe", "todo_write"],
+    raw: {
+      defaults: { capability: 2, section: 1, skillpack: 2 },
+      capabilities: { "glob:pwsh*": { tier: 0 } },
+    },
+  });
+  gate.recordSections(agent, [{ name: "pwsh-notes", chars: 40, tokens: 12 }]);
+  gate.rememberSkills(agent, [{ name: "pwsh-guide", provider: "pkg-pwsh", description: "g", origin: "import", content: "正文" }]);
+  gate.reapply(agent);
+  const snap = gate.snapshot(agent);
+  assert.equal(snap.tiers.pwsh_probe, 0, "glob:pwsh* 必须作用在工具轴");
+  assert.equal(gate.planSections(agent).shouldDrop("pwsh-notes"), false, "段落轴不得被工具通配关掉");
+  assert.equal(snap.sections.find((row) => row.name === "pwsh-notes").gated, false, "段落仍是常驻（不进摘除集）");
+  assert.equal(snap.skills.includes("pwsh-guide"), true, "技能轴不得被工具通配关掉");
+  await gate.releaseAll();
+});
+
+await check("P1-5 激活不得绕过 off：技能加载不得把显式关闭的工具装回工具表", async () => {
+  const { host, gate, agent } = await s1Rig({
+    label: "p1-5",
+    names: ["read", "univer_status", "univer_sheet", "todo_write"],
+    raw: {
+      defaults: { capability: 2, section: 1, skillpack: 2 },
+      capabilities: { "plugin:dsh-univer-office": { tier: 0 } },
+    },
+  });
+  gate.rememberSkills(agent, [{
+    name: "univer", provider: "dsh-univer-office", origin: "import", content: "用法正文",
+  }]);
+  const receipt = await gate.loadSkill(agent, "univer");
+  assert.equal(receipt.ok, true, "技能本身可加载");
+  assert.deepEqual(receipt.promoted, [], "显式关闭的工具不得被技能激活放出");
+  const snap = gate.snapshot(agent);
+  assert.equal(snap.tiers.univer_status, 0, "关闭工具必须保持关闭");
+  assert.equal(snap.offNames.includes("univer_status"), true);
+  assert.equal(host.visibleOf(agent).has("univer_status"), false, "关闭工具不得被装回工具表");
+  await gate.releaseAll();
+});
+
+await check("P1-6 off 必须不可 load：关闭段落不得从加载口取正文", async () => {
+  const { gate, agent } = await s1Rig({
+    label: "p1-6",
+    names: ["read", "pwsh", "todo_write"],
+    raw: {
+      defaults: { capability: 2, section: 2, skillpack: 2 },
+      capabilities: { "section:pwsh-notes": { tier: 0 } },
+    },
+  });
+  gate.recordSections(agent, [{ name: "pwsh-notes", chars: 10, tokens: 3, text: "这段本该被关掉" }]);
+  assert.equal(gate.planSections(agent).shouldDrop("pwsh-notes"), true, "关闭段落必须被摘掉");
+  const receipt = await gate.load(agent, ["section:pwsh-notes"]);
+  assert.deepEqual(receipt.loaded, [], "关闭段落不得被加载");
+  assert.equal(receipt.denied.includes("section:pwsh-notes"), true, "必须以拒绝回执说明原因");
+  assert.equal(gate.loadedTextFor(agent).includes("这段本该被关掉"), false, "关闭段落正文不得进尾部声明");
+  await gate.releaseAll();
+});
+
+await check("P1-7 重载后 off 仍生效：已加载不得压过显式关闭", async () => {
+  const host = makeHost({ names: ["read", "todo_write"], id: "p1-7" });
+  const policy = s1Policy("p1-7", { defaults: { capability: 2, section: 1, skillpack: 2 } });
+  const gate = createGate({ ctx: host.rootCtx, logger: host.logger, policy });
+  const agent = host.agent;
+  await gate.attach(agent);
+  const first = await gate.load(agent, ["todo_write"]);
+  assert.deepEqual(first.loaded, ["todo_write"]);
+  assert.equal(gate.snapshot(agent).tiers.todo_write, 1, "加载后按需抬成常驻");
+  // 面板把这条改成「关闭」：策略对象就地替换（0.5.7 的 server 保存后就是这么做的）。
+  Object.assign(policy, s1Policy("p1-7b", {
+    defaults: { capability: 2, section: 1, skillpack: 2 },
+    capabilities: { "native:todo_write": { tier: 0 } },
+  }));
+  gate.reapply(agent);
+  const snap = gate.snapshot(agent);
+  assert.equal(snap.tiers.todo_write, 0, "显式关闭必须压过已加载");
+  assert.equal(snap.residentNames.includes("todo_write"), false, "已加载不得让它留在常驻");
+  assert.equal(snap.offNames.includes("todo_write"), true);
+  assert.equal(host.visibleOf(agent).has("todo_write"), false, "关闭必须真的从工具表消失");
+  await gate.releaseAll();
+});
+
+await check("P2-1 冻结视图与快照一致：PTC 冻结下已加载工具仍是按需", async () => {
+  const { gate, agent } = await s1Rig({
+    label: "p2-1",
+    names: ["read", "todo_write", "gate_load"],
+    executor: makePtcExecutor(),
+    raw: { defaults: { capability: 2, section: 1, skillpack: 2 } },
+  });
+  await gate.load(agent, ["todo_write"]);
+  const snap = gate.snapshot(agent);
+  assert.equal(snap.frozen, true, "PTC 下必须冻结工具表");
+  assert.equal(snap.tiers.todo_write, 2, "冻结下已加载仍是按需（桶不变、声明走尾块）");
+  assert.equal(snap.onDemandNames.includes("todo_write"), true);
+  assert.equal(snap.residentNames.includes("todo_write"), false, "冻结下不得把已加载算成常驻");
+  const row = gate.capabilityView(agent).tools.find((tool) => tool.name === "todo_write");
+  assert.ok(row, "能力视图必须包含该工具");
+  assert.equal(row.bucket, "ondemand", "能力视图的桶必须与快照层值一致");
+  await gate.releaseAll();
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
