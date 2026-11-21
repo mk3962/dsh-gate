@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * S4 · 前端第一性原理重构 · 防回退门禁（S4G-1 … S4G-10）
+ * S4 · 前端第一性原理重构 · 防回退门禁（S4G-1 … S4G-12）
  *
  * 目标：把「宽松卡片 / 双主题 / 自解释交互 / 单保存」重构的 10 条不可回退契约钉成可执行门禁。
  * 待测客户端由 DSH_GATE_CLIENT_PATH 指定（缺省 client/index.js），因此同一套门禁既能验证新版，
@@ -150,11 +150,22 @@ function styleNodes(doc) {
 async function mountPanel(options = {}) {
   const { react, createRenderer } = createReact();
   const captured = [];
+  const buttons = [];
+  const inputs = [];
   if (options.captureSwitches === true) {
     const original = react.createElement;
     react.createElement = function patchedCreateElement(type, props, ...rest) {
       if (props && props.role === "switch") captured.push(props);
       return original.call(this, type, props, ...rest);
+    };
+  }
+  if (options.captureControls === true) {
+    // 捕获未 normalize 的按钮/输入框 props：渲染树里的函数会被换成 "[fn:...]"，交互只能从这里触发。
+    const inner = react.createElement;
+    react.createElement = function patchedControlElement(type, props, ...rest) {
+      if (type === "button") buttons.push({ props: props || {}, label: rest.map((child) => String(child)).join("") });
+      else if (type === "input") inputs.push({ props: props || {} });
+      return inner.call(this, type, props, ...rest);
     };
   }
   const doc = options.document || makeFakeDocument();
@@ -167,7 +178,65 @@ async function mountPanel(options = {}) {
   const renderer = createRenderer();
   const mounted = renderer.mount(host.component({}));
   await mounted.settle();
-  return { loaded, hook: loaded.hook.value, host, transport, renderer, mounted, doc, react, captured };
+  return { loaded, hook: loaded.hook.value, host, transport, renderer, mounted, doc, react, captured, buttons, inputs };
+}
+
+/* ── 交互探针：捕获数组 + 当前渲染树 ──────────────────────────────────── */
+
+function nodeText(node) {
+  if (!node) return "";
+  if (node.type === "#text") return node.text;
+  return (node.children || []).map(nodeText).join("");
+}
+
+function walkTree(node, visit) {
+  if (!node) return;
+  visit(node);
+  for (const child of node.children || []) walkTree(child, visit);
+}
+
+function treeButtons(tree) {
+  const out = [];
+  walkTree(tree, (node) => {
+    if (node.type === "button") out.push({ props: node.props, label: nodeText(node) });
+  });
+  return out;
+}
+
+function treeInputs(tree) {
+  const out = [];
+  walkTree(tree, (node) => {
+    if (node.type === "input") out.push(node.props);
+  });
+  return out;
+}
+
+function findTreeButton(tree, label) {
+  return treeButtons(tree).find((entry) => entry.label === label) || null;
+}
+
+function findTreeInput(tree, ariaLabel) {
+  return treeInputs(tree).find((props) => props["aria-label"] === ariaLabel) || null;
+}
+
+function latestButton(ctx, label) {
+  for (let index = ctx.buttons.length - 1; index >= 0; index -= 1) {
+    if (ctx.buttons[index].label === label) return ctx.buttons[index];
+  }
+  return null;
+}
+
+function latestInput(ctx, ariaLabel) {
+  for (let index = ctx.inputs.length - 1; index >= 0; index -= 1) {
+    const props = ctx.inputs[index].props;
+    if (props["aria-label"] === ariaLabel) return ctx.inputs[index];
+  }
+  return null;
+}
+
+function countPosts(transport, target) {
+  return transport.calls.filter((entry) => entry.path === target &&
+    entry.options && String(entry.options.method || "").toUpperCase() === "POST").length;
 }
 
 /* ── CSS 解析 ──────────────────────────────────────────────────────────── */
@@ -639,4 +708,124 @@ test("S4G-10 mcpMutate 支持 action:\"update\"", async () => {
   assert.equal(body.action, "update", "MCP 写请求必须携带 action:\"update\"");
   assert.equal(body.name, "demo", "MCP 写请求必须携带 name");
   assert.equal(body.server && body.server.command, "node", "MCP 写请求必须携带 server 配置");
+});
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * S4G-11 · 技能导入目录：按 path 渲染、移除真实生效
+ *
+ * 回归的缺陷：draft.imports 来自 L2.importsSnapshot()，元素是 { path, id, key } 对象；
+ * 渲染层直接 String(item) ⇒ 界面显示 [object Object]；点「移除」把 "[object Object]"
+ * 传给 draftStore.removeImport ⇒ 返回 false，但动作层照样弹成功提示（假绿 + 删不掉）。
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+test("S4G-11 技能导入目录按 path 渲染，移除真实生效且不假报成功", async () => {
+  const IMPORT = "/tmp/my-skills";
+  const ctx = await mountPanel({ captureControls: true });
+  assert.equal(ctx.mounted.text.indexOf("导入技能目录") >= 0, true, "技能页必须渲染「导入技能目录」卡片");
+  assert.equal(ctx.mounted.text.indexOf("[object Object]"), -1, "初始渲染不得出现 [object Object]");
+
+  const importInput = latestInput(ctx, "目录绝对路径");
+  assert.ok(importInput && typeof importInput.props.onChange === "function", "导入目录输入框必须可编辑（缺 onChange）");
+  importInput.props.onChange({ target: { value: IMPORT } });
+  await ctx.mounted.settle();
+
+  const addButton = latestButton(ctx, "加入草稿");
+  assert.ok(addButton && typeof addButton.props.onClick === "function", "导入目录卡片必须提供可点击的「加入草稿」");
+  addButton.props.onClick();
+  await ctx.mounted.settle();
+
+  assert.equal(ctx.mounted.text.indexOf(IMPORT) >= 0, true, "导入目录必须按 path 文本渲染，实际文本：" + ctx.mounted.text.slice(0, 300));
+  assert.equal(ctx.mounted.text.indexOf("[object Object]"), -1, "草稿元素是 {path,id,key} 对象，渲染层不得 String(item) 强转");
+  assert.equal(ctx.mounted.text.indexOf("已加入草稿") >= 0, true, "加入草稿必须弹成功提示");
+  assert.equal(ctx.mounted.text.indexOf("待保存改动") >= 0, true, "加入草稿必须产生待保存改动");
+
+  const removeButton = latestButton(ctx, "移除");
+  assert.ok(removeButton && typeof removeButton.props.onClick === "function", "导入目录行必须提供「移除」按钮");
+  removeButton.props.onClick();
+  await ctx.mounted.settle();
+
+  assert.equal(ctx.mounted.text.indexOf(IMPORT), -1, "移除后该目录不得再出现在面板里");
+  assert.equal(ctx.mounted.text.indexOf("已从草稿移除") >= 0, true, "真实移除必须弹成功提示");
+  assert.equal(ctx.mounted.text.indexOf("导入目录不在当前草稿里"), -1, "真实移除不得落到「不在当前草稿里」告警分支");
+  assert.equal(ctx.mounted.text.indexOf("还没有待导入的目录") >= 0, true, "移除后导入清单必须回到空态");
+  assert.equal(ctx.mounted.text.indexOf("没有改动") >= 0, true, "移除必须把草稿清空（保存栏回到「没有改动」）");
+  assert.equal(ctx.mounted.text.indexOf("待保存改动"), -1, "移除后不得残留待保存改动");
+
+  // 面板内部 draftStore 不可从外部取得，这里用同一个 L2 构造器复核「对象进快照、按 path 移除」契约。
+  // L2 对外暴露的读取器叫 imports()（importsSnapshot 只是内部函数名），所以两个名字都认。
+  const store = ctx.hook.L2.create({});
+  const readImports = (target) => (typeof target.importsSnapshot === "function" ? target.importsSnapshot() : target.imports());
+  assert.equal(store.stageImport(IMPORT), true, "stageImport 必须接受新目录");
+  const rows = readImports(store);
+  assert.equal(rows.length, 1, "导入快照必须返回 1 条，实际：" + JSON.stringify(rows));
+  assert.equal(typeof rows[0], "object", "导入快照的元素必须是 {path,id,key} 对象");
+  assert.equal(rows[0].path, IMPORT, "导入快照必须按 path 记录目录");
+  assert.equal(store.removeImport(rows[0].path), true, "removeImport 必须对草稿里的目录返回 true");
+  assert.equal(readImports(store).length, 0, "removeImport 后导入快照必须归零");
+  assert.equal(store.removeImport(IMPORT), false, "重复移除必须返回 false（不能靠返回值猜成功）");
+
+  ctx.mounted.unmount();
+});
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * S4G-12 · MCP 编辑保存：按回执状态决定是否重置表单
+ *
+ * 回归的缺陷：保存按钮 onClick 派发 update 之后立刻同步 resetMcpDraft() + setView()，
+ * 请求 500 / 网络超时时用户编辑内容直接丢失（表单被关掉、草稿被清空）。
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+test("S4G-12 MCP 编辑保存按回执守卫：失败保留表单，applied 才重置", async () => {
+  const ctx = await mountPanel({ captureControls: true });
+
+  const editButton = latestButton(ctx, "编辑");
+  assert.ok(editButton && typeof editButton.props.onClick === "function", "MCP 服务器行必须提供「编辑」按钮");
+  editButton.props.onClick();
+  await ctx.mounted.settle();
+
+  assert.equal(ctx.mounted.text.indexOf("编辑 MCP 服务器") >= 0, true, "进入编辑态后表单标题必须是「编辑 MCP 服务器」");
+  const commandInput = latestInput(ctx, "命令");
+  assert.ok(commandInput && typeof commandInput.props.onChange === "function", "编辑态必须渲染可编辑的「命令」输入框");
+  commandInput.props.onChange({ target: { value: "node --template" } });
+  await ctx.mounted.settle();
+
+  // ① 服务端 500：保存失败不得重置表单
+  ctx.transport.route("/api/dsh-gate/mcp", { status: 500, body: { error: "boom" } });
+  const beforeFailed = countPosts(ctx.transport, "/api/dsh-gate/mcp");
+  const saveFailed = latestButton(ctx, "保存修改");
+  assert.ok(saveFailed && typeof saveFailed.props.onClick === "function", "编辑态必须提供「保存修改」按钮");
+  saveFailed.props.onClick();
+  const failedSent = await waitFor(() => countPosts(ctx.transport, "/api/dsh-gate/mcp") > beforeFailed);
+  assert.equal(failedSent, true, "保存必须发出 POST /api/dsh-gate/mcp，实际请求：" + summarizeCalls(ctx.transport.calls));
+  await ctx.mounted.settle();
+
+  const failedCall = ctx.transport.calls.filter((entry) => entry.path === "/api/dsh-gate/mcp" &&
+    entry.options && String(entry.options.method || "").toUpperCase() === "POST").pop();
+  const failedBody = JSON.parse(failedCall.options.body);
+  assert.equal(failedBody.action, "update", "保存必须携带 action=update，实际：" + failedCall.options.body);
+  assert.equal(failedBody.name, "fs", "保存必须携带被编辑服务器名 fs");
+  assert.equal(failedBody.server && failedBody.server.command, "node --template", "保存必须携带用户改过的 command");
+
+  assert.equal(findTreeButton(ctx.mounted.tree, "保存修改") !== null, true, "保存失败后表单必须保持打开（仍有「保存修改」）");
+  assert.equal(ctx.mounted.text.indexOf("编辑 MCP 服务器") >= 0, true, "保存失败后标题必须仍是编辑态");
+  const keptCommand = findTreeInput(ctx.mounted.tree, "命令");
+  assert.ok(keptCommand !== null, "保存失败后「命令」输入框不得消失");
+  assert.equal(keptCommand.value, "node --template", "保存失败后用户编辑内容不得丢失");
+
+  // ② applied 回执：才允许重置草稿并关闭表单
+  ctx.transport.route("/api/dsh-gate/mcp", { body: { changed: true, servers: [{ name: "fs", transport: "stdio", enabled: true, state: "external", tools: ["mcp__fs__read"] }] } });
+  const beforeApplied = countPosts(ctx.transport, "/api/dsh-gate/mcp");
+  const saveApplied = latestButton(ctx, "保存修改");
+  assert.ok(saveApplied && typeof saveApplied.props.onClick === "function", "失败后必须仍能再次点「保存修改」");
+  saveApplied.props.onClick();
+  const appliedSent = await waitFor(() => countPosts(ctx.transport, "/api/dsh-gate/mcp") > beforeApplied);
+  assert.equal(appliedSent, true, "第二次保存必须再次发出 POST /api/dsh-gate/mcp");
+  await ctx.mounted.settle();
+
+  assert.equal(findTreeButton(ctx.mounted.tree, "保存修改"), null, "applied 后必须退出编辑态（不再有「保存修改」）");
+  assert.equal(findTreeInput(ctx.mounted.tree, "命令"), null, "applied 后必须收起表单（「命令」输入框消失）");
+  assert.equal(ctx.mounted.text.indexOf("编辑 MCP 服务器"), -1, "applied 后标题不得再是编辑态");
+  assert.equal(ctx.mounted.text.indexOf("新增 MCP 服务器") >= 0, true, "applied 后表单标题必须回到新增态");
+  assert.equal(ctx.mounted.text.indexOf("展开表单") >= 0, true, "applied 后表单必须收起（显示「展开表单」）");
+
+  ctx.mounted.unmount();
 });

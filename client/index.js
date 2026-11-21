@@ -2754,7 +2754,9 @@ window.__ModuleLoader__.load({
             ? primitives.stateContainer({ key: "empty", state: "empty", message: text("skills.empty") })
             : h("div", { key: "groups", className: "dshg-list" }, groupNodes),
         ]);
-        const imports = draft.imports === null ? listOf(payload && payload.imports) : draft.imports;
+        const imports = listOf(draft.imports === null ? (payload && payload.imports) : draft.imports)
+          .map((item) => (typeof item === "string" ? item : (isObject(item) && typeof item.path === "string" ? item.path : "")))
+          .filter((path) => path.length > 0);
         const importsCard = card("skills:imports", text("skills.importsTitle"), [
           h("div", { key: "row", className: "dshg-filters" }, [
             h("input", { key: "p", className: "dshg-input", "aria-label": text("skills.importPlaceholder"), placeholder: text("skills.importPlaceholder"), value: view.importDraft, onChange: (event) => props.actions.setView({ importDraft: event.target.value }) }),
@@ -2768,12 +2770,12 @@ window.__ModuleLoader__.load({
           hint("hint", text("skills.importsHint")),
           imports.length === 0
             ? hint("empty", text("skills.importEmpty"))
-            : h("div", { key: "list", className: "dshg-col" }, imports.map((item, index) => h("div", { key: "imp:" + String(item) + ":" + index, className: "dshg-importRow" }, [
-              h("span", { key: "p", className: "dshg-grow", title: String(item) }, String(item)),
-              button("rm", text("skills.importRemove"), () => props.actions.removeImport(String(item))),
+            : h("div", { key: "list", className: "dshg-col" }, imports.map((path, index) => h("div", { key: "imp:" + path + ":" + index, className: "dshg-importRow" }, [
+              h("span", { key: "p", className: "dshg-grow", title: path }, path),
+              button("rm", text("skills.importRemove"), () => props.actions.removeImport(path)),
             ]))),
         ]);
-        const offList = listOf(payload && payload.off).filter((name) => typeof name === "string");
+        const offList = (Array.isArray(draft.offList) ? draft.offList : listOf(payload && payload.off)).filter((name) => typeof name === "string");
         const offCard = offList.length === 0 ? null : card("skills:off", text("skills.offTitle") + "（" + String(offList.length) + "）", [
           hint("hint", text("skills.offHint")),
           h("div", { key: "list", className: "dshg-col" }, offList.map((name) => h("div", { key: "off:" + name, className: "dshg-importRow" }, [
@@ -2885,11 +2887,7 @@ window.__ModuleLoader__.load({
             h("div", { key: "fields", className: "dshg-form" }, formFields),
             h("div", { key: "actions", className: "dshg-row" }, [
               editing.length > 0
-                ? button("save", text("mcp.saveEdit"), () => {
-                  props.actions.mcpAction("update", editing);
-                  props.actions.resetMcpDraft();
-                  props.actions.setView({ mcpEditing: "", mcpAddOpen: false });
-                }, { primary: true, disabled: writable !== true, reason: text("mcp.writable") })
+                ? button("save", text("mcp.saveEdit"), () => props.actions.mcpAction("update", editing), { primary: true, disabled: writable !== true, reason: text("mcp.writable") })
                 : button("add", text("mcp.addTitle"), () => props.actions.mcpAdd(), {
                   primary: true,
                   disabled: writable !== true || String(draft.name || "").trim().length === 0,
@@ -3394,12 +3392,21 @@ window.__ModuleLoader__.load({
             if (staged) { applyView({ importDraft: "" }); toast("ok", "已加入草稿，保存后才写盘", "import"); }
             else toast("warn", "目录为空或已经在导入清单里", "import");
           },
-          removeImport: (path) => { draftStore.removeImport(path); toast("ok", "已从草稿移除，不会动原目录文件", "import-remove"); },
+          removeImport: (path) => {
+            const removed = draftStore.removeImport(path);
+            if (removed) toast("ok", "已从草稿移除，不会动原目录文件", "import-remove");
+            else toast("warn", "导入目录不在当前草稿里", "import-remove");
+          },
           removeOff: (name) => { draftStore.stageClose(name); toast("ok", "已从旧关闭清单移除（可撤销）", "off"); },
           clearOff: () => {
             setConfirmState({ gate: { action: "save-skills", text: text("skills.offClearConfirm"), consequence: "清空后保存才写盘；可用撤销恢复", confirmLabel: text("confirm.ok"), cancelLabel: text("confirm.cancel"), needsConfirm: true }, run: () => { draftStore.clearCloseList(); toast("ok", "旧关闭清单已清空（可撤销）", "off-clear"); } });
           },
-          discard: () => { draftStore.discardAll(); toast("ok", "已放弃面板里未保存的改动", "discard"); },
+          discard: () => {
+            draftStore.discardAll();
+            draftStore.json.setDirty(false);
+            applyView({ jsonDirty: false, jsonText: JSON.stringify(policyContent, null, 2), jsonNotice: null });
+            toast("ok", "已放弃面板里未保存的改动", "discard");
+          },
           undo: () => { const action = draftStore.undo(); if (action) toast("info", "已撤销：" + action.label, "undo"); },
           redo: () => { const action = draftStore.redo(); if (action) toast("info", "已重做：" + action.label, "redo"); },
           reload: () => runAction("reload", async () => { await runtime.refresh({ reason: "manual" }); toast("ok", "已重新读取", "reload"); }),
@@ -3458,7 +3465,12 @@ window.__ModuleLoader__.load({
             runAction("mcp", async () => {
               const receipt = await runtime.mcpMutate(body);
               handleReceipt(receipt);
-              if (receipt.state === "applied") await runtime.refresh({ reason: "post-mcp" });
+              if (receipt.state !== "applied") return;
+              if (action === "update") {
+                actions.resetMcpDraft();
+                applyView({ mcpEditing: "", mcpAddOpen: false });
+              }
+              await runtime.refresh({ reason: "post-mcp" });
             });
           },
           mcpRemove: (name) => setConfirmState({ gate: { action: "mcp", text: text("mcp.removeTitle") + "（" + name + "）", consequence: text("mcp.removeConsequence"), confirmLabel: "确认删除", cancelLabel: text("confirm.cancel"), needsConfirm: true }, run: () => { void runtime.write({ path: "/api/dsh-gate/mcp", action: "mcp-remove", body: { action: "remove", name: name } }).then((receipt) => { handleReceipt(receipt); if (receipt.state === "applied") return runtime.refresh({ reason: "post-mcp" }); return undefined; }); } }),
@@ -3721,7 +3733,16 @@ window.__ModuleLoader__.load({
                 confirmLabel: text("confirm.ok"),
                 cancelLabel: text("confirm.cancel"),
                 destructive: true,
-                onConfirm: () => { const conflict = confirmState.conflict; setConfirmState(null); void runtime.savePolicy(Object.assign({}, draftStore.toPolicyBody(), { expectedRevision: conflict.revision })).then(handleReceipt); },
+                onConfirm: () => {
+                  const conflict = confirmState.conflict;
+                  setConfirmState(null);
+                  void runtime.savePolicy(Object.assign({}, draftStore.toPolicyBody(), { expectedRevision: conflict.revision })).then((receipt) => {
+                    if (receipt.state === "applied" || receipt.state === "no-change") draftStore.commitKeys(draftStore.dirtyKeys());
+                    handleReceipt(receipt);
+                    if (receipt.state === "applied") return runtime.refresh({ reason: "post-save" });
+                    return undefined;
+                  });
+                },
                 onCancel: () => setConfirmState(null),
               })
             : primitives.confirmBar({
