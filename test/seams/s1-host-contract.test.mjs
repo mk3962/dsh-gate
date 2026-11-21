@@ -631,49 +631,8 @@ const auditTable = {
   onion: (mod) => auditOnion(mod),
 };
 
-for (const entry of hostMutations) {
-  await check("删分支必红 · 正例先绿：" + entry.label, async () => { await entry.run(); });
-  await check("删分支必红 · " + entry.label, async () => {
-    const mutated = await loadMutated("test/host.mjs", [{ label: entry.audit, find: entry.find }], { name: "host" });
-    try {
-      assert.equal(mutated.applied.length, 1);
-      const mutatedWorld = { makeHost: mutated.namespace.makeHost, mountTailGate, runAdapter };
-      const red = await expectRed(entry.audit, () => auditTable[entry.audit](mutatedWorld));
-      assert.equal(red.red, true, "删掉被测分支后契约夹具必须变红，实际仍然全绿（假绿）");
-    } finally {
-      mutated.cleanup();
-    }
-  });
-}
-
-await check("删分支必红 · 尾块去重分支（FG-3）", async () => {
-  const mutated = await loadMutated("lib/prestep.js", [{ label: "drop-tail-dedup", find: prestepDedupBlock }], { name: "prestep" });
-  try {
-    const red = await expectRed("tail-dedupe", () => auditSessionSurface({ makeHost, mountTailGate: mutated.namespace.mountTailGate }));
-    assert.equal(red.red, true, "删掉 known===text 去重分支后，尾块去重用例必须变红");
-    assert.match(red.message, /不得再追加/);
-  } finally {
-    mutated.cleanup();
-  }
-});
-
-await check("删分支必红 · 宿主消息标识确定性（FG-5）", async () => {
-  const mutated = await loadMutated("test/vendor/dsh-llm/index.js", [{
-    label: "random-id",
-    find: "  const id = \"msg-\" + createHash(\"sha1\").update(seed).digest(\"hex\").slice(0, 16);",
-    replace: "  const id = \"msg-\" + Math.random().toString(16).slice(2, 18);",
-  }], { name: "vendor-llm" });
-  try {
-    const red = await expectRed("deterministic-id", () => auditMessageAdapter({
-      runAdapter: (extraEnv) => runAdapter({ DSH_GATE_STUB_LLM_PATH: mutated.file, ...extraEnv }),
-    }));
-    assert.equal(red.red, true, "宿主构造器带随机 id 时确定性断言必须变红");
-    assert.match(red.message, /同一个标识/);
-  } finally {
-    mutated.cleanup();
-  }
-});
-
+// 定点破坏（删分支必红）已迁到 scripts/verify-effectiveness.mjs 的 HF-1..HF-6；
+// S1 只保留六条宿主事实的 fixture 与正例断言，避免动态 import 撑爆 2s/文件预算。
 await check("擦除临时变异副本", async () => {
   cleanupMutations();
   const fs = await import("node:fs");

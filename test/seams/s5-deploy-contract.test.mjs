@@ -1,267 +1,479 @@
 /**
- * S5 契约：假 HOME 上真跑 install.ps1 / uninstall.ps1 -DryRun（零写入）+ 字节快照
- * + patch 行插入/摘除对称性（含 0.5.7 的「卸不掉」真缺陷登记）。
+ * S5 部署契约（#08 版）：先红后绿的那一层
  *
- * 运行：node --import ./test/stub-loader.mjs test/seams/s5-deploy-contract.test.mjs
+ * 覆盖 G80–G89 / D-1：
+ *   静态  G89 四脚本共用唯一公共模块；G86 批处理 CRLF + 非零退出码；无第二份 patch 正则
+ *   行为  G84 -DryRun 五项 + 零写入；G81/G82 六步事务与故障注入回滚；G80/D-1 装卸往返逐字节
+ *        G83 备份命名与保留上限；G85 旧行迁移；G87 DSH home 四级顺序；G88 进程检测拒写
+ *
+ * 所有用例都在 os.tmpdir() 下的假 HOME 里跑真脚本，绝不触碰真实 ~/.dsh。
  */
-import test from "node:test";
+import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
-
 import {
   SCRIPTS,
-  PATCH_ROW,
-  INSTALL_PATCH_PATTERN,
-  UNINSTALL_PATCH_PATTERN,
+  SCRIPTS_DIR,
+  REPO_ROOT,
   FIXED_PATCH_PATTERN,
-  assertIsolatedRoot,
-  assertInsideRoot,
+  PATCH_ROW,
   createFakeHome,
-  writeTextNoBom,
-  writeTextWithBom,
+  createPluginSource,
+  runScriptAsync,
+  runDryRunAsync,
+  runBatchAsync,
   snapshotTree,
   snapshotDigest,
-  diffSnapshots,
   snapshotsEqual,
-  runDryRun,
-  parsePatchRows,
-  findSurfaceGateRows,
-  applyPatchInsertion,
-  removeSurfaceGateRows,
+  diffSnapshots,
   readScript,
+  readScriptBytes,
+  assertNoBom,
+  assertCrlf,
+  findSurfaceGateRows,
+  parsePatchRows,
   firstWriteIndex,
   dryRunGuardIndex,
-  realHomeFingerprint,
   powershellVersion,
+  realHomeFingerprint,
 } from "./s5-deploy-seam.mjs";
 
-const countOf = (text, needle) => text.split(needle).length - 1;
+const realHomeBefore = realHomeFingerprint();
+const PS = powershellVersion();
 
-const withHome = async (options, run) => {
+/** 用例级并发度：25 个用例各自独立假 HOME，真跑脚本互不依赖。 */
+const S5_CONCURRENCY = Math.max(1, Math.min(16, Number(process.env.DSH_GATE_S5_CONCURRENCY) || 8));
+
+/** 每个用例一个一次性假 HOME，结束即删；body 内部真跑脚本。 */
+async function withHome(options, body) {
   const home = createFakeHome(options);
-  try { return await run(home); } finally { home.cleanup(); }
-};
+  try {
+    return await body(home);
+  } finally {
+    home.cleanup();
+  }
+}
 
-test("S5 · 假 HOME 落在临时目录、结构最小可用，且拒绝指向真实 ~/.dsh", async () => {
-  await withHome({}, (home) => {
-    assert.ok(home.root.startsWith(os.tmpdir()), "夹具根必须在系统临时目录内");
-    assert.notEqual(path.resolve(home.root), path.resolve(os.homedir(), ".dsh"));
-    for (const dir of [home.profileDir, home.nodeModules, home.pluginsDir]) assert.ok(fs.existsSync(dir), "目录必须存在：" + dir);
-    assert.ok(home.exists(".dsh/profiles/desktop/package.json"));
-    assert.ok(home.exists(".dsh/profiles/desktop/cordis.patch.yml"));
-    assert.deepEqual(JSON.parse(home.read(".dsh/profiles/desktop/package.json")).dsh.profile.bundles, ["dsh-core"]);
+function diagStep(result) {
+  return "\n--- exit " + result.status + " ---\n" + result.stdout.slice(-2500) + "\n--- stderr ---\n" + result.stderr.slice(-800);
+}
 
-    const realHome = path.join(os.homedir(), ".dsh");
-    assert.throws(() => assertIsolatedRoot(realHome), (error) => error.code === "REAL_HOME_FORBIDDEN");
-    assert.throws(() => assertIsolatedRoot(path.join(realHome, "profiles", "desktop")), (error) => error.code === "REAL_HOME_FORBIDDEN");
-    assert.throws(() => writeTextNoBom(home.root, "../escape.txt", "x"), (error) => error.code === "TARGET_OUTSIDE_ROOT");
-    assert.throws(() => assertInsideRoot(home.root, realHome), (error) => error.code === "TARGET_OUTSIDE_ROOT");
+function assertOk(result, label) {
+  assert.equal(result.status, 0, label + " 应 exit 0" + diagStep(result));
+}
+
+function assertFail(result, label) {
+  assert.notEqual(result.status, 0, label + " 应非零退出" + diagStep(result));
+}
+
+function readJson(file) {
+  return JSON.parse(fs.readFileSync(file, "utf8"));
+}
+
+describe("S5 部署契约 · 真跑脚本与共享模块", { concurrency: S5_CONCURRENCY }, () => {
+  /* ── 静态不变量 ───────────────────────────────────────────────────────── */
+
+  test("G89 · 四脚本共用唯一公共模块，脚本里没有第二份 patch 正则", async () => {
+    const moduleSource = readScript("module");
+    const installSource = readScript("install");
+    const uninstallSource = readScript("uninstall");
+
+    assert.ok(fs.existsSync(SCRIPTS.module), "缺少共享模块 " + SCRIPTS.module);
+    for (const [name, source] of [["install.ps1", installSource], ["uninstall.ps1", uninstallSource]]) {
+      assert.match(source, /Import-Module\s+\(Join-Path \$here 'dsh-gate-deploy\.psm1'\)/, name + " 必须导入共享模块");
+      assert.doesNotMatch(source, /id:\\s\*surface-gate/, name + " 不许自带 patch 行正则（必须走模块的唯一模式）");
+      assert.doesNotMatch(source, /^function\s+/m, name + " 不许定义本地函数（公共逻辑必须唯一实现在模块里）");
+    }
+
+    const patternDefinitions = moduleSource.match(/\$script:PatchRowPattern\s*=/g) || [];
+    assert.equal(patternDefinitions.length, 1, "patch 行模式必须只有一处定义，实际 " + patternDefinitions.length + " 处");
+
+    // install / uninstall / 回读三处都必须引用同一个变量，而不是各自拼正则
+    assert.ok((moduleSource.match(/Test-GatePatchRowPresent/g) || []).length >= 2, "插入/摘除/回读都要走 Test-GatePatchRowPresent");
+    assert.match(moduleSource, /function Test-GatePatchRowPresent[\s\S]{0,400}?\$script:PatchRowPattern/);
+    assert.match(moduleSource, /function Add-GatePatchText[\s\S]{0,800}?Test-GatePatchRowPresent/, "插入前必须用同一模式判重");
+    assert.match(moduleSource, /function Remove-GatePatchText[\s\S]{0,1200}?\$script:PatchRowPattern/, "摘除必须用同一模式");
   });
-});
 
-test("S5 · 字节快照：排序稳定、能识别 BOM / 修改 / 增删", async () => {
-  await withHome({}, (home) => {
-    const before = snapshotTree(home.root);
-    assert.deepEqual(before.files.map((file) => file.path), before.files.map((file) => file.path).slice().sort());
-    assert.ok(before.files.every((file) => file.bom === false), "种子文件都不许带 BOM");
-    assert.equal(snapshotDigest(before), snapshotDigest(snapshotTree(home.root)), "未改动时摘要必须相同");
-
-    writeTextWithBom(home.root, ".dsh/profiles/desktop/bom.json", "{}\n");
-    writeTextNoBom(home.root, ".dsh/profiles/desktop/extra.yml", "- insert: []\n");
-    const after = snapshotTree(home.root);
-    const changes = diffSnapshots(before, after);
-    assert.deepEqual(changes.map((item) => [item.path, item.change]), [
-      [".dsh/profiles/desktop/bom.json", "added"],
-      [".dsh/profiles/desktop/extra.yml", "added"],
-    ]);
-    const bomFile = after.files.find((file) => file.path.endsWith("bom.json"));
-    assert.equal(bomFile.bom, true, "带 BOM 的文件必须被标记");
-    assert.equal(snapshotsEqual(before, after), false);
-
-    const modified = snapshotTree(home.root);
-    writeTextNoBom(home.root, ".dsh/profiles/desktop/extra.yml", "- insert: [x]\n");
-    const afterModify = diffSnapshots(modified, snapshotTree(home.root));
-    assert.deepEqual(afterModify.map((item) => [item.path, item.change]), [[".dsh/profiles/desktop/extra.yml", "modified"]]);
-
-    fs.rmSync(path.join(home.root, ".dsh/profiles/desktop/extra.yml"));
-    const afterRemove = diffSnapshots(modified, snapshotTree(home.root));
-    assert.deepEqual(afterRemove.map((item) => [item.path, item.change]), [[".dsh/profiles/desktop/extra.yml", "removed"]]);
+  test("G86 · 批处理全 CRLF、失败回传非零退出码", async () => {
+    for (const name of ["activate.cmd", "rollback.cmd"]) {
+      const bytes = readScriptBytes(name);
+      const crlf = assertCrlf(bytes, name);
+      assert.ok(crlf >= 3, name + " 行数异常：" + crlf);
+      const source = bytes.toString("latin1");
+      assert.match(source, /exit \/b %RC%/, name + " 必须用 exit /b %RC% 回传退出码");
+      assert.match(source, /set "RC=%ERRORLEVEL%"/, name + " 必须先保存 ERRORLEVEL");
+      assert.match(source, /chcp 65001/, name + " 必须切 UTF-8 代码页");
+      assert.doesNotMatch(source, /^\s*@?rem[^\n]*\n(?![^\n]*\r\n)/, name + " 不许出现裸 LF");
+    }
+    // install / uninstall 的 DryRun 必须在任何写操作之前退出（写操作都在模块里）
+    const installSource = readScript("install");
+    assert.ok(dryRunGuardIndex(installSource) > 0, "install.ps1 缺少 if ($DryRun) 守卫");
+    assert.ok(firstWriteIndex(installSource) === -1, "install.ps1 不应直接写盘（写操作必须归模块）");
   });
-});
 
-test("S5 · install.ps1 -DryRun 真跑：exit 0、零写入、真实 home 指纹不变", async () => {
-  const realBefore = realHomeFingerprint();
-  await withHome({ patchText: "[]\n" }, (home) => {
-    const result = runDryRun(home, "install");
-    assert.equal(result.status, 0, "install -DryRun 必须 exit 0；stderr=" + result.stderr.slice(0, 400));
-    assert.equal(result.stderr.trim(), "");
-    assert.match(result.stdout, /\[dry-run\] 将执行/);
-    assert.match(result.stdout, /8\) 回读校验/);
-    assert.match(result.stdout, /patch 行 : surface-gate 已在 cordis\.patch\.yml = False/);
-    assert.deepEqual(result.changes, [], "DryRun 不许有任何字节变化");
-    assert.equal(snapshotDigest(result.before), snapshotDigest(result.after));
+  test("模块与脚本都是无 BOM 写盘约定：脚本自身可带 BOM，但写入 DSH 文件的路径必须是 UTF8Encoding($false)", async () => {
+    const moduleSource = readScript("module");
+    assert.match(moduleSource, /New-Object System\.Text\.UTF8Encoding\(\$false\)/, "必须用无 BOM 的 UTF8Encoding($false) 落盘");
+    assert.match(moduleSource, /fs\.writeFileSync\(file, Buffer\.from\(out, "utf8"\)\)/, "package.json 必须由 node 按 UTF-8 无 BOM 写");
+    // 写 DSH 会解析的文件时不许出现会带 BOM 的 cmdlet
+    for (const line of moduleSource.split(/\r?\n/)) {
+      if (/Set-Content|Out-File|Add-Content/.test(line)) {
+        assert.doesNotMatch(line, /Set-Content|Out-File|Add-Content/, "模块里出现了可能带 BOM 的写盘 cmdlet：" + line.trim());
+      }
+    }
   });
-  assert.deepEqual(realHomeFingerprint(), realBefore, "真实 ~/.dsh 的只读指纹必须不变");
-});
 
-test("S5 · uninstall.ps1 -DryRun 真跑：exit 0、零写入", async () => {
-  const realBefore = realHomeFingerprint();
-  await withHome({ patchText: PATCH_ROW.text + "\n" }, (home) => {
-    const result = runDryRun(home, "uninstall");
-    assert.equal(result.status, 0, "uninstall -DryRun 必须 exit 0；stderr=" + result.stderr.slice(0, 400));
-    assert.equal(result.stderr.trim(), "");
-    assert.match(result.stdout, /\[dry-run\] 将执行/);
-    assert.match(result.stdout, /6\) 回读校验/);
-    assert.deepEqual(result.changes, []);
+  /* ── G84 试运行 ───────────────────────────────────────────────────────── */
+
+  test("G84 · install -DryRun 输出五项预检且零字节写入", async () => {
+    await withHome({}, async (home) => {
+      const plugin = createPluginSource(home);
+      const before = snapshotTree(home.root);
+      const result = await runDryRunAsync(home, "install", ["-Source", plugin.dir, "-BackupRoot", home.backupRoot]);
+      assertOk(result, "install -DryRun");
+      for (const label of [
+        "1) 目标 profile 是否运行",
+        "2) 目标路径可写",
+        "3) 磁盘余量",
+        "4) 是否同卷",
+        "5) junction 权限",
+        "[dry-run] 未写入任何字节（只读预览）",
+      ]) {
+        assert.ok(result.stdout.includes(label), "DryRun 输出缺少「" + label + "」" + diagStep(result));
+      }
+      assert.equal(snapshotDigest(before), snapshotDigest(snapshotTree(home.root)), "-DryRun 不许写任何字节" + diagStep(result));
+      assert.deepEqual(diffSnapshots(before, snapshotTree(home.root)), []);
+      assert.equal(fs.existsSync(home.backupRoot), false, "-DryRun 不许创建备份目录");
+      assert.equal(fs.existsSync(home.junctionPath), false, "-DryRun 不许建 junction");
+      assert.equal(fs.existsSync(home.sourceDir), false, "-DryRun 不许复制源码");
+      assert.equal(fs.readFileSync(home.patchPath, "utf8"), "[]\n", "patch 文件必须原样");
+    });
   });
-  assert.deepEqual(realHomeFingerprint(), realBefore, "真实 ~/.dsh 的只读指纹必须不变");
-});
 
-test("S5 · 真缺陷登记：uninstall 认不出 install 写的缩进 patch 行（卸不掉）", async () => {
-  await withHome({ patchText: PATCH_ROW.text + "\n" }, (home) => {
-    // uninstall 自己宣布「没有这一行」——可 install 明明刚写进去。
-    const result = runDryRun(home, "uninstall");
-    assert.match(result.stdout, /patch 行 : surface-gate 在 cordis\.patch\.yml = False/);
-    const text = home.read(".dsh/profiles/desktop/cordis.patch.yml");
-    assert.equal(findSurfaceGateRows(text).length, 1, "文件里确实有一行 surface-gate");
-    assert.equal(UNINSTALL_PATCH_PATTERN.test(text), false, "uninstall 的正则认不出缩进行");
-    assert.equal(INSTALL_PATCH_PATTERN.test(text), true, "install 的正则认得出");
-    assert.equal(FIXED_PATCH_PATTERN.test(text), true);
+  test("G84 · uninstall -DryRun 在已安装状态下同样零写入", async () => {
+    await withHome({}, async (home) => {
+      const plugin = createPluginSource(home);
+      assertOk(await runScriptAsync("install", home, { source: plugin.dir, backupRoot: home.backupRoot }), "install");
+      const before = snapshotTree(home.root);
+      const result = await runDryRunAsync(home, "uninstall", ["-BackupRoot", home.backupRoot]);
+      assertOk(result, "uninstall -DryRun");
+      assert.ok(result.stdout.includes("6) cordis.patch.yml"), "uninstall DryRun 应列出摘除步骤" + diagStep(result));
+      assert.ok(result.stdout.includes("[dry-run] 未写入任何字节（只读预览）"));
+      assert.equal(snapshotDigest(before), snapshotDigest(snapshotTree(home.root)), "uninstall -DryRun 不许写任何字节");
+    });
   });
-});
 
-test("S5 · patch 插入幂等 + 摘除往返字节不变量（修复后的正则）", async () => {
-  await withHome({ patchText: "[]\n" }, (home) => {
-    const first = applyPatchInsertion("[]\n");
-    assert.deepEqual([first.inserted, first.reason], [true, "empty-array"]);
-    const second = applyPatchInsertion(first.text);
-    assert.deepEqual([second.inserted, second.reason], [false, "already-present"]);
-    assert.equal(second.text, first.text, "重复安装不得重复追加");
+  /* ── G81 真装 + G80 真卸 ──────────────────────────────────────────────── */
 
-    const emptySnapshot = snapshotTree(home.root);
-    writeTextNoBom(home.root, ".dsh/profiles/desktop/cordis.patch.yml", first.text);
-    const insertedSnapshot = snapshotTree(home.root);
-    const digestOf = (snapshot) => snapshot.files.find((file) => file.path.endsWith("cordis.patch.yml")).sha1;
-    assert.notEqual(digestOf(insertedSnapshot), digestOf(emptySnapshot), "插入必须改字节");
+  test("G81 · 真装：六步输出、junction 就位、manifest/patch/策略种子齐全且无 BOM", async () => {
+    await withHome({}, async (home) => {
+      const plugin = createPluginSource(home);
+      const result = await runScriptAsync("install", home, { source: plugin.dir, backupRoot: home.backupRoot });
+      assertOk(result, "install");
+      for (let step = 1; step <= 6; step += 1) {
+        assert.ok(result.stdout.includes("[" + step + "/6]"), "缺少 [" + step + "/6] 输出" + diagStep(result));
+      }
 
-    const removed = removeSurfaceGateRows(first.text, { pattern: FIXED_PATCH_PATTERN });
-    assert.equal(removed.removed, 1);
-    assert.equal(removed.pruned, 1, "空掉的 - insert: 块必须一起摘掉");
-    assert.equal(removed.text, "[]\n", "摘掉唯一一行后必须回到空数组");
-    assert.deepEqual(findSurfaceGateRows(removed.text), []);
-    writeTextNoBom(home.root, ".dsh/profiles/desktop/cordis.patch.yml", removed.text);
-    assert.equal(digestOf(snapshotTree(home.root)), digestOf(emptySnapshot), "插入再摘除必须回到同一字节");
+      const junctionStat = fs.lstatSync(home.junctionPath);
+      assert.ok(junctionStat.isSymbolicLink(), "node_modules\\dsh-gate 必须是 junction/链接");
+      assert.equal(path.resolve(fs.realpathSync(home.junctionPath)), path.resolve(fs.realpathSync(home.sourceDir)), "junction 必须指向 <DSH home>\\local-plugins\\dsh-gate");
+      assert.ok(fs.existsSync(path.join(home.sourceDir, "package.json")), "源码目录缺 package.json");
+
+      const manifest = readJson(home.manifestPath);
+      assert.ok(manifest.dsh.profile.bundles.includes("dsh-gate"), "bundles 应含 dsh-gate");
+      assert.equal(manifest.dependencies["dsh-gate"], "link:../../local-plugins/dsh-gate");
+
+      const patchBytes = fs.readFileSync(home.patchPath);
+      assertNoBom(patchBytes, "cordis.patch.yml");
+      assertNoBom(fs.readFileSync(home.manifestPath), "package.json");
+      const patchText = patchBytes.toString("utf8");
+      assert.ok(FIXED_PATCH_PATTERN.test(patchText), "patch 文件里应有 surface-gate 行：" + patchText);
+      const rows = findSurfaceGateRows(patchText);
+      assert.equal(rows.length, 1, "只许一行 surface-gate");
+      assert.ok(rows[0].indent > 0, "surface-gate 行应是缩进块成员（与宿主既有 patch 风格一致）");
+      assert.equal(rows[0].fields.name, "dsh-gate");
+
+      assert.ok(fs.existsSync(home.gateJsonPath), "策略种子应种到 DSH home/gate.json");
+      assertNoBom(fs.readFileSync(home.gateJsonPath), "gate.json");
+    });
   });
-});
 
-test("S5 · 用脚本现有正则摘除：行留着 + 只剩孤零零的 - insert:", async () => {
-  await withHome({}, () => {
-    const inserted = applyPatchInsertion("[]\n");
-    const broken = removeSurfaceGateRows(inserted.text);
-    assert.equal(broken.removed, 0, "现有 uninstall 正则一行也认不出");
-    assert.equal(broken.text, inserted.text);
-    assert.equal(broken.text.split("\n")[0], "- insert:", "真正的后果：- insert: 变成孤儿，宿主解析会炸");
-    assert.equal(findSurfaceGateRows(broken.text).length, 1);
+  test("G80 / D-1 · 装完再卸，profile 逐字节回到初始（含 patch 行真被摘掉）", async () => {
+    await withHome({}, async (home) => {
+      const plugin = createPluginSource(home);
+      const before = snapshotTree(home.profileDir);
+      const patchBefore = fs.readFileSync(home.patchPath);
+
+      const install = await runScriptAsync("install", home, { source: plugin.dir, backupRoot: home.backupRoot });
+      assertOk(install, "install");
+      assert.ok(fs.existsSync(home.junctionPath));
+
+      const uninstall = await runScriptAsync("uninstall", home, { backupRoot: home.backupRoot });
+      assertOk(uninstall, "uninstall");
+      for (let step = 1; step <= 7; step += 1) {
+        assert.ok(uninstall.stdout.includes("[" + step + "/7]"), "缺少 [" + step + "/7] 输出" + diagStep(uninstall));
+      }
+
+      assert.deepEqual(diffSnapshots(before, snapshotTree(home.profileDir)), [], "profile 必须逐字节回到安装前");
+      assert.deepEqual(fs.readFileSync(home.patchPath), patchBefore, "cordis.patch.yml 必须逐字节还原");
+      assert.equal(fs.existsSync(home.junctionPath), false, "junction 必须消失");
+      assert.equal(fs.existsSync(home.sourceDir), false, "源码目录应移入备份");
+      const manifest = readJson(home.manifestPath);
+      assert.deepEqual(manifest.dsh.profile.bundles, ["dsh-core"]);
+      assert.equal(manifest.dependencies["dsh-gate"], undefined);
+    });
   });
-});
 
-test("S5 · 修复后的摘除只删自己那一行，别家的行原样保留", async () => {
-  await withHome({}, () => {
-    const text = [
+  test("S5 · 真缺陷登记：uninstall 认不出 install 写的缩进 patch 行（卸不掉）", async () => {
+    // defect-registry D-1 的 replay.case 必须存在：合并前它断言缺陷（= False），合并后断言契约成立（= True）。
+    // 这一条就是「D-1 已修」的可重放证据：卸载**看得见** install 写的缩进行，并且真的把它摘掉。
+    await withHome({}, async (home) => {
+      const plugin = createPluginSource(home);
+      assertOk(await runScriptAsync("install", home, { source: plugin.dir, backupRoot: home.backupRoot }), "install");
+      const installedPatch = fs.readFileSync(home.patchPath, "utf8");
+      assert.ok(FIXED_PATCH_PATTERN.test(installedPatch), "install 应写入缩进的 surface-gate 行：" + installedPatch);
+
+      const dry = await runDryRunAsync(home, "uninstall", ["-BackupRoot", home.backupRoot]);
+      assertOk(dry, "uninstall -DryRun");
+      assert.ok(dry.stdout.includes("patch 行 : surface-gate 已在 cordis.patch.yml = True"), "卸载必须认得缩进行（旧版这里是 False）" + diagStep(dry));
+
+      assertOk(await runScriptAsync("uninstall", home, { backupRoot: home.backupRoot }), "uninstall");
+      const finalPatch = fs.readFileSync(home.patchPath, "utf8");
+      assert.equal(FIXED_PATCH_PATTERN.test(finalPatch), false, "卸载必须真的摘掉缩进行：" + finalPatch);
+      assert.equal(finalPatch, "[]\n", "空数组 patch 应逐字节回到 []\\n：" + JSON.stringify(finalPatch));
+    });
+  });
+
+  test("G80 · 重复安装幂等：patch 里只有一行 surface-gate，bundles 不重复", async () => {
+    await withHome({}, async (home) => {
+      const plugin = createPluginSource(home);
+      assertOk(await runScriptAsync("install", home, { source: plugin.dir, backupRoot: home.backupRoot }), "第一次 install");
+      const second = await runScriptAsync("install", home, { source: plugin.dir, backupRoot: home.backupRoot });
+      assertOk(second, "第二次 install");
+      assert.ok(second.stdout.includes("patch 行已存在"), "第二次应识别已有行" + diagStep(second));
+      assert.equal(findSurfaceGateRows(fs.readFileSync(home.patchPath, "utf8")).length, 1);
+      const manifest = readJson(home.manifestPath);
+      assert.equal(manifest.dsh.profile.bundles.filter((b) => b === "dsh-gate").length, 1);
+    });
+  });
+
+  /* ── G85 旧行迁移 ─────────────────────────────────────────────────────── */
+
+  test("G85 · 旧 patch（顶层行 + 注释 + 空行 + 其它块）能迁移并安全往返", async () => {
+    const legacy = [
+      "# 手工维护的补丁",
+      "",
       "- insert:",
       "    - id: other-plugin",
       "      name: other-plugin",
       "      disabled: false",
-      PATCH_ROW.text,
+      "- id: surface-gate",
+      "  name: dsh-gate",
+      "  disabled: false",
       "",
     ].join("\n");
-    const rows = parsePatchRows(text);
-    assert.deepEqual(rows.map((row) => [row.id, row.indent, row.topLevel]), [["other-plugin", 4, false], ["surface-gate", 4, false]]);
-    const removed = removeSurfaceGateRows(text, { pattern: FIXED_PATCH_PATTERN });
-    assert.equal(removed.removed, 1);
-    assert.match(removed.text, /- id: other-plugin/);
-    assert.doesNotMatch(removed.text, /- id: surface-gate/);
-    assert.equal(findSurfaceGateRows(removed.text).length, 0);
-  });
-});
+    await withHome({ patchText: legacy }, async (home) => {
+      const plugin = createPluginSource(home);
+      const install = await runScriptAsync("install", home, { source: plugin.dir, backupRoot: home.backupRoot });
+      assertOk(install, "legacy install");
+      assert.ok(install.stdout.includes("已迁移 1 条"), "应输出迁移计数" + diagStep(install));
+      const installedText = fs.readFileSync(home.patchPath, "utf8");
+      const rows = findSurfaceGateRows(installedText);
+      assert.equal(rows.length, 1, "迁移后只许一行 surface-gate：" + installedText);
+      assert.ok(rows[0].indent > 0, "迁移后必须落成缩进块成员：" + installedText);
+      assert.ok(installedText.includes("other-plugin"), "其它插件行不许丢");
 
-test("S5 · 静态不变量：DryRun 在第一次写盘之前（两脚本都成立）", () => {
-  for (const kind of ["install", "uninstall"]) {
-    const source = readScript(kind);
-    const guard = dryRunGuardIndex(source);
-    const write = firstWriteIndex(source);
-    assert.ok(guard > 0, kind + " 必须有 if ($DryRun)");
-    assert.ok(write > guard, kind + " 的第一次写盘必须晚于 DryRun 分支（guard=" + guard + " write=" + write + "）");
-    const guardBody = source.slice(guard, write);
-    assert.match(guardBody, /exit 0/, "DryRun 分支必须 exit 0");
-    assert.doesNotMatch(guardBody, /\bNew-Item\b|\bCopy-Item\b|WriteAllText/, "DryRun 分支里不许出现写盘动作");
+      const uninstall = await runScriptAsync("uninstall", home, { backupRoot: home.backupRoot });
+      assertOk(uninstall, "legacy uninstall");
+      const finalText = fs.readFileSync(home.patchPath, "utf8");
+      assert.equal(FIXED_PATCH_PATTERN.test(finalText), false, "卸载后不许残留 surface-gate 行：" + finalText);
+      assert.ok(finalText.includes("other-plugin"), "other-plugin 必须保留：" + finalText);
+      assert.ok(finalText.includes("# 手工维护的补丁"), "注释必须保留：" + finalText);
+      assert.equal(parsePatchRows(finalText).length, 1, "只剩 other-plugin 一行：" + finalText);
+      assert.equal(/^-\s*insert:\s*$/m.test(finalText.split("other-plugin")[0]), true, "other-plugin 的 - insert: 块必须完整：" + finalText);
+    });
+  });
+
+  /* ── G82 故障注入回滚 ────────────────────────────────────────────────── */
+
+  for (const step of ["preflight", "stage", "stage-copy", "verify", "swap-before-promote", "swap", "patch", "readback"]) {
+    test("G82 · 故障注入 " + step + "：非零退出且回滚到安装前、无悬空 junction", async () => {
+      await withHome({}, async (home) => {
+        const plugin = createPluginSource(home);
+        const before = snapshotTree(home.profileDir);
+        const result = await runScriptAsync("install", home, {
+          source: plugin.dir,
+          backupRoot: home.backupRoot,
+          env: { DSH_GATE_TEST_FAIL_STEP: step },
+        });
+        assertFail(result, "注入 " + step + " 后");
+        assert.ok(result.stdout.includes("[失败] 步骤"), "应打印失败步骤" + diagStep(result));
+        assert.ok(result.stdout.includes("[回滚]"), "应打印回滚结果" + diagStep(result));
+        assert.deepEqual(diffSnapshots(before, snapshotTree(home.profileDir)), [], "注入 " + step + " 后 profile 必须回到安装前");
+        assert.equal(fs.existsSync(home.junctionPath), false, "不许留悬空 junction");
+        assert.equal(fs.existsSync(home.sourceDir), false, "不许留半装源码目录");
+        const localRoot = path.join(home.dshHome, "local-plugins");
+        if (fs.existsSync(localRoot)) {
+          const leftovers = fs.readdirSync(localRoot).filter((name) => name.startsWith(".staging-"));
+          assert.deepEqual(leftovers, [], "不许留暂存目录：" + leftovers.join(","));
+        }
+        assert.equal(FIXED_PATCH_PATTERN.test(fs.readFileSync(home.patchPath, "utf8")), false, "patch 行必须已被撤销");
+      });
+    });
   }
-});
 
-test("S5 · 静态不变量：写 JSON/YAML 一律无 BOM（UTF8Encoding($false) + node Buffer）", () => {
-  for (const kind of ["install", "uninstall"]) {
-    const source = readScript(kind);
-    assert.match(source, /New-Object System\.Text\.UTF8Encoding\(\$false\)/, kind + " 必须显式无 BOM 编码");
-    assert.doesNotMatch(source, /UTF8Encoding\(\$true\)/, kind + " 不许用带 BOM 编码");
-    assert.ok(source.includes('fs.writeFileSync(file, Buffer.from(out, "utf8"))'), kind + " 写 package.json 必须走 node Buffer");
-    const setContents = source.split("\n").filter((line) => line.includes("Set-Content"));
-    assert.ok(setContents.length > 0, "脚本用 Set-Content 写临时 .cjs");
-    for (const line of setContents) assert.match(line, /-Encoding ASCII/, "Set-Content 只允许 ASCII 临时脚本：" + line.trim());
-  }
-});
+  /* ── G83 备份 ─────────────────────────────────────────────────────────── */
 
-test("S5 · 静态不变量：install 写缩进行、uninstall 三处都用顶层正则（缺陷锚点固定）", () => {
-  const install = readScript("install");
-  const uninstall = readScript("uninstall");
-  // install 的 $row 字面量必须就是 PATCH_ROW 的形状（缩进 4 空格的 - id:）。
-  const start = install.indexOf('$row = @"');
-  assert.ok(start > 0, "install 里必须能抽出 $row 字面量");
-  const bodyStart = install.indexOf("\n", start) + 1;
-  const bodyEnd = install.indexOf('"@', bodyStart);
-  const rowText = install.slice(bodyStart, bodyEnd).replace(/\r\n/g, "\n").replace(/\n$/, "");
-  assert.equal(rowText, PATCH_ROW.text, "install 写的 patch 行形状必须固定");
-  const rows = parsePatchRows(rowText);
-  assert.deepEqual(rows.map((row) => [row.id, row.indent, row.topLevel]), [["surface-gate", 4, false]]);
-  assert.deepEqual(rows[0].fields, { name: "dsh-gate", disabled: "false" });
-
-  // uninstall 的三处判定（hasPatchRow / 摘除循环 / 回读校验）都是顶层形状。
-  assert.ok(countOf(uninstall, "^-\\s*id:\\s*surface-gate\\s*$") >= 3, "uninstall 三处判定都写死顶层形状");
-  // install 的判定允许缩进。
-  assert.ok(countOf(install, "^\\s*-\\s*id:\\s*surface-gate\\s*$") >= 3, "install 判定允许缩进");
-  // 两个脚本对「自己写的行」给出相反结论 —— 这就是真缺陷。
-  assert.equal(INSTALL_PATCH_PATTERN.test(PATCH_ROW.text), true);
-  assert.equal(UNINSTALL_PATCH_PATTERN.test(PATCH_ROW.text), false);
-});
-
-test("S5 · 真跑前后 manifest 语义不变：DryRun 不登记 bundles/dependencies", async () => {
-  await withHome({}, (home) => {
-    const before = home.read(".dsh/profiles/desktop/package.json");
-    const bytesBefore = home.readBytes(".dsh/profiles/desktop/package.json");
-    const result = runDryRun(home, "install");
-    assert.equal(result.status, 0);
-    assert.equal(home.read(".dsh/profiles/desktop/package.json"), before);
-    assert.deepEqual(Array.from(home.readBytes(".dsh/profiles/desktop/package.json")), Array.from(bytesBefore), "package.json 必须逐字节不变");
-    const manifest = JSON.parse(before);
-    assert.equal(manifest.dsh.profile.bundles.includes("dsh-gate"), false);
-    assert.equal(Object.prototype.hasOwnProperty.call(manifest.dependencies, "dsh-gate"), false);
-    assert.equal(home.read(".dsh/profiles/desktop/cordis.patch.yml"), "[]\n");
+  test("G83 · 备份命名带种类 + 时间戳，保留上限默认 3 且可配", async () => {
+    await withHome({}, async (home) => {
+      const plugin = createPluginSource(home);
+      for (let round = 1; round <= 4; round += 1) {
+        assertOk(await runScriptAsync("install", home, { source: plugin.dir, backupRoot: home.backupRoot, keepBackups: 3 }), "第 " + round + " 次 install");
+      }
+      const names = fs.readdirSync(home.backupRoot);
+      const manifests = names.filter((name) => /^manifest\.\d{8}T\d{9}$/.test(name));
+      const patches = names.filter((name) => /^patch\.\d{8}T\d{9}$/.test(name));
+      const sources = names.filter((name) => /^source-preinstall\.\d{8}T\d{9}$/.test(name));
+      assert.equal(manifests.length, 3, "manifest 备份应保留 3 份，实际：" + names.join(","));
+      assert.equal(patches.length, 3, "patch 备份应保留 3 份，实际：" + names.join(","));
+      assert.ok(sources.length <= 3, "source 备份应受同一上限约束，实际：" + sources.join(","));
+      for (const dirName of ["manifest", "patch", "source-preinstall"]) {
+        const kept = names.filter((name) => name.startsWith(dirName + ".")).sort();
+        assert.equal(kept.length, new Set(kept).size, dirName + " 备份不许重名");
+      }
+    });
   });
-});
 
-test("S5 · 真跑脚本只认参数传入的 profile（输出指向夹具，不指向真实 profile）", async () => {
-  await withHome({ profileName: "fixture-profile" }, (home) => {
-    const result = runDryRun(home, "install");
-    assert.equal(result.status, 0);
-    assert.ok(result.stdout.includes("profiles\\fixture-profile"), "输出必须指向夹具 profile");
-    assert.ok(result.stdout.includes(home.profileDir), "manifest 路径必须是夹具路径");
-    assert.equal(result.stdout.includes(path.join(os.homedir(), ".dsh", "profiles", "desktop")), false, "不许出现真实 profile 路径");
+  test("G83 · 卸载的两条备份路径不再同名冲突（manifest 与 patch 各自带种类）", async () => {
+    await withHome({}, async (home) => {
+      const plugin = createPluginSource(home);
+      assertOk(await runScriptAsync("install", home, { source: plugin.dir, backupRoot: home.backupRoot }), "install");
+      const uninstall = await runScriptAsync("uninstall", home, { backupRoot: home.backupRoot });
+      assertOk(uninstall, "uninstall");
+      const names = fs.readdirSync(home.backupRoot);
+      const removed = names.filter((name) => /^source-removed\.\d{8}T\d{9}$/.test(name));
+      assert.equal(removed.length, 1, "卸载源码备份应按 source-removed.<时间戳> 命名：" + names.join(","));
+      assert.ok(names.some((name) => /^manifest\.\d{8}T\d{9}$/.test(name)), "卸载也必须备份 manifest：" + names.join(","));
+      assert.ok(names.some((name) => /^patch\.\d{8}T\d{9}$/.test(name)), "卸载也必须备份 patch：" + names.join(","));
+    });
   });
+
+  /* ── G87 DSH home 顺序 ───────────────────────────────────────────────── */
+
+  test("G87 · DSH home：显式参数 > 环境变量 DSH_HOME > profile 推导", async () => {
+    await withHome({}, async (home) => {
+      const plugin = createPluginSource(home);
+
+      // ① 只有 -Profile：从 <home>/profiles/<name> 推导出 <home>
+      const explicitProfile = await runScriptAsync("install", home, { source: plugin.dir, backupRoot: home.backupRoot, gateHome: null, noSnapshot: true });
+      assertOk(explicitProfile, "profile 推导 GateHome");
+      assert.ok(explicitProfile.stdout.includes("来源：profile 路径推导"), "应标注 profile 推导来源" + diagStep(explicitProfile));
+      assert.ok(fs.existsSync(home.sourceDir), "源码应落在推导出的 DSH home 下");
+
+      assertOk(await runScriptAsync("uninstall", home, { backupRoot: home.backupRoot, noSnapshot: true }), "清理");
+    });
+
+    await withHome({}, async (home) => {
+      const plugin = createPluginSource(home);
+      const fromEnv = await runScriptAsync("install", home, {
+        source: plugin.dir,
+        backupRoot: home.backupRoot,
+        gateHome: null,
+        env: { DSH_HOME: home.dshHome },
+        noSnapshot: true,
+      });
+      assertOk(fromEnv, "环境变量 DSH_HOME");
+      assert.ok(fromEnv.stdout.includes("来源：环境变量 DSH_HOME"), "DSH_HOME 优先于 profile 推导" + diagStep(fromEnv));
+      assert.ok(fs.existsSync(home.gateJsonPath), "策略种子必须种到运行时用的 DSH home");
+    });
+
+    await withHome({}, async (home) => {
+      const plugin = createPluginSource(home);
+      const otherHome = path.join(home.root, "runtime-dsh");
+      fs.mkdirSync(otherHome, { recursive: true });
+      const mismatched = await runScriptAsync("install", home, {
+        source: plugin.dir,
+        backupRoot: home.backupRoot,
+        env: { DSH_HOME: otherHome },
+        noSnapshot: true,
+      });
+      assertOk(mismatched, "显式 -GateHome 与 DSH_HOME 不一致时仍继续");
+      assert.ok(mismatched.stdout.includes("不一致"), "必须告警不一致" + diagStep(mismatched));
+      // G87：策略种子必须种到运行时真的会读的目录（DSH_HOME），否则面板恒为零（工单点名的缺陷）。
+      assert.ok(fs.existsSync(path.join(otherHome, "gate.json")), "策略必须种到运行时 DSH_HOME，而不是显式 -GateHome");
+      assert.equal(fs.existsSync(home.gateJsonPath), false, "不许把策略种到运行时不读的路径");
+      assert.ok(fs.existsSync(path.join(home.dshHome, "local-plugins", "dsh-gate")), "安装位置仍按显式 GateHome");
+    });
+  });
+
+  /* ── G88 进程检测 ─────────────────────────────────────────────────────── */
+
+  test("G88 · 进程检测不可用：默认拒写，-Force 才继续", async () => {
+    await withHome({}, async (home) => {
+      const plugin = createPluginSource(home);
+      const before = snapshotTree(home.root);
+      const blocked = await runScriptAsync("install", home, {
+        source: plugin.dir,
+        backupRoot: home.backupRoot,
+        env: { DSH_GATE_TEST_PROCESS_PROBE: "unavailable" },
+      });
+      assertFail(blocked, "检测不可用");
+      assert.equal(blocked.status, 10, "检测不可用应 exit 10" + diagStep(blocked));
+      assert.ok(blocked.stdout.includes("无法判定") || blocked.stdout.includes("拒绝"), "文案必须诚实说明无法判定" + diagStep(blocked));
+      assert.equal(snapshotDigest(before), snapshotDigest(snapshotTree(home.root)), "拒写时不许写任何字节");
+
+      const forced = await runScriptAsync("install", home, {
+        source: plugin.dir,
+        backupRoot: home.backupRoot,
+        flags: ["-Force"],
+        env: { DSH_GATE_TEST_PROCESS_PROBE: "unavailable" },
+      });
+      assertOk(forced, "-Force 后应继续");
+      assert.ok(fs.existsSync(home.junctionPath), "-Force 后应装好");
+    });
+  });
+
+  test("G88 · 进程在跑：默认拒写，-Force 才继续", async () => {
+    await withHome({}, async (home) => {
+      const plugin = createPluginSource(home);
+      const blocked = await runScriptAsync("install", home, {
+        source: plugin.dir,
+        backupRoot: home.backupRoot,
+        env: { DSH_GATE_TEST_PROCESS_PROBE: "running" },
+      });
+      assertFail(blocked, "profile 在跑");
+      assert.equal(blocked.status, 10);
+      assert.equal(fs.existsSync(home.junctionPath), false);
+    });
+  });
+
+  /* ── G86 批处理真跑 ───────────────────────────────────────────────────── */
+
+  test("G86 · activate.cmd 成功退出码 0，rollback.cmd 失败时回传非零", async () => {
+    await withHome({}, async (home) => {
+      const plugin = createPluginSource(home);
+      const ok = await runBatchAsync(SCRIPTS.activate, ["-DryRun", "-Profile", home.profileDir, "-GateHome", home.dshHome, "-Source", plugin.dir]);
+      assert.equal(ok.status, 0, "activate.cmd 应 exit 0" + diagStep({ status: ok.status, stdout: ok.stdout, stderr: ok.stderr }));
+      assert.ok(ok.stdout.includes("[dry-run]"), "应透传 install.ps1 输出" + diagStep({ status: ok.status, stdout: ok.stdout, stderr: ok.stderr }));
+
+      const failing = await runBatchAsync(SCRIPTS.rollback, ["-Profile", home.profileDir, "-GateHome", home.dshHome], {
+        env: { DSH_GATE_TEST_PROCESS_PROBE: "unavailable" },
+      });
+      assert.notEqual(failing.status, 0, "rollback.cmd 必须把失败退出码透传出来" + diagStep({ status: failing.status, stdout: failing.stdout, stderr: failing.stderr }));
+      assert.equal(failing.status, 10, "应透传 install.ps1 的 exit 10");
+    });
+  });
+
 });
 
-test("S5 · PowerShell 可用且脚本存在（门禁前提自检）", () => {
-  const { shell, version } = powershellVersion();
-  assert.ok(shell && version, "必须找得到 PowerShell");
-  for (const key of Object.keys(SCRIPTS)) assert.ok(fs.existsSync(SCRIPTS[key]), "脚本必须存在：" + SCRIPTS[key]);
+/* ── 真 HOME 未被触碰 ─────────────────────────────────────────────────── */
+
+test("全部用例跑完，真实 ~/.dsh 的 manifest / patch 指纹未变", async () => {
+  // gate.json 由正在运行的 DSH 宿主自己写（活动统计），跑测试期间会变；
+  // 这里只盯部署脚本会写的两个文件：真实 profile 的 package.json 与 cordis.patch.yml。
+  const stable = (entries) => entries.filter((entry) => /(package.json|cordis.patch.yml)$/.test(entry.path));
+  assert.deepEqual(stable(realHomeFingerprint()), stable(realHomeBefore), "真跑假 HOME 不许碰真实 ~/.dsh 的 manifest/patch");
+  assert.ok(PS.version.length > 0);
 });

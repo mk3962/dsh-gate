@@ -1,36 +1,37 @@
 /**
- * S5 · 部署脚本假 HOME 基座（#01 / gate:D5）
+ * S5 · 部署脚本假 HOME 基座（#08 版，替换 dsh-gate-dev/test/seams/s5-deploy-seam.mjs 的旧版）
  *
- * 目标：让 install.ps1 / uninstall.ps1 能在**完全不碰真实 ~/.dsh** 的前提下被真实执行。
+ * 自足：所有路径从本文件位置推 REPO_ROOT，任何仓库（含 .scratch/prep-08-deploy）都能直接跑。
  *  - createFakeHome()：临时根 + 最小 profile / cordis.patch.yml / node_modules / plugins 树；
- *  - 字节快照：snapshot + diff，用来证明 -DryRun 零写入、插入/摘除往返字节不变量；
- *  - 真跑脚本：node:child_process 调 Windows PowerShell（-DryRun），结构化拿 exit/stdout；
- *  - 静态不变量：无 BOM 写盘、DryRun 在第一次写之前、patch 行插入与摘除的形状对称。
+ *  - createPluginSource()：可安装的插件源码夹具（package.json files 白名单 + 必需文件）；
+ *  - 字节快照：snapshotTree + diff，用来证明 -DryRun 零写入、装卸往返字节不变量；
+ *  - 真跑脚本：node:child_process 异步调 Windows PowerShell，结构化拿 exit/stdout（spawnSync 会锁事件循环，改 spawn 后用例级并发才生效）；
+ *  - 故障注入：DSH_GATE_TEST_FAIL_STEP / DSH_GATE_TEST_PROCESS_PROBE 走安装事务的回滚路径。
  *
- * 已实证的真缺陷（本票只登记、#08 修）：install 写的是缩进的 "    - id: surface-gate"，
- * 而 uninstall 的 $hasPatchRow / 摘除循环 / 回读校验都用 ^-\s*id:（只认顶层）→ 卸不掉。
+ * 编码约定：PowerShell 5.1 重定向输出走控制台代码页（中文机器 GBK），统一用 decodeOutput 解。
  */
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const REPO_ROOT = path.resolve(HERE, "../..");
+export const SCRIPTS_DIR = path.join(REPO_ROOT, "scripts");
 export const SCRIPTS = Object.freeze({
-  install: path.join(REPO_ROOT, "scripts/install.ps1"),
-  uninstall: path.join(REPO_ROOT, "scripts/uninstall.ps1"),
+  install: path.join(SCRIPTS_DIR, "install.ps1"),
+  uninstall: path.join(SCRIPTS_DIR, "uninstall.ps1"),
+  module: path.join(SCRIPTS_DIR, "dsh-gate-deploy.psm1"),
+  activate: path.join(SCRIPTS_DIR, "activate.cmd"),
+  rollback: path.join(SCRIPTS_DIR, "rollback.cmd"),
 });
 
-/** install.ps1 第 137/278/298 行用的形状（缩进行也算）。 */
-export const INSTALL_PATCH_PATTERN = /^\s*-\s*id:\s*surface-gate\s*$/m;
-/** uninstall.ps1 第 70/183/204 行用的形状（只认顶层，缩进行不匹配 = 真缺陷）。 */
-export const UNINSTALL_PATCH_PATTERN = /^-\s*id:\s*surface-gate\s*$/m;
-/** 修复后的形状（#08 的目标）：缩进/顶层都认。 */
-export const FIXED_PATCH_PATTERN = /^\s*-\s*id:\s*surface-gate\s*$/m;
+/** 修复后的唯一形状（#08）：缩进/顶层都认；install、uninstall、回读校验共用同一个 \s*。 */
+export const FIXED_PATCH_PATTERN = /^\s*-\s*id:\s*surface-gate\s*(?:#.*)?$/m;
 
+/** install 写入的补丁块（4 空格缩进，宿主 cordis.patch 的既有风格）。 */
 export const PATCH_ROW = Object.freeze({
   text: ["- insert:", "    - id: surface-gate", "      name: dsh-gate", "      disabled: false"].join("\n"),
 });
@@ -74,20 +75,16 @@ export function assertInsideRoot(root, target) {
   return path.resolve(target);
 }
 
-const DEFAULT_PROFILE_PACKAGE = {
+export const DEFAULT_PROFILE_PACKAGE = Object.freeze({
   name: "desktop",
   version: "0.0.0",
   dsh: { profile: { bundles: ["dsh-core"] } },
   dependencies: {},
-};
+});
 
-/**
- * 建隔离假 HOME：
- *   <root>/.dsh/profiles/desktop/{package.json, cordis.patch.yml, node_modules/, plugins/}
- *   <root>/.dsh/{gate.json?}
- */
+/** 建隔离假 HOME：<root>/.dsh/profiles/<name>/{package.json,cordis.patch.yml,node_modules,plugins}。 */
 export function createFakeHome(options = {}) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), (options.prefix || "dsh-gate-home-")));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), options.prefix || "dsh-gate-home-"));
   assertIsolatedRoot(root);
   const dshHome = path.join(root, ".dsh");
   const profileDir = path.join(dshHome, "profiles", options.profileName || "desktop");
@@ -99,7 +96,6 @@ export function createFakeHome(options = {}) {
   writeTextNoBom(profileDir, "package.json", JSON.stringify(manifest, null, 2) + "\n");
   const patchText = options.patchText === undefined ? "[]\n" : options.patchText;
   writeTextNoBom(profileDir, "cordis.patch.yml", patchText);
-  // 最小插件目录：宿主解析插件时至少要看得到这些名字。
   fs.writeFileSync(path.join(pluginsDir, "dsh-core"), "");
   if (options.gateJson !== undefined) writeTextNoBom(dshHome, "gate.json", options.gateJson);
 
@@ -112,17 +108,54 @@ export function createFakeHome(options = {}) {
     manifestPath: path.join(profileDir, "package.json"),
     patchPath: path.join(profileDir, "cordis.patch.yml"),
     gateJsonPath: path.join(dshHome, "gate.json"),
+    junctionPath: path.join(nodeModules, "dsh-gate"),
+    sourceDir: path.join(dshHome, "local-plugins", "dsh-gate"),
+    backupRoot: path.join(root, "backups"),
     path: (relative) => assertInsideRoot(root, path.join(root, relative)),
     read(relative) { return fs.readFileSync(path.join(root, relative), "utf8"); },
     readBytes(relative) { return fs.readFileSync(path.join(root, relative)); },
     exists(relative) { return fs.existsSync(path.join(root, relative)); },
     snapshot: () => snapshotTree(root),
+    profileSnapshot: () => snapshotTree(profileDir),
     cleanup() {
       assertIsolatedRoot(root);
       fs.rmSync(root, { recursive: true, force: true });
     },
   };
   return home;
+}
+
+/** 可安装的插件源码夹具：与真实 dsh-gate 的 package.json files 白名单同形。 */
+export function createPluginSource(home, options = {}) {
+  const dir = path.join(home.root, options.name || "plugin-src");
+  const pkg = {
+    name: "dsh-gate",
+    version: "0.6.0",
+    type: "module",
+    main: "lib/index.js",
+    exports: { ".": "./lib/index.js", "./client": "./client/index.js" },
+    files: ["lib/", "client/", "cordis.patch.yml", "gate.example.json", "README.md"],
+    dsh: { bundle: { patch: "cordis.patch.yml" } },
+    description: "S5 fixture",
+    license: "MIT",
+  };
+  const files = options.files || pkg.files;
+  if (options.packageJson) Object.assign(pkg, options.packageJson);
+  const content = {
+    "package.json": JSON.stringify(pkg, null, 2) + "\n",
+    "lib/index.js": "export const name = 'dsh-gate';\nexport function apply() {}\n",
+    "client/index.js": "window.__ModuleLoader__.load({ id: 'dsh-gate' });\n",
+    "cordis.patch.yml": options.sourcePatch || "- insert:\n    - id: dsh-gate-source-row\n      name: dsh-gate\n      disabled: false\n",
+    "gate.example.json": '{ "version": 3, "enabled": true, "defaults": { "resident": [] } }\n',
+    "README.md": "# dsh-gate (fixture)\n",
+    "LICENSE": "MIT\n",
+  };
+  for (const [relative, text] of Object.entries(content)) {
+    if (relative !== "package.json" && !files.includes(relative) && !files.includes(relative.split("/")[0] + "/")) continue;
+    fs.mkdirSync(path.dirname(path.join(dir, relative)), { recursive: true });
+    fs.writeFileSync(path.join(dir, relative), text, "utf8");
+  }
+  return { dir, packageJson: pkg, files };
 }
 
 export function writeTextNoBom(root, relative, text) {
@@ -139,25 +172,28 @@ export function writeTextWithBom(root, relative, text) {
   return assertInsideRoot(root, target);
 }
 
-/** 字节级快照：文件名排序 + sha1 + 是否 BOM，供「零写入」「往返一致」判定。 */
+/**
+ * 字节级快照：路径排序 + sha1 + 是否 BOM。
+ * junction / 符号链接只记录链接目标，绝不下钻（否则会读到链接另一侧的真实源码）。
+ */
 export function snapshotTree(root) {
   assertIsolatedRoot(root);
   const files = [];
-  const walk = (dir) => {
+  const walk = (dir, rel) => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
       const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) { walk(full); continue; }
+      const relative = rel ? rel + "/" + entry.name : entry.name;
+      const stat = fs.lstatSync(full);
+      if (stat.isSymbolicLink()) {
+        files.push({ path: relative, bytes: 0, sha1: "link:" + fs.readlinkSync(full), bom: false, link: true, mtimeMs: Math.round(stat.mtimeMs) });
+        continue;
+      }
+      if (stat.isDirectory()) { walk(full, relative); continue; }
       const buffer = fs.readFileSync(full);
-      files.push({
-        path: path.relative(root, full).split(path.sep).join("/"),
-        bytes: buffer.length,
-        sha1: sha1(buffer),
-        bom: hasBom(buffer),
-        mtimeMs: Math.round(fs.statSync(full).mtimeMs),
-      });
+      files.push({ path: relative, bytes: buffer.length, sha1: sha1(buffer), bom: hasBom(buffer), mtimeMs: Math.round(stat.mtimeMs) });
     }
   };
-  walk(root);
+  walk(root, "");
   files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   return { root: path.resolve(root), files };
 }
@@ -189,7 +225,7 @@ export function snapshotsEqual(before, after) {
 /* ── 真跑 PowerShell ─────────────────────────────────────────────────── */
 
 let cachedShell = null;
-function resolvePowerShell() {
+export function resolvePowerShell() {
   if (cachedShell) return cachedShell;
   for (const candidate of ["powershell.exe", "pwsh.exe", "powershell", "pwsh"]) {
     const probe = spawnSync(candidate, ["-NoProfile", "-NonInteractive", "-Command", "$PSVersionTable.PSVersion.Major"], { encoding: "utf8", timeout: 20000 });
@@ -213,45 +249,130 @@ export function decodeOutput(buffer) {
 }
 
 /**
- * 真跑仓库里的脚本。参数数组直传，避免手拼命令行把带空格的路径拆坏。
- * 返回结构化的 exit/stdout/stderr，并默认记录假 HOME 的前后字节快照。
+ * 异步捕获一次子进程。
+ * spawnSync 会锁死事件循环，25 个用例只能一个个排；这里改成 spawn + Promise，
+ * 让 node:test 的用例级并发真正生效（脚本、模块、断言都不变，只是不再串行等进程）。
  */
-export function runPowerShellScript(script, args, options = {}) {
+function captureProcess(shell, args, options) {
+  return new Promise((resolve) => {
+    const startedAt = Date.now();
+    const chunks = { stdout: [], stderr: [] };
+    let settled = false;
+    let timer;
+    const finish = (status, errorMessage) => {
+      if (settled) return false;
+      settled = true;
+      if (timer !== undefined) clearTimeout(timer);
+      resolve({
+        status: typeof status === "number" ? status : null,
+        stdout: decodeOutput(Buffer.concat(chunks.stdout)),
+        stderr: decodeOutput(Buffer.concat(chunks.stderr)),
+        error: errorMessage || "",
+        durationMs: Date.now() - startedAt,
+      });
+      return true;
+    };
+    const child = spawn(shell, args, {
+      cwd: options.cwd,
+      env: options.env,
+      windowsHide: true,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    timer = setTimeout(() => {
+      try { child.kill("SIGKILL"); } catch { /* 进程已退出 */ }
+      finish(null, "ETIMEDOUT " + (options.timeoutMs || 180000) + "ms");
+    }, options.timeoutMs || 180000);
+    child.stdout.on("data", (chunk) => { chunks.stdout.push(chunk); });
+    child.stderr.on("data", (chunk) => { chunks.stderr.push(chunk); });
+    child.on("error", (error) => finish(null, String((error && error.message) || error)));
+    child.on("close", (code) => finish(code, ""));
+  });
+}
+
+/**
+ * 子进程环境：剥掉宿主注入的 DSH_HOME（本机在 DSH 会话里跑 npm test 时它指向真实 ~/.dsh）。
+ * 不剥的话 G87 的「profile 推导」会被真实 home 抢走，用例还会写真实用户目录。
+ * 要测环境变量优先级时，用例自己传 options.env.DSH_HOME，这里原样保留。
+ */
+function childEnv(extra) {
+  const env = Object.assign({}, process.env);
+  for (const key of ["DSH_HOME", "DSH_PROFILE", "DSH_PROFILE_DIR"]) delete env[key];
+  return Object.assign(env, extra || {});
+}
+
+/** 子进程 cwd 默认落在用例临时根：绝不让脚本把 %SystemDrive% 之类的东西写进仓库根。 */
+function pickCwd(options, home) {
+  if (typeof options.cwd === "string" && options.cwd.length > 0) return options.cwd;
+  if (home) return home.root;
+  return os.tmpdir();
+}
+
+/**
+ * 真跑脚本（异步）。参数数组直传，避免手拼命令行把带空格的路径拆坏。
+ * 返回结构化 exit/stdout/stderr，并默认记录假 HOME 的前后字节快照。
+ */
+export async function runPowerShellScriptAsync(script, args, options = {}) {
   const shell = resolvePowerShell();
   const file = typeof script === "string" && SCRIPTS[script] ? SCRIPTS[script] : script;
   if (!fs.existsSync(file)) throw new DeploySeamError("SCRIPT_MISSING", "脚本不存在：" + file);
   const command = ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", file].concat(args || []);
   const home = options.home || null;
   const before = home ? snapshotTree(home.root) : null;
-  const startedAt = Date.now();
-  const child = spawnSync(shell, command, {
-    cwd: options.cwd || REPO_ROOT,
-    env: Object.assign({}, process.env, options.env || {}),
-    // Windows PowerShell 5.1 重定向输出走控制台代码页（中文机器是 GBK），不能盲按 UTF-8 解。
-    encoding: "buffer",
-    timeout: options.timeoutMs || 180000,
-    windowsHide: true,
+  const child = await captureProcess(shell, command, {
+    cwd: pickCwd(options, home),
+    env: childEnv(options.env),
+    timeoutMs: options.timeoutMs || 180000,
   });
-  const durationMs = Date.now() - startedAt;
   const after = home ? snapshotTree(home.root) : null;
   return {
     shell,
     command: [shell].concat(command),
     status: child.status,
-    stdout: decodeOutput(child.stdout),
-    stderr: decodeOutput(child.stderr),
-    error: child.error ? String(child.error.message || child.error) : "",
-    durationMs,
+    stdout: child.stdout,
+    stderr: child.stderr,
+    error: child.error,
+    durationMs: child.durationMs,
     before,
     after,
     changes: before && after ? diffSnapshots(before, after) : [],
   };
 }
 
+/** install / uninstall 的标准调用（显式 Profile + GateHome，参数数组直传）。 */
+export async function runScriptAsync(kind, home, options = {}) {
+  const args = ["-Profile", options.profile || home.profileDir];
+  if (options.gateHome !== null) args.push("-GateHome", options.gateHome || home.dshHome);
+  if (options.source) args.push("-Source", options.source);
+  if (options.backupRoot) args.push("-BackupRoot", options.backupRoot);
+  if (options.keepBackups !== undefined) args.push("-KeepBackups", String(options.keepBackups));
+  for (const flag of options.flags || []) args.push(flag);
+  args.push(...(options.extraArgs || []));
+  return runPowerShellScriptAsync(kind, args, { home: options.noSnapshot ? null : home, env: options.env, timeoutMs: options.timeoutMs, cwd: options.cwd });
+}
+
 /** -DryRun 的标准调用：只读预览，必须 exit 0 且字节零变化。 */
-export function runDryRun(home, kind, extraArgs = []) {
-  const args = ["-Profile", home.profileDir, "-GateHome", home.dshHome, "-DryRun"].concat(extraArgs);
-  return runPowerShellScript(kind, args, { home });
+export async function runDryRunAsync(home, kind, extraArgs = [], options = {}) {
+  return runScriptAsync(kind, home, Object.assign({ flags: ["-DryRun"], extraArgs }, options));
+}
+
+/** 用 cmd.exe 跑批处理，拿真实 cmd 退出码（G86）。 */
+export async function runBatchAsync(file, args, options = {}) {
+  const home = options.home || null;
+  const before = home ? snapshotTree(home.root) : null;
+  const child = await captureProcess("cmd.exe", ["/d", "/c", file].concat(args || []), {
+    cwd: pickCwd(options, home),
+    env: Object.assign(childEnv(options.env), { DSH_GATE_NO_PAUSE: "1" }),
+    timeoutMs: options.timeoutMs || 180000,
+  });
+  return {
+    status: child.status,
+    stdout: child.stdout,
+    stderr: child.stderr,
+    error: child.error,
+    durationMs: child.durationMs,
+    before,
+    after: home ? snapshotTree(home.root) : null,
+  };
 }
 
 /* ── patch 行解析与插入/摘除模拟 ──────────────────────────────────────── */
@@ -279,7 +400,8 @@ export function parsePatchRows(text) {
   return rows;
 }
 
-export function patchRowMatches(text, pattern) {
+/** 兼容旧调用：按正则判有没有目标行。 */
+export function patchRowMatches(text, pattern = FIXED_PATCH_PATTERN) {
   return pattern.test(String(text));
 }
 
@@ -287,65 +409,25 @@ export function findSurfaceGateRows(text) {
   return parsePatchRows(text).filter((row) => row.id === "surface-gate");
 }
 
-/** 模拟 install 的追加语义（幂等：已有行就不再追加）。 */
+/** 模拟正确实现的插入（幂等 + 空数组/追加两种形状），用于静态对称性断言。 */
 export function applyPatchInsertion(text, rowText = PATCH_ROW.text) {
   const current = String(text);
   const trimmed = current.trim();
-  if (INSTALL_PATCH_PATTERN.test(current)) return { text: current, inserted: false, reason: "already-present" };
+  if (FIXED_PATCH_PATTERN.test(current)) return { text: current, inserted: false, reason: "already-present" };
   if (trimmed === "[]" || trimmed === "") return { text: rowText + "\n", inserted: true, reason: "empty-array" };
   const nl = current.endsWith("\n") ? "" : "\n";
   return { text: current + nl + rowText + "\n", inserted: true, reason: "appended" };
 }
 
-/**
- * 模拟 uninstall 的「摘掉自己写的块」：
- *  - pattern 决定能不能认出目标行（默认用脚本里的破正则）；
- *  - pruneEmptyInsert 模拟正确实现：整块只剩 "- insert:" 时把空块一起摘掉，
- *    否则哪怕行删了，孤立的 - insert: 也会让宿主解析炸（这是现有脚本的第二层缺陷）。
- */
-export function removeSurfaceGateRows(text, options = {}) {
-  const pattern = options.pattern || UNINSTALL_PATCH_PATTERN;
-  const pruneEmptyInsert = options.pruneEmptyInsert !== false;
-  const lines = String(text).split("\n");
-  const kept = [];
-  let skipping = false;
-  let removed = 0;
-  for (const line of lines) {
-    if (pattern.test(line)) { skipping = true; removed += 1; continue; }
-    if (skipping) {
-      if (/^\s+\S/.test(line)) continue;
-      skipping = false;
-    }
-    kept.push(line);
-  }
-  let pruned = 0;
-  if (pruneEmptyInsert && removed > 0) {
-    const out = [];
-    for (let index = 0; index < kept.length; index += 1) {
-      const line = kept[index];
-      if (!/^- insert:\s*$/.test(line)) { out.push(line); continue; }
-      // 看这一块后面还有没有缩进子行：没有就是空块，整块删掉。
-      let hasChild = false;
-      for (let next = index + 1; next < kept.length; next += 1) {
-        const probe = kept[next];
-        if (!probe.trim()) continue;
-        if (/^\s+\S/.test(probe)) { hasChild = true; }
-        break;
-      }
-      if (hasChild) { out.push(line); continue; }
-      pruned += 1;
-    }
-    kept.length = 0;
-    kept.push.apply(kept, out);
-  }
-  let result = kept.join("\n").replace(/\n+$/, "");
-  if (result.trim() === "") result = "[]";
-  return { text: result + "\n", removed, pruned, patternSource: String(pattern) };
+/** 读脚本源码（相对 scripts/ 或绝对路径）。 */
+export function readScript(file) {
+  const target = SCRIPTS[file] || path.join(SCRIPTS_DIR, file);
+  return fs.readFileSync(target, "utf8");
 }
 
-export function readScript(file) {
-  const target = SCRIPTS[file] || file;
-  return fs.readFileSync(target, "utf8");
+export function readScriptBytes(file) {
+  const target = SCRIPTS[file] || path.join(SCRIPTS_DIR, file);
+  return fs.readFileSync(target);
 }
 
 /** 第一次「写盘 cmdlet」的位置：DryRun 必须在它之前 exit。 */
@@ -375,4 +457,19 @@ export function realHomeFingerprint() {
     entries.push({ path: target, exists: true, bytes: buffer.length, sha1: sha1(buffer) });
   }
   return entries;
+}
+
+/** 断言：写进 DSH 会解析的文件的字节流没有 BOM。 */
+export function assertNoBom(buffer, label) {
+  if (hasBom(buffer)) throw new DeploySeamError("BOM_FOUND", "文件带 BOM，DSH 会解析失败：" + label);
+}
+
+/** 断言：批处理必须是 CRLF，且不含裸 LF。 */
+export function assertCrlf(buffer, label) {
+  const text = buffer.toString("latin1");
+  const lf = (text.match(/\n/g) || []).length;
+  const crlf = (text.match(/\r\n/g) || []).length;
+  if (lf !== crlf) throw new DeploySeamError("LF_FOUND", "批处理存在裸 LF 行尾（必须全 CRLF）：" + label);
+  if (crlf === 0) throw new DeploySeamError("NO_CRLF", "批处理没有 CRLF 行尾：" + label);
+  return crlf;
 }

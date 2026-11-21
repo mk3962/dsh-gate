@@ -1,5 +1,3 @@
-# dsh-gate 持续集成：规范自检 + 离线自测（不需要 npm install）
-# 两套系统各跑一遍：Linux 确认无平台相关路径假设，Windows 确认 PowerShell 安装脚本仍可解析。
 name: CI
 
 on:
@@ -8,64 +6,61 @@ on:
   pull_request:
   workflow_dispatch:
 
-concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
 permissions:
   contents: read
 
 jobs:
   verify:
-    name: ${{ matrix.os }} / node ${{ matrix.node }}
-    runs-on: ${{ matrix.os }}
+    name: verify (${ matrix.os }/ node ${ matrix.node })
+    runs-on: ${ matrix.os }
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [windows-latest, ubuntu-latest]
         node: [20, 22]
     steps:
-      - name: 检出代码
-        uses: actions/checkout@v5
+      - uses: actions/checkout@v4
 
-      - name: 安装 Node ${{ matrix.node }}
-        uses: actions/setup-node@v5
+      - uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node }}
+          node-version: ${ matrix.node }
 
-      - name: 环境信息
+      - name: Install (no lifecycle scripts)
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci --ignore-scripts --no-audit --no-fund
+          else
+            npm install --ignore-scripts --no-audit --no-fund
+          fi
         shell: bash
-        run: node --version && npm --version
 
-      - name: 规范自检（15 项，npm run check）
+      - name: 工程门禁（G90–G92，scripts/check-spec.mjs）
         run: npm run check
 
-      - name: 单元自测 + 负载自测（npm test）
+      - name: 扫描式测试链（scripts/run-tests.mjs）
         run: npm test
 
-      - name: PowerShell 安装脚本语法检查
+      - name: 定点破坏有效性自检（scripts/verify-effectiveness.mjs，I-10–I-16）
+        run: npm run test:effectiveness -- --strict
+
+      - name: S5 部署接缝（Windows）
         if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $bad = 0
-          foreach ($f in @('scripts/install.ps1','scripts/uninstall.ps1')) {
-            $errs = $null
-            [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $f).Path, [ref]$null, [ref]$errs)
-            if ($errs -and $errs.Count -gt 0) {
-              Write-Host "::error file=$f::$($errs[0].Message)"
-              $bad++
-            } else {
-              Write-Host "OK  $f"
-            }
-          }
-          if ($bad -gt 0) { exit 1 }
+        run: npm run test:seam:s5
 
-      - name: 打包体积体检（仅报告，不阻断）
-        if: runner.os == 'Linux' && matrix.node == 22
+      - name: S5 部署接缝（Ubuntu 跳过并打印原因）
+        if: runner.os != 'Windows'
+        run: |
+          echo "SKIP: S5 部署契约需要 Windows PowerShell 5.1 与 .cmd shim。"
+          echo "SKIP: 原因：Ubuntu 上没有 profile 的 cordis.patch.yml 与 junction 语义，部署接缝只能在 Windows 验证。"
+          echo "SKIP: 其余接缝（S1/S2/S3/S4）已在上一步 npm test 中执行。"
         shell: bash
-        run: |
-          echo '--- payload 文件清单 ---'
-          git ls-files | grep -Ev '^\.github/' | wc -l
-          echo '--- 单个源文件最大 5 个 ---'
-          find lib client test scripts -type f \( -name '*.js' -o -name '*.mjs' \) -printf '%s %p\n' | sort -rn | head -5
 
+      - name: 上传测试报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report-${ matrix.os }-node${ matrix.node }
+          path: |
+            test-report.json
+            effectiveness-report.json
+          if-no-files-found: ignore

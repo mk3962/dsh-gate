@@ -1,5 +1,112 @@
 # Changelog
 
+本项目遵循语义化版本；0.6.0 是「全量缺陷整改 + 架构深化」的收口版本。
+
+## [0.6.0] — 2026-11-21
+
+0.6.0 有两条并行主线，缺一条都不算收口：
+
+1. **缺陷修复线**：回放审计的 17 条缺陷（P0-1 .. P2-5）全部修复并由回归用例守住；跨域缺陷 X-1、部署缺陷 D-1 同批处理。
+2. **架构深化线**：把「谁落哪层、策略怎么读写、宿主怎么读、名字怎么切、结果怎么规范化」拆成六个可独立测试的模块（外加执行面公共件 normalize），并首次把 I-10–I-16 写成可执行不变量。
+
+### 一、缺陷修复线（17 + 2）
+
+| 编号 | 级别 | 接缝 | 不变量 | 问题 | 回归用例 |
+|---|---|---|---|---|---|
+| P0-1 | P0 | S2 | I-10 | 策略文件带 BOM 时静默失守，全部工具被当作常驻 | s2-storage-contract · BOM |
+| P0-2 | P0 | S2 | I-10 | 坏文件被空模板覆盖落盘 | s2-storage-contract · 坏文件不覆盖 |
+| P1-1 | P1 | S3 | I-15 | mergePolicyFile 遇 mcp:null 抛 TypeError，HTTP 无响应 | s3-control-plane-contract |
+| P1-2 | P1 | S2 | I-4 | enabled:true 覆盖不掉显式 false | policy.test |
+| P1-3 | P1 | S2 | I-4 | v2→v3 迁移丢 repeatGuard 段落 | migrate.test |
+| P1-4 | P1 | S1 | I-2 | glob:* 跨轴污染 | capabilities.test |
+| P1-5 | P1 | S1 | I-3 | 激活提升绕过 explicit off | activation.test |
+| P1-6 | P1 | S1 | I-3 | off 段落仍可 load（关闭不生效） | sections / planner.test |
+| P1-7 | P1 | S1 | I-3 | 已加载压制 off（重载后关闭被忽略） | planner.test |
+| P1-8 | P1 | S1 | I-8 | 非 text 块被 stringify 破坏 | resource-bounds / normalize.test |
+| P1-9 | P1 | S1 | I-8 | suspend 非重入窗口全量放表 | restriction.test |
+| P1-10 | P1 | S3 | I-15 | POST /skills 的 tier 被强转 0 | s3-control-plane-contract |
+| P2-1 | P2 | S1 | I-5 | PTC 冻结下 tiers 与 status 快照自相矛盾 | snapshot.test |
+| P2-2 | P2 | S1 | I-7 | searchCatalog limit 传 0/-1 返回全量 | catalog-search.test |
+| P2-3 | P2 | S1 | I-7 | firstSentence 截断版本号 | catalog-search.test |
+| P2-4 | P2 | S1 | I-7 | 中文别名子串误命中 | catalog-search.test |
+| P2-5 | P2 | S1 | I-9 | gate_call 可自调转发（无限递归风险） | proxy-args.test |
+| X-1 | P0 | S4 | I-6 | 前端路由缺失时整页白屏（无降级边界） | s4-frontend-contract |
+| D-1 | P1 | S5 | I-16 | uninstall 认不出 install 写的缩进 patch 行（卸不掉，且可能留下孤立 insert） | s5-deploy-contract |
+
+修复不是「改一处让用例变绿」，而是把根因收口到结构上：
+
+- P0-1 / P0-2 的根因是「读策略」与「写策略」各处各自 fs.readFileSync + JSON.parse，BOM 与解析失败没有单一处置点。现在统一走 storage-seam 的五级读取诊断（absent / ok / bom / syntax / shape / io）与未读态（poisoned）；坏文件只有显式 replaceCorrupt 才能整份替换，且替换前强制备份原文。
+- P1-1 / P1-10 / X-1 的根因是控制面与前端各自拼错误处理与降级边界。现在控制面统一错误信封与状态码（I-15），前端每个页签有独立降级边界（I-6）。
+- P1-2 / P1-3 / P1-4 / P1-5 / P1-6 / P1-7 / P2-1 的根因是「谁落哪层」被算了四遍。现在决策只存在于 decide.js，装配只存在于 planner.js，其余位置只投影（I-14）。
+- P1-8 / P2-2 / P2-3 / P2-4 / P2-5 分属执行面与目录/检索面：结果规范化收口到 normalize.js（I-13），目录检索边界与 gate 工具族禁令各有回归用例。
+- P1-9 的租约语义（I-12）与 D-1 的部署对称（I-16）各有独立接缝用例。
+
+### 二、架构深化线（六模块 + 执行面公共件）
+
+| 模块 | 职责 | 依赖纪律 |
+|---|---|---|
+| lib/policy-schema.js | 策略字段的唯一真源：模板、归一、逐键合并、严格校验、内省、迁移键集全部由它派生 | 只依赖 capabilities / catalog，不读文件 |
+| lib/storage-seam.js | 唯一落盘边界：BOM、原子 rename、备份、revision、并发写串行、五级读取诊断 | 文件系统以适配器注入（内存/磁盘） |
+| lib/decide.js | 归层决策引擎：工具 / 段落 / 技能三轴 × 层值 / 桶 / 原因 | 只依赖 tiers.js，不 import 宿主、不读 ctx |
+| lib/naming.js | 命名与分组：能力 id、目录分组、技能来源标签的唯一实现 | 只依赖 tiers.js |
+| lib/planner.js | 一次产出不可变计划；下游七个派生点只读计划 | 只依赖 decide.js |
+| lib/host-adapter.js | 所有「只有宿主知道」的读取与派发（视图三件套、执行器判定、隔离派发、消息构造） | 运行时层只通过它问宿主 |
+| lib/normalize.js | 执行面公共件：结果规范化（文本单换行拼接、结构化块原样保留、超限占位摘要）与转发目标禁令 | 零依赖（proxy 与 guardrail 共用） |
+
+拆分的判据不是「文件更小」，而是**同一件事只有一个实现**：策略字段只有 policy-schema 知道、落盘只有 storage-seam 知道、落层只有 decide/planner 知道、名字切分只有 naming 知道、宿主形状只有 host-adapter 知道、结果拍平只有 normalize 知道。
+
+### 三、不变量 I-10–I-16（0.6.0 起可执行）
+
+- **I-10** 读策略先剥 BOM；解析失败进入未读态，绝不以空模板覆盖落盘。
+- **I-11** 落盘原子（临时文件 + rename）；同进程写串行；写前重解析；rename 失败保留原文件。
+- **I-12** 租约期内不得撤/改当前摘除集；窗口内先记账，归零后一次施加。
+- **I-13** 执行转发保留结构化结果块（image / audio / resource），不得字符串化。
+- **I-14** 决策单入口（三轴 × 四维 → 层值 / 桶 / 原因），其余位置只投影。
+- **I-15** 控制面失败必须状态码 + 错误信封，不得 200-on-failure、不得只发头。
+- **I-16** 部署装卸对称、失败可回滚、patch 行知识单真源。
+
+I-1–I-9 由扫描链回归兜底；I-10–I-16 另有定点破坏自检（scripts/verify-effectiveness.mjs）逐条证明「改坏必红」。
+
+### 四、L143 行为变化对照清单
+
+L143 记录的是「升级后行为会变」的显式清单。0.6.0 的变化如下（升级前请逐行确认）：
+
+| 场景 | 0.5.7 行为 | 0.6.0 行为 | 兼容性 / 迁移动作 |
+|---|---|---|---|
+| 策略文件带 UTF-8 BOM | BOM 导致 JSON.parse 失败，静默落回空模板，全部工具常驻 | 先剥 BOM 再解析，读取诊断标 bom；策略按文件内容生效 | 无需改文件；建议顺手另存为无 BOM |
+| 策略文件损坏 | 空模板覆盖原文件，用户配置永久丢失 | 进入未读态，默认拒绝写；显式 replaceCorrupt 才替换且备份原文 | 修好后重新保存；原文件在 gate.json.bak |
+| 并发保存策略 | 后写覆盖前写，备份链错乱 | 同进程串行 + revision 乐观锁；冲突返回 409 与 changedKeys | 面板遇 409 应刷新后重试 |
+| 限制期间重算 | 窗口内直接改摘除集，正在跑的工具被 deny | 窗口内只登记待生效目标，最后一个租约释放时一次施加 | 无感；suspend 并发语义更严格 |
+| 工具返回图片/音频 | 结构化块被 stringify 成文本，模型看不见 | 结构化块原样转发；超限降级为占位摘要 | 无感；上游若依赖旧文本形态需改读结构化块 |
+| 策略显式写 0（关闭） | 已加载 / 激活提升可能把它抬回来 | 显式关闭高于一切；已加载只能把按需抬成常驻 | 检查依赖「加载后自动恢复」的配置 |
+| 控制面失败 | 可能 200 + 空体，或只发响应头 | 统一 >=400 + error 信封（code / message / detail） | 调用方按状态码判定，不再看 200 的 body |
+| GET /api/dsh-gate/diagnostics | 不存在 | 新增只读诊断端点（读取诊断 / 租约 / 计划摘要） | 面板与排障脚本可接入 |
+| 文档端点表 | 手写，易漂 | 由 CONTROL_PLANE_ROUTES 生成，check-spec 双向比对 | 新增端点必须同时改路由表 |
+| 测试入口 | package.json 32 段 && 长链，链外两个 .test.mjs 从未执行 | scripts/run-tests.mjs 扫描 test/**.test.mjs 与 test/seams/*.test.mjs，注册表与磁盘双向比对 | npm test 语义不变；单套件用 --filter |
+| 面板用语 | 「档位」「等级」 | 「层 0 / 1 / 2（关闭零、常驻一、按需二）」 | 旧配置键不变，仅文案变化 |
+| 部署卸载 | uninstall 只删两行，缩进 patch 行卸不掉，可能留下孤立 insert | 安装事务化（备份 + 失败回滚）；卸载按 patch 行知识单真源整块摘除 | 先用 -DryRun 核对计划，再执行 |
+
+### 五、阶段化集成与独立回滚（P0–P3）
+
+四个阶段各自可独立回滚：任一阶段失败，只回退该阶段的提交，不需要把前序阶段一起回退。
+
+| 阶段 | 内容 | 独立回滚方式 | 必过门 |
+|---|---|---|---|
+| P0 门禁与 runner | check-spec 升级、test-suites 注册表、run-tests、verify-effectiveness、CI 工作流 | 还原 scripts/check-spec.mjs、scripts/run-tests.mjs、CI 文件；npm test 回退到旧链（仅应急） | npm run check + npm test 全绿；effectiveness 13/13（I-15 缺 errors.js 时 blocked） |
+| P1 策略存储与 schema | policy-schema、storage-seam、policy 接入、BOM / 坏文件 / 并发修复 | 还原对应 lib 文件与 gate.json 读写调用点；保留备份 | s2-storage-contract、policy.test、migrate.test |
+| P2 决策与执行面 | decide、naming、planner、host-adapter、normalize、关闭/加载/租约修复 | 还原对应 lib 文件；planner 调用点回到旧 planFor | decide / planner / naming / host-adapter / restriction / resource-bounds |
+| P3 部署、控制面与收口文档 | install/uninstall 事务化、CONTROL_PLANE_ROUTES、diagnostics、README/ARCHITECTURE/CHANGELOG | 还原 scripts/install.ps1、uninstall.ps1 与 docs；profile 用备份回滚 | s3/s5 接缝、check-spec 全绿、装/卸往返逐字节回初始 |
+
+回滚前置：任何阶段回滚前先备份 profile 的 package.json 与 cordis.patch.yml；旧 tgz（0.4.0 / 0.4.1）已移入 _quarantine/old-packaging/ 并单列说明，不随 0.6.0 发布。
+
+### 六、验证记录（0.6.0 发布门）
+
+- npm run check：17 PASS / 0 FAIL / 1 WARN（仅面板文案待 #07），含打包内容、编码、端点表、示例模板、恒真断言、术语。
+- npm test：扫描式 runner（默认 4 并发）覆盖 test/ 与 test/seams/ 全部 39 个必过套件，499 断言，整轮 4.70s（预算 12s），1 项跳过且带原因。
+- npm run test:effectiveness -- --strict：13/13 effective（HF-1–HF-6 + I-10–I-16；I-15 为错误信封契约探针）。
+- 装/卸往返：Windows 上 install → uninstall → 再 install，profile 逐字节回到初始状态。
+- 发布红线：只推本地提交，不 push / 不 tag / 不建 Release；发版由维护者按 release.yml 手动触发。
+
 版本号遵循语义化版本；格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
 ## [0.5.7] — 2026-11-20

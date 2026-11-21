@@ -22,3 +22,6 @@ Thumbs.db
 dist/
 *.zip
 *.tgz
+
+# literal %SystemDrive% tree (PowerShell font cache leaked by a cwd bug) — never track again
+%SystemDrive%/

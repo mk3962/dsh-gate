@@ -345,9 +345,10 @@ export const deployFindings = [
     title: "uninstall 认不出 install 写的缩进 patch 行（卸不掉，且可能留下孤立 - insert:）",
     symptom: "install 写缩进 4 空格的 \"    - id: surface-gate\"，而 uninstall 的 hasPatchRow / 摘除循环 / 回读校验三处都用 ^-\\s*id:\\s*surface-gate\\s*$（只认顶层）→ -DryRun 报 False、真卸跳过，行留在 profile。",
     counted: false,
-    replay: { file: "test/seams/s5-deploy-contract.test.mjs", case: "S5 · 真缺陷登记：uninstall 认不出 install 写的缩进 patch 行（卸不掉）" },
-    deleteBranch: "把 uninstall 三处正则改成 ^\\s*-… ⇒ 该用例的「= False」断言变红；把 fixture 改成顶层行同样变红。",
-    state: "registered",
+    replay: { file: "test/seams/s5-deploy-contract.test.mjs", case: "G80 / D-1 · 装完再卸，profile 逐字节回到初始（含 patch 行真被摘掉）" },
+    verifiedBy: { file: "test/seams/s5-deploy-contract.test.mjs", case: "G80 / D-1 · 装完再卸，profile 逐字节回到初始（含 patch 行真被摘掉）" },
+    deleteBranch: "把 dsh-gate-deploy.psm1 的 PatchRowPattern 改成只认顶层 ^- ⇒ S5 卸载认不出缩进 patch 行而变红。",
+    state: "verified",
   },
 ];
 

@@ -1,0 +1,72 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install (no lifecycle scripts)
+        run: npm install --ignore-scripts --no-audit --no-fund
+        shell: bash
+
+      - name: 标签版本 = package.json 版本
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG=$(node -p "require('./package.json').version")
+          echo "tag=$TAG package=$PKG"
+          test "$TAG" = "$PKG"
+
+      - name: 发版前门禁
+        run: npm run check
+
+      - name: 发版前测试
+        run: npm test
+
+      - name: 打包并断言包内容
+        shell: bash
+        run: |
+          npm pack --ignore-scripts --json > pack.json
+          node -e '
+            const fs = require("node:fs");
+            const packed = JSON.parse(fs.readFileSync("pack.json", "utf8"))[0];
+            const paths = packed.files.map((f) => f.path.replace(/\\/g, "/"));
+            const required = ["package.json", "lib/index.js", "lib/policy-schema.js", "lib/storage-seam.js",
+              "lib/decide.js", "lib/naming.js", "lib/planner.js", "lib/host-adapter.js", "lib/normalize.js",
+              "client/index.js", "cordis.patch.yml", "gate.example.json", "README.md", "LICENSE"];
+            const missing = required.filter((p) => !paths.includes(p));
+            const forbidden = paths.filter((p) => p.startsWith("test/") || p.startsWith("docs/") || p.endsWith(".tgz") || p.startsWith("node_modules/"));
+            if (missing.length || forbidden.length) {
+              console.error("包内容断言失败。缺:", missing, "禁:", forbidden);
+              process.exit(1);
+            }
+            console.log("包内容 OK:", paths.length, "个文件");
+          '
+
+      - name: 生成发布资产
+        id: asset
+        shell: bash
+        run: |
+          TGZ="$(ls dsh-gate-*.tgz | head -n 1)"
+          echo "tgz=$TGZ" >> "$GITHUB_OUTPUT"
+
+      - name: 创建 GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dsh-gate-*.tgz
+          generate_release_notes: true
+          fail_on_unmatched_files: true
