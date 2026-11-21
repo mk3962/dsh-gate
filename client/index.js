@@ -1698,13 +1698,18 @@ window.__ModuleLoader__.load({
         if (pending > 0) pending -= 1;
       };
 
+      const activeCeilingTimers = [];
       const withCeiling = (promise, ms, roundId, marker) => new Promise((resolve) => {
         let done = false;
         let timer = null;
         const finish = (value, timedOut) => {
           if (done) return;
           done = true;
-          if (timer !== null && unschedule) unschedule(timer);
+          if (timer !== null) {
+            const idx = activeCeilingTimers.indexOf(timer);
+            if (idx >= 0) activeCeilingTimers.splice(idx, 1);
+            if (unschedule) unschedule(timer);
+          }
           if (timedOut) {
             superseded[roundId] = true;
             release(marker);
@@ -1716,7 +1721,10 @@ window.__ModuleLoader__.load({
           }
           resolve(value);
         };
-        if (schedule) timer = schedule(() => finish(null, true), Math.max(1, ms));
+        if (schedule) {
+          timer = schedule(() => finish(null, true), Math.max(1, ms));
+          activeCeilingTimers.push(timer);
+        }
         promise.then((value) => finish(value, false), (error) => finish({ applied: false, stale: false, timedOut: false, round: roundId, epoch: epoch, failed: [{ key: "load", error: errorText(error) }], warnings: [] }, false));
       });
 
@@ -2016,6 +2024,10 @@ window.__ModuleLoader__.load({
 
       const dispose = () => {
         disposed = true;
+        while (activeCeilingTimers.length > 0) {
+          const t = activeCeilingTimers.pop();
+          if (t !== null && unschedule) unschedule(t);
+        }
         listeners.length = 0;
         inflight = null;
         inflightPending = false;

@@ -11,8 +11,8 @@ permissions:
 
 jobs:
   verify:
-    name: verify (${ matrix.os }/ node ${ matrix.node })
-    runs-on: ${ matrix.os }
+    name: verify (${{ matrix.os }}/ node ${{ matrix.node }})
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
@@ -23,7 +23,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: ${ matrix.node }
+          node-version: ${{ matrix.node }}
 
       - name: Install (no lifecycle scripts)
         run: |
@@ -59,7 +59,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-report-${ matrix.os }-node${ matrix.node }
+          name: test-report-${{ matrix.os }}-node${{ matrix.node }}
           path: |
             test-report.json
             effectiveness-report.json

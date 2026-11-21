@@ -86,7 +86,8 @@ export const defects = [
     symptom: "handler 内无 try/catch，异常逃逸到 webServer，客户端拿到 socket 挂起而不是结构化错误信封。",
     replay: { file: "test/seams/s3-http-contract.test.mjs", case: "八步·4 读体：客户端中途断连 → 500 INTERNAL 结构化信封并真的写了响应（P1-1）" },
     deleteBranch: "结构化错误信封分支被短路（handler 抛错直穿）⇒ 响应状态/信封断言红。",
-    state: "registered",
+    verifiedBy: { file: "test/seams/s3-http-contract.test.mjs", case: "八步·4 读体：客户端中途断连 → 500 INTERNAL 结构化信封并真的写了响应（P1-1）" },
+    state: "verified",
   },
   {
     id: "P1-2",
@@ -211,7 +212,8 @@ export const defects = [
     symptom: "消息构造时把结构化块（image/attachment 等）当作字符串拼接，块被压平丢结构。",
     replay: { file: "test/seams/s1-host-contract.test.mjs", case: "P1-8 结构化块保真" },
     deleteBranch: "适配器的『块保真』路径被改成只返回 text ⇒ 块断言红。",
-    state: "registered",
+    verifiedBy: { file: "test/runtime-d04.test.mjs", case: "C33 / P1-8：gate_call 端到端转发多模态工具，blocks 保真、text 只有文本" },
+    state: "verified",
   },
   {
     id: "P1-9",
@@ -224,7 +226,8 @@ export const defects = [
     symptom: "suspend 期间的重入窗口没有闸，限制表被全量放开，任意并发都看到未限制的工具面。",
     replay: { file: "test/seams/s1-host-contract.test.mjs", case: "P1-9 suspend 只放行自己的作用域" },
     deleteBranch: "作用域比对分支被删 ⇒ 邻居作用域也被放行 ⇒ 断言红。",
-    state: "registered",
+    verifiedBy: { file: "test/runtime-d04.test.mjs", case: "P1-9：两个并发转发共享窗口，先结束的不把限制重设成全量 deny（慢工具全程不被 deny）" },
+    state: "verified",
   },
   {
     id: "P1-10",
@@ -237,7 +240,8 @@ export const defects = [
     symptom: "请求体 tier 非法（null/字符串）时被 Number() 强转成 0，静默变成「关闭」。",
     replay: { file: "test/seams/s3-http-contract.test.mjs", case: "P1-10：tier: null 不再被 Number() 强转成 0（400 INVALID_TIER，文件不动）" },
     deleteBranch: "字段校验分支被删 ⇒ 非法输入被强转后落盘 ⇒ 状态码/账本断言红。",
-    state: "registered",
+    verifiedBy: { file: "test/seams/s3-http-contract.test.mjs", case: "P1-10：tier: null 不再被 Number() 强转成 0（400 INVALID_TIER，文件不动）" },
+    state: "verified",
   },
   {
     id: "P2-1",
@@ -269,7 +273,8 @@ export const defects = [
     symptom: "limit 边界未校验，0 与 -1 都退化成不限制，检索结果爆量。",
     replay: { file: "test/seams/s1-host-contract.test.mjs", case: "P2-2 limit 边界" },
     deleteBranch: "limit 归一化分支被删 ⇒ 0/-1 返回全量 ⇒ 断言红。",
-    state: "registered",
+    verifiedBy: { file: "test/catalog-d17.test.mjs", case: "E65 / P2-2：limit 语义（缺省 / 零 / 负数 / 非数 / 封顶）" },
+    state: "verified",
   },
   {
     id: "P2-3",
@@ -282,7 +287,8 @@ export const defects = [
     symptom: "摘要生成按句号切分，把「v0.5.7 起」这类句内版本号截断成「v0.5」。",
     replay: { file: "test/seams/s1-host-contract.test.mjs", case: "P2-3 摘要不得截断版本号" },
     deleteBranch: "版本号保护分支被删 ⇒ 截断复现 ⇒ 断言红。",
-    state: "registered",
+    verifiedBy: { file: "test/catalog-d17.test.mjs", case: "E61 / P2-3：首句截断真值表" },
+    state: "verified",
   },
   {
     id: "P2-4",
@@ -295,7 +301,8 @@ export const defects = [
     symptom: "别名匹配用 includes，短别名命中长词子串，检索给出不相关条目。",
     replay: { file: "test/seams/s1-host-contract.test.mjs", case: "P2-4 别名按词边界" },
     deleteBranch: "边界匹配分支被删 ⇒ 子串误命中 ⇒ 断言红。",
-    state: "registered",
+    verifiedBy: { file: "test/catalog-d17.test.mjs", case: "E63 / P2-4：短词根与别名守词边界与最小长度" },
+    state: "verified",
   },
   {
     id: "P2-5",
@@ -308,7 +315,8 @@ export const defects = [
     symptom: "被限制的会话仍能通过 gate_call 转发到受限工具，限制可被绕过。",
     replay: { file: "test/seams/s1-host-contract.test.mjs", case: "P2-5 受限会话不得转发" },
     deleteBranch: "转发目标校验分支被删 ⇒ 受限工具被调到 ⇒ 断言红。",
-    state: "registered",
+    verifiedBy: { file: "test/runtime-d04.test.mjs", case: "C32：gate_call / gate_invoke 转发闸门工具族一律拒绝（code=gate-tool-not-forwardable）" },
+    state: "verified",
   },
 ];
 
@@ -326,7 +334,8 @@ export const crossDomainDefects = [
     counted: false,
     replay: { file: "test/seams/s4-frontend-contract.test.mjs", case: "X-1 路由缺失必须降级不白屏" },
     deleteBranch: "降级分支被删 ⇒ 渲染记录器捕获到未处理异常 ⇒ 断言红。",
-    state: "registered",
+    verifiedBy: { file: "test/seams/s4-frontend-v2.test.mjs", case: "#07 · X-1 未知路由必须降级不白屏，其它页签照常可用" },
+    state: "verified",
   },
 ];
 

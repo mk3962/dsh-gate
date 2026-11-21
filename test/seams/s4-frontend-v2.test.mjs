@@ -566,6 +566,8 @@ test("#07 · L4 单飞加最新优先，写后推进 epoch 让早于写的读作
   for (let index = 10; index < 15; index += 1) manual.reads[index].resolve(okRead("stale", 1));
   const staleResult = await stale;
   assert.equal(staleResult.stale, true, "写成功后，早于写的在途读必须作废");
+  for (let index = 5; index < 10; index += 1) manual.reads[index].resolve(okRead("round-2", 2));
+  orchestrator.dispose();
 });
 
 test("#07 · L4 双击保存只写一次、写之间排队（H102）", async () => {
