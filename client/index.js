@@ -71,167 +71,207 @@ window.__ModuleLoader__.load({
      * ===================================================================== */
     const TEXT = Object.freeze({
       "summary": "两层工具闸门 · 按能力开关",
-      "title": "工具闸门 · 操作员工作台",
-      "subtitle": "草稿只有一份真源；刷新、保存、启停都先确认会丢什么",
-      "tabs.label": "面板页签",
+      "title": "工具闸门",
+      "tabs.label": "页签",
       "tab.caps": "能力",
       "tab.skills": "技能",
       "tab.mcp": "MCP",
-      "tab.json": "策略 JSON",
-      "tab.settings": "设置",
-      "common.yes": "是",
-      "common.no": "否",
+      "tab.settings": "高级",
+      "purpose.caps": "这一页管能力层：每条能力单独设层——常驻＝始终可用、按需＝被调用时才放行、关闭＝不注入。改动先落草稿，用底部保存栏一次写盘。",
+      "purpose.skills": "这一页管技能与技能目录：接管开关决定技能是否由闸门审批，目录按来源分组折叠，搜索只过滤不写盘；旧关闭清单为空时不显示。",
+      "purpose.mcp": "这一页管 MCP 服务器：新增、编辑、启用、删除都即时写盘并立刻生效，不经过底部保存栏。",
+      "purpose.settings": "这一页是高级设置：会话与诊断、防复读护栏、目录摘要、策略 JSON、运行态指标。策略 JSON 是整份替换，保存前先看差异。",
       "common.none": "—",
-      "common.empty": "没有数据",
-      "common.loading": "载入中…",
-      "common.ready": "就绪",
-      "common.partial": "部分可用",
-      "common.error": "读取失败",
-      "common.missing": "能力不存在",
-      "common.stale": "陈旧",
       "common.justNow": "刚刚",
       "common.minutesAgo": "分钟前",
-      "loading": "载入闸门状态…",
-      "loadFailed": "读不到闸门状态",
-      "retry": "重试",
-      "reload": "重新读取",
-      "saving": "保存中…",
-      "save": "保存",
-      "saved": "已保存，下一轮生效",
-      "noChanges": "没有待保存改动",
-      "noChangeWritten": "服务端判定没有变化，未写入",
-      "discard": "放弃改动",
-      "undo": "撤销",
-      "redo": "重做",
-      "undoHint": "快捷键 Ctrl+Z / Ctrl+Shift+Z；至少二十步",
-      "caps.title": "能力",
-      "caps.search": "搜索能力 id、工具名、段落名或技能名…",
-      "caps.sourceAll": "全部来源",
-      "caps.statusAll": "全部层",
-      "caps.statusException": "有例外",
-      "caps.statusPending": "待保存",
-      "caps.clear": "清除筛选",
-      "caps.empty": "没有匹配的能力",
-      "caps.groupBatch": "整组设置",
-      "caps.groupImpact": "影响预览",
-      "caps.why": "为什么在这一层",
-      "caps.hide": "收起解析",
-      "caps.invalid": "层值非法，已标红并阻断保存",
-      "caps.blocked": "阻断保存",
-      "caps.complaints": "数据不完整",
-      "caps.complaintsHint": "缺字段只降级相关卡片，其余照常可用",
-      "caps.managed": "托管（只读服务端字段）",
-      "caps.pending": "待保存",
-      "caps.exception": "成员例外",
-      "caps.followCap": "跟随能力层",
-      "caps.locked": "被锁定，例外不改变实际层",
-      "skills.title": "技能",
-      "skills.search": "搜索技能名、provider、路径或描述…",
-      "skills.save": "保存技能配置",
-      "skills.takeover": "技能接管",
-      "skills.relay": "激活转发",
-      "skills.promote": "族内提升",
-      "skills.relayHint": "从属于技能接管：接管关闭时转发没有接收方",
-      "skills.promoteHint": "从属于激活转发：只对已转发到 gate 的技能生效",
-      "skills.off": "旧关闭清单",
-      "skills.offRemove": "移除",
-      "skills.offClear": "清空清单",
-      "skills.offClearConfirm": "清空旧关闭清单？可撤销。",
-      "skills.imports": "导入目录",
-      "skills.importAdd": "加入草稿",
-      "skills.importPreview": "解析预览",
-      "skills.importRemove": "移除",
-      "skills.prescan": "预扫描清单",
-      "skills.prescanRetry": "重试预扫描",
-      "skills.warnings": "技能告警",
-      "skills.empty": "还没有技能",
-      "skills.dirty": "有未保存改动",
-      "skills.synced": "与策略文件同步",
-      "mcp.title": "MCP server",
-      "mcp.add": "添加",
-      "mcp.name": "name（[A-Za-z0-9_-]{1,32}）",
-      "mcp.command": "command（如 node）",
-      "mcp.args": "args（支持单双引号与空格）",
-      "mcp.argsPreview": "参数解析预览",
-      "mcp.url": "https://example.com/mcp",
-      "mcp.actions": "操作",
-      "mcp.readonly": "宿主配置，gate 只能观察",
-      "mcp.empty": "还没有 MCP server",
-      "mcp.notWritable": "POST /api/dsh-gate/mcp 不可写，按钮已禁用",
-      "json.title": "原始策略 JSON",
-      "json.validate": "校验",
-      "json.format": "格式化",
-      "json.restore": "载入服务端默认",
-      "json.save": "保存 JSON",
-      "json.replaceHint": "保存是整份替换（不是合并）；提交前先看差异",
-      "json.import": "导入文件",
-      "json.export": "导出当前策略",
-      "json.diff": "差异预览",
-      "json.bytes": "字节",
-      "json.lines": "行",
-      "json.invalid": "JSON 解析失败",
-      "json.confirmTitle": "确认整份替换？",
-      "settings.title": "设置与健康",
-      "settings.guard": "重复劳动护栏",
-      "settings.guardEnabled": "启用",
-      "settings.window": "窗口（2–200）",
-      "settings.threshold": "阈值（2–50）",
-      "settings.reminders": "提醒（1–5）",
-      "settings.preview": "预览字符（40–4000）",
-      "settings.exclusions": "排除名单（逗号分隔）",
-      "settings.fixedItems": "恒在项由服务端标记默认恒在，不可删",
-      "settings.runtime": "运行态指标",
-      "settings.noMetrics": "尚未统计（无数据显示为尚未统计，不是零）",
-      "settings.catalog": "目录三选项",
-      "settings.groupByPlugin": "按插件分组",
-      "settings.cacheCost": "改目录字节会让从该段起的前缀缓存一次性失效",
-      "settings.skillGroups": "技能按来源折叠",
-      "settings.maxDesc": "描述截断长度（16–512）",
-      "settings.autoRefresh": "自动刷新",
-      "settings.autoOff": "关闭",
-      "settings.auto15": "15 秒",
-      "settings.auto30": "30 秒",
-      "settings.auto60": "60 秒",
-      "settings.autoPaused": "已暂停",
-      "settings.session": "会话",
-      "settings.sessionAuto": "自动（服务端选取）",
-      "settings.sessionHost": "宿主注入",
-      "settings.sessionPanel": "面板选择",
-      "settings.listSessions": "列出已装配会话",
-      "settings.signature": "签名摘要",
-      "settings.restoreKey": "单键还原为服务端值",
-      "health.title": "健康条",
-      "health.file": "策略文件",
-      "health.readAt": "读取时刻",
-      "health.session": "会话",
-      "health.sources": "数据源",
-      "confirm.title": "确认操作",
-      "confirm.ok": "确认丢弃并继续",
-      "confirm.cancel": "取消",
-      "confirm.consequence": "确认后会丢弃",
-      "error.title": "面板出现异常",
-      "error.summary": "错误摘要",
-      "error.stack": "栈（前三行）",
-      "error.copy": "复制诊断",
-      "error.diagnostics": "诊断信息",
-      "error.viewMissing": "这个视图暂不可用",
-      "error.viewMissingHint": "已降级到这个卡片，其它页签照常可用",
-      "error.backToCaps": "切回能力页",
+      "common.loading": "读取中…",
+      "common.error": "出错了",
+      "common.stale": "旧数据",
+      "common.count": "条",
       "tier.off": "关闭",
       "tier.resident": "常驻",
       "tier.ondemand": "按需",
-      "tier.unset": "未设置",
-      "tier.invalid": "非法",
-      "chain.title": "决策链",
-      "chain.winner": "赢家",
-      "chain.none": "没有成员命中任何规则，层值来自能力条目或 defaults",
-      "chain.filter": "只看没被限制的",
-      "chain.filterAll": "全部",
-      "chain.final": "最终层值",
-      "chain.hit": "命中规则",
-      "chain.reason": "原因链",
+      "tier.offHint": "不注入、不审批",
+      "tier.residentHint": "始终可用",
+      "tier.ondemandHint": "被调用时才放行",
+      "tier.label": "层",
+      "caps.search": "搜索能力名、工具名或原因",
+      "caps.filterSource": "按来源筛选",
+      "caps.filterStatus": "按层筛选",
+      "caps.all": "全部",
+      "caps.clearFilter": "清除筛选",
+      "caps.expand": "看例外与工具",
+      "caps.collapse": "收起详情",
+      "caps.empty": "没有匹配的能力：清掉筛选或换个搜索词",
+      "caps.groupSet": "整组设置",
+      "caps.groupSetHint": "把这一组一次设成同一层，先看影响预览再确认",
+      "caps.member": "成员",
+      "caps.tools": "工具",
+      "caps.sections": "段落",
+      "caps.why": "为什么是这个层",
+      "caps.exception": "例外",
+      "caps.chainTitle": "决策链",
+      "caps.chainNone": "没有成员命中任何规则，层值来自能力条目或默认层",
+      "caps.winner": "生效来源",
+      "caps.deviations": "数据不完整",
+      "caps.upstream": "被上游隐藏",
+      "caps.warnings": "告警",
+      "caps.confidence": "置信度",
+      "caps.synthetic": "默认层",
+      "caps.merged": "已合并",
+      "caps.managed": "宿主托管",
+      "caps.readonly": "只读服务",
+      "caps.memberTier": "成员层",
+      "caps.filtered": "筛选中",
+      "caps.pending": "待保存",
+      "caps.blocked": "有阻塞项，先修掉再保存",
+      "caps.memberEmpty": "这一组暂时没有成员",
+      "skills.title": "技能",
+      "skills.search": "搜索技能名、来源或路径",
+      "skills.empty": "没有匹配的技能",
+      "skills.takeoverTitle": "技能接管",
+      "skills.takeover": "接管技能审批",
+      "skills.takeoverHint": "打开后技能的新增与禁用由闸门审批；关闭则一切照旧",
+      "skills.relay": "旧关闭清单中继",
+      "skills.promote": "提升为常驻",
+      "skills.importsTitle": "导入技能目录",
+      "skills.importsHint": "加入草稿后保存才写盘，不清空原目录",
+      "skills.importPlaceholder": "目录绝对路径",
+      "skills.importAdd": "加入草稿",
+      "skills.importRemove": "移除",
+      "skills.importEmpty": "还没有待导入的目录",
+      "skills.offTitle": "旧关闭清单",
+      "skills.offHint": "这些名字来自旧版本的关闭清单，移除后保存才写盘",
+      "skills.offClear": "清空清单",
+      "skills.offClearConfirm": "清空旧关闭清单？保存后才写盘，可用撤销恢复",
+      "skills.shadowed": "被同名技能遮挡",
+      "skills.providers": "来源",
+      "skills.searchEmpty": "搜索词为空时列出全部",
+      "mcp.title": "MCP 服务器",
+      "mcp.liveHint": "这一页即时生效：启用、禁用、编辑、删除都立刻写盘并重载连接",
+      "mcp.empty": "还没有托管任何 MCP 服务器，展开下面的表单添加第一个",
+      "mcp.addTitle": "新增 MCP 服务器",
+      "mcp.addToggle": "展开表单",
+      "mcp.addCollapse": "收起表单",
+      "mcp.edit": "编辑",
+      "mcp.editTitle": "编辑 MCP 服务器",
+      "mcp.saveEdit": "保存修改",
+      "mcp.cancelEdit": "取消编辑",
+      "mcp.name": "名称",
+      "mcp.transport": "传输",
+      "mcp.url": "地址（https://…）",
+      "mcp.command": "命令",
+      "mcp.args": "参数（空格分隔，可加引号）",
+      "mcp.argsPreview": "解析成",
+      "mcp.enable": "启用",
+      "mcp.remove": "删除",
+      "mcp.removeTitle": "删除这个 MCP 服务器？",
+      "mcp.removeConsequence": "从闸门托管配置里移除；宿主自己的配置不受影响",
+      "mcp.tools": "工具数",
+      "mcp.state": "状态",
+      "mcp.writable": "只读：宿主没有给写入口，这一页只能看",
+      "mcp.emptyName": "名称不能为空",
+      "mcp.count": "台",
+      "mcp.noTools": "尚未统计",
+      "settings.sessionTitle": "会话切换与诊断",
+      "settings.sessionHint": "宿主注入的会话优先；没有时按面板选择；再没有就自动选取",
+      "settings.sessionAuto": "自动选取",
+      "settings.sessionHost": "宿主注入",
+      "settings.sessionPanel": "面板选择",
+      "settings.sessionList": "读取会话清单",
+      "settings.sessionEmpty": "诊断端点没有列出会话，继续用自动选取",
+      "settings.guardTitle": "重复劳动护栏",
+      "settings.guardHint": "护栏只管重复劳动提醒，不改能力行为；数值越界会被服务端拒绝",
+      "settings.guardEnabled": "启用护栏",
+      "settings.window": "窗口（2–200）",
+      "settings.threshold": "阈值（2–50）",
+      "settings.reminders": "提醒（1–5）",
+      "settings.previewChars": "预览字符（40–4000）",
+      "settings.exclusions": "排除名单（逗号分隔）",
+      "settings.catalogTitle": "目录摘要",
+      "settings.catalogHint": "决定能力清单怎么分组、描述截多长；缓存与恒在项只影响展示",
+      "settings.catalogThree": "目录三选项",
+      "settings.catalogByPlugin": "按插件",
+      "settings.catalogBySkillGroup": "按技能包",
+      "settings.catalogFlat": "平铺",
+      "settings.catalogMaxDesc": "描述上限",
+      "settings.catalogCache": "缓存",
+      "settings.catalogUnknown": "尚未统计",
+      "settings.catalogResident": "恒在项",
+      "settings.signatureTitle": "签名摘要",
+      "settings.signatureHint": "给每次调用附签名便于去重；工具名单为空表示全部",
+      "settings.signatureEnabled": "启用签名摘要",
+      "settings.signatureTools": "工具名单（逗号分隔）",
+      "settings.signatureRestore": "单键还原",
+      "settings.autoHint": "面板不自动刷新（自动刷新只发生在宿主前台轮询），需要新数据点「重新读取」",
+      "settings.jsonTitle": "策略 JSON",
+      "settings.jsonHint": "这里是整份替换：先校验，再看差异，最后点整份替换；它会丢弃面板里的其它草稿；导入导出共用这一个文本框",
+      "settings.jsonValidate": "校验",
+      "settings.jsonFormat": "格式化",
+      "settings.jsonDefault": "载入默认",
+      "settings.jsonReplace": "整份替换",
+      "settings.jsonImport": "导入",
+      "settings.jsonExport": "导出复制",
+      "settings.jsonInvalid": "JSON 不合法",
+      "settings.jsonValidated": "校验通过",
+      "settings.jsonExported": "已复制到剪贴板",
+      "settings.jsonCopyFallback": "剪贴板不可用，请手动复制导出框",
+      "settings.jsonDiff": "整份替换的差异",
+      "settings.jsonBytes": "字节",
+      "settings.metricsTitle": "运行态指标",
+      "settings.metricsHint": "指标来自 /api/dsh-gate/diagnostics；读不到就写尚未统计，不冒充零",
+      "settings.metricsRefresh": "刷新指标",
+      "settings.metricsNone": "尚未统计",
+      "settings.metricsFailed": "指标读取失败",
+      "top.enabled": "闸门已启用",
+      "top.disabled": "闸门已禁用",
+      "top.toggleReason": "读写进行中，先等这一轮结束",
+      "top.reload": "重新读取",
+      "top.diag": "诊断",
+      "top.pending": "待保存",
+      "top.warnings": "告警",
+      "diag.file": "文件",
+      "diag.readAt": "读取时刻",
+      "diag.sources": "数据源",
+      "diag.hint": "每份数据源单独报告状态；单个接口失败只降级对应卡片",
+      "corrupt.title": "策略文件读不干净",
+      "corrupt.text": "文件里可能有 BOM、多余逗号或语法错误，面板已进入只读保护：能力与技能暂时读不出来。",
+      "corrupt.rebuild": "用默认策略重建",
+      "corrupt.confirmTitle": "用默认策略整份重建？",
+      "corrupt.confirmText": "会覆盖当前策略文件（原文件由服务端备份）；重建后能力层回到默认值。",
+      "save.title": "待保存改动",
+      "save.save": "保存全部改动",
+      "save.discard": "放弃",
+      "save.details": "看差异",
+      "save.hideDetails": "收起差异",
+      "save.undo": "撤销",
+      "save.redo": "重做",
+      "save.noChanges": "没有改动",
+      "save.saving": "保存中…",
+      "retry": "重试",
+      "save": "保存",
+      "saved": "已保存",
+      "noChangeWritten": "服务端确认无需写盘",
+      "loadFailed": "读不到闸门状态",
+      "confirm.title": "请确认",
+      "confirm.ok": "确认",
+      "confirm.cancel": "取消",
+      "health.session": "会话",
+      "health.file": "文件",
+      "health.readAt": "读取于",
+      "toast.dismiss": "关闭提示",
+      "error.title": "面板渲染出错",
+      "error.stack": "错误栈",
+      "error.diagnostics": "诊断信息",
+      "error.viewMissing": "这个视图暂不可用",
+      "error.viewMissingHint": "路由里的视图名不在闸门页签里；面板本身还能用，可以重试或回到能力页。",
+      "error.backToCaps": "回到能力页",
+      "error.copyDiagnostics": "复制诊断",
+      "error.retry": "重试",
+      "json.diff": "差异",
+      "json.invalid": "JSON 不合法",
+      "json.confirmTitle": "整份替换策略？",
     });
-
     /** 文案取值器：所有界面文案只经它读取常量表（缺键显性回显，不静默吞掉）。 */
     const text = (key) => (hasOwn(TEXT, key) ? TEXT[key] : String(key));
 
@@ -241,20 +281,21 @@ window.__ModuleLoader__.load({
      * ===================================================================== */
     const STYLE_ATTR = "data-dsh-gate";
     const STYLE_SECTIONS = Object.freeze([
-      ["tokens", ".dshg-wrap{--dshg-border:var(--dsw-alias-border-l1,rgba(0,0,0,.12));--dshg-border2:var(--dsw-alias-border-l2,rgba(0,0,0,.2));--dshg-hover:var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.05));--dshg-layer:var(--dsw-alias-bg-layer-2,rgba(0,0,0,.03));--dshg-label:var(--dsw-alias-label-primary,#1d1d1f);--dshg-sub:var(--dsw-alias-label-secondary,#6e6e73);--dshg-faint:var(--dsw-alias-label-tertiary,#8e8e93);--dshg-business:var(--dsw-alias-state-business-primary,#0a84ff);--dshg-success:var(--dsw-alias-state-success-primary,#34c759);--dshg-warn:var(--dsw-alias-state-warn-primary,#ff9f0a);--dshg-error:var(--dsw-alias-state-error-primary,#ff453a);color:var(--dshg-label);font-family:var(--dsw-font-family,system-ui,sans-serif);display:flex;flex-direction:column;gap:12px;font-size:12.5px;line-height:1.55}"],
-      ["layout", ".dshg-head{display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap}.dshg-grow{flex:1 1 240px;min-width:0}.dshg-title{font-weight:650;font-size:15px}.dshg-sub{color:var(--dshg-sub);font-size:11.5px;word-break:break-all}.dshg-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.dshg-col{display:flex;flex-direction:column;gap:8px}.dshg-foot{display:flex;gap:8px;align-items:center;flex-wrap:wrap;color:var(--dshg-sub);font-size:11.5px}"],
-      ["card", ".dshg-card{border:1px solid var(--dshg-border);border-radius:12px;overflow:hidden;background:var(--dsw-alias-bg-base,transparent)}.dshg-cardHead{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 12px;font-weight:600;font-size:12px;background:var(--dshg-layer);border-bottom:1px solid var(--dshg-border)}.dshg-cardBody{display:flex;flex-direction:column;gap:10px;padding:10px 12px}"],
-      ["tabs", ".dshg-tabs{display:flex;gap:4px;flex-wrap:wrap;align-items:center;border-bottom:1px solid var(--dshg-border);padding-bottom:6px}.dshg-tab{border:1px solid transparent;background:transparent;color:var(--dshg-sub);border-radius:8px;padding:4px 10px;font-size:12px;cursor:pointer;font-family:inherit}.dshg-tab:hover{background:var(--dshg-hover)}.dshg-tab[aria-selected=true]{color:var(--dshg-label);border-color:var(--dshg-border2);background:var(--dshg-hover);font-weight:650}.dshg-tabCount{color:var(--dshg-faint);font-size:10.5px;margin-left:4px}.dshg-panel[hidden]{display:none}"],
-      ["stats", ".dshg-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(102px,1fr));gap:8px}.dshg-stat{border:1px solid var(--dshg-border);border-radius:10px;padding:7px 10px;min-width:0}.dshg-stat b{display:block;font-size:17px;line-height:1.2;font-variant-numeric:tabular-nums}.dshg-stat span{display:block;color:var(--dshg-sub);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.dshg-stat[data-tone=warn]{border-color:var(--dshg-warn)}.dshg-stat[data-tone=error]{border-color:var(--dshg-error)}"],
-      ["controls", ".dshg-input{flex:1 1 230px;min-width:170px;box-sizing:border-box;border:1px solid var(--dshg-border2);border-radius:8px;padding:5px 9px;font-size:12.5px;background:var(--dsw-specific-input-major,transparent);color:inherit;font-family:inherit}.dshg-select{box-sizing:border-box;border:1px solid var(--dshg-border2);border-radius:8px;padding:4px 6px;font-size:12px;background:var(--dsw-specific-input-major,transparent);color:inherit;font-family:inherit}.dshg-btn{border:1px solid var(--dshg-border2);background:transparent;color:inherit;border-radius:7px;font-size:11.5px;padding:3px 8px;cursor:pointer;font-family:inherit;white-space:nowrap}.dshg-btn:hover:not(:disabled){background:var(--dshg-hover)}.dshg-btn:disabled{opacity:.45;cursor:default}.dshg-btn[data-primary=true]{background:var(--dsw-alias-button-info-fill,var(--dshg-business));border-color:var(--dsw-alias-button-info-fill,var(--dshg-business));color:var(--dsw-alias-label-primary-foreground,#fff)}.dshg-btn[data-danger=true]{color:var(--dshg-error);border-color:var(--dshg-error)}.dshg-seg{display:inline-flex;border:1px solid var(--dshg-border2);border-radius:8px;overflow:hidden}.dshg-seg button{border:0;background:transparent;color:var(--dshg-sub);padding:3px 9px;font-size:11.5px;cursor:pointer;font-family:inherit}.dshg-seg button+button{border-left:1px solid var(--dshg-border2)}.dshg-seg button[aria-pressed=true]{background:var(--dsw-alias-button-info-fill,var(--dshg-business));color:var(--dsw-alias-label-primary-foreground,#fff)}.dshg-switch{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--dshg-border2);border-radius:999px;padding:2px 9px 2px 7px;background:transparent;color:var(--dshg-sub);cursor:pointer;font-family:inherit;font-size:11.5px}.dshg-switch i{width:9px;height:9px;border-radius:50%;background:var(--dshg-faint);display:block}.dshg-switch[aria-checked=true]{border-color:var(--dshg-success);color:var(--dshg-success)}.dshg-switch[aria-checked=true] i{background:var(--dshg-success)}.dshg-switch[aria-checked=false]{border-color:var(--dshg-error);color:var(--dshg-error)}.dshg-switch[aria-checked=false] i{background:var(--dshg-error)}.dshg-switch:disabled{opacity:.5;cursor:default}"],
-      ["tables", ".dshg-tableWrap{overflow:auto;max-height:560px;border:1px solid var(--dshg-border);border-radius:10px}.dshg-table{width:100%;border-collapse:collapse;font-size:11.5px}.dshg-table th{text-align:left;font-weight:600;color:var(--dshg-sub);padding:6px 8px;border-bottom:1px solid var(--dshg-border2);white-space:nowrap}.dshg-table td{padding:6px 8px;border-top:1px solid var(--dshg-border);vertical-align:top}.dshg-group{display:flex;flex-direction:column;border-top:1px solid var(--dshg-border)}.dshg-group:first-child{border-top:0}.dshg-groupHead{display:flex;gap:8px;align-items:center;flex-wrap:wrap;width:100%;box-sizing:border-box;background:transparent;border:0;padding:8px 12px;cursor:pointer;font-family:inherit;font-size:12px;color:inherit;text-align:left}.dshg-groupHead:hover{background:var(--dshg-hover)}.dshg-groupBody{display:flex;flex-direction:column;margin:0 12px 8px 26px;padding-left:8px;border-left:2px solid var(--dshg-border2)}"],
-      ["feedback", ".dshg-alert{border:1px solid var(--dshg-border2);border-radius:8px;padding:6px 9px;font-size:11.5px;color:var(--dshg-sub)}.dshg-alert[data-tone=warn]{border-color:var(--dshg-warn);color:var(--dshg-warn)}.dshg-alert[data-tone=error]{border-color:var(--dshg-error);color:var(--dshg-error)}.dshg-alert[data-tone=ok]{border-color:var(--dshg-success);color:var(--dshg-success)}.dshg-toasts{display:flex;flex-direction:column;gap:6px;min-height:0}.dshg-toast{display:flex;gap:8px;align-items:center;border:1px solid var(--dshg-border2);border-radius:8px;padding:5px 9px;font-size:11.5px}.dshg-confirm{display:flex;gap:8px;align-items:center;flex-wrap:wrap;border:1px solid var(--dshg-warn);border-radius:9px;padding:8px 10px;background:var(--dshg-layer)}.dshg-skeleton{height:12px;border-radius:6px;background:var(--dshg-layer);margin:4px 0}"],
-      ["badges", ".dshg-badge{display:inline-flex;align-items:center;border:1px solid var(--dshg-border2);border-radius:999px;padding:1px 7px;font-size:10.5px;font-weight:600;line-height:1.5}.dshg-badge[data-kind=mcp]{color:var(--dshg-business);border-color:var(--dshg-business)}.dshg-badge[data-kind=skillpack]{color:var(--dshg-success);border-color:var(--dshg-success)}.dshg-badge[data-kind=skill]{color:#8e5cd9;border-color:#8e5cd9}.dshg-badge[data-kind=native]{color:var(--dshg-business)}.dshg-badge[data-kind=plugin]{color:var(--dshg-success)}.dshg-tag{display:inline-flex;align-items:center;border:1px solid var(--dshg-border2);border-radius:5px;padding:0 5px;font-size:10.5px;line-height:1.6;white-space:nowrap}.dshg-tag[data-tone=warn]{color:var(--dshg-warn);border-color:var(--dshg-warn)}.dshg-tag[data-tone=error]{color:var(--dshg-error);border-color:var(--dshg-error)}.dshg-tag[data-tone=ok]{color:var(--dshg-success);border-color:var(--dshg-success)}.dshg-tag[data-tone=business]{color:var(--dshg-business);border-color:var(--dshg-business)}"],
-      ["rows", ".dshg-cap{display:flex;flex-direction:column;gap:8px;padding:9px 12px;border-top:1px solid var(--dshg-border)}.dshg-cap:first-child{border-top:0}.dshg-capMain{display:flex;gap:9px;align-items:flex-start;flex-wrap:wrap}.dshg-capId{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;font-weight:600;word-break:break-all}.dshg-capMeta{display:flex;gap:7px;align-items:center;flex-wrap:wrap;color:var(--dshg-sub);font-size:11.5px}.dshg-detail{display:flex;flex-direction:column;gap:8px;border:1px solid var(--dshg-border);border-radius:10px;padding:8px 10px;background:var(--dshg-layer)}.dshg-chain{display:flex;gap:4px;align-items:center;flex-wrap:wrap}.dshg-step{border:1px solid var(--dshg-border);border-radius:5px;padding:0 5px;font-size:10.5px;color:var(--dshg-faint)}.dshg-step[data-hit=true]{color:var(--dshg-business);border-color:var(--dshg-business);font-weight:600}.dshg-member{display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:3px 0;border-top:1px dashed var(--dshg-border)}.dshg-member:first-child{border-top:0}.dshg-memberName{flex:1 1 190px;min-width:110px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;word-break:break-all}.dshg-hint{color:var(--dshg-faint);font-size:11px}.dshg-note{color:var(--dshg-sub);font-size:11.5px}.dshg-mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;word-break:break-all}"],
-      ["json", ".dshg-json{width:100%;box-sizing:border-box;min-height:260px;resize:vertical;border:1px solid var(--dshg-border2);border-radius:8px;padding:8px;background:var(--dsw-specific-input-major,transparent);color:inherit;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;line-height:1.5}.dshg-diff{display:flex;flex-direction:column;gap:4px;font-size:11.5px}.dshg-diffRow{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;padding:2px 0;border-top:1px dashed var(--dshg-border)}"],
-      ["a11y", "*:focus-visible{outline:2px solid var(--dsw-alias-border-focus,var(--dshg-business));outline-offset:2px}.dshg-sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}"],
-      ["responsive", "@media (max-width:720px){.dshg-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.dshg-input{flex-basis:100%}.dshg-json{min-height:200px}}"],
-      ["motion", "@media (prefers-reduced-motion:reduce){.dshg-wrap *{transition:none;animation:none;scroll-behavior:auto}}"],
+      ["tokens", ".dshg-wrap{--dshg-bg:var(--dsw-alias-bg-base,#16181d);--dshg-layer1:var(--dsw-alias-bg-layer-1,#1d2027);--dshg-layer2:var(--dsw-alias-bg-layer-2,#23262e);--dshg-layer3:var(--dsw-alias-bg-layer-3,#2a2e37);--dshg-card:var(--dsw-alias-settings-card-fill,var(--dshg-layer1));--dshg-stroke:var(--dsw-alias-settings-card-stroke,var(--dsw-alias-border-l1,#333845));--dshg-stroke2:var(--dsw-alias-border-l2,#2a2e37);--dshg-text:var(--dsw-alias-label-primary,#e6e8ee);--dshg-text2:var(--dsw-alias-label-secondary,#b6bbc7);--dshg-text3:var(--dsw-alias-label-tertiary,#8b919e);--dshg-accent:var(--dsw-alias-button-primary-fill,#4f8cff);--dshg-accentHover:var(--dsw-alias-button-primary-hover,#6a9dff);--dshg-hover:var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,.06));--dshg-active:var(--dsw-alias-interactive-bg-active,rgba(255,255,255,.1));--dshg-dangerHover:var(--dsw-alias-interactive-bg-hover-danger,rgba(255,107,107,.16));--dshg-focus:var(--dsw-focus-ring-color,#6a9dff);--dshg-ok:var(--dsw-alias-state-success-primary,#3ecf8e);--dshg-okSoft:var(--dsw-alias-state-success-secondary,rgba(62,207,142,.14));--dshg-warn:var(--dsw-alias-state-warn-primary,#f0b429);--dshg-warnSoft:var(--dsw-alias-state-warn-secondary,rgba(240,180,41,.16));--dshg-danger:var(--dsw-alias-state-error-primary,#ff6b6b);--dshg-dangerSoft:var(--dsw-alias-state-error-secondary,rgba(255,107,107,.14));--dshg-business:var(--dsw-alias-state-business-primary,#4f8cff);--dshg-businessSoft:var(--dsw-alias-state-business-secondary,rgba(79,140,255,.14));--dshg-tier-resident:var(--dshg-ok);--dshg-tier-ondemand:var(--dshg-business);--dshg-tier-off:var(--dsw-alias-label-secondary,#9aa0ae);--dshg-radiusLg:var(--dsw-radius-lg,12px);--dshg-radiusMd:var(--dsw-radius-md,8px);--dshg-radiusSm:var(--dsw-radius-sm,6px);--dshg-font:var(--dsw-font-family,system-ui,sans-serif);--dshg-mono:var(--dsw-font-mono,ui-monospace,SFMono-Regular,Consolas,monospace);display:flex;flex-direction:column;gap:10px;padding:12px;color:var(--dshg-text);font-family:var(--dshg-font);font-size:12.5px;line-height:1.55;background:var(--dshg-bg)}"],
+      ["shell", ".dshg-top{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 10px;border:1px solid var(--dshg-stroke);border-radius:var(--dshg-radiusLg);background:var(--dshg-card)}.dshg-chips{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.dshg-grow{flex:1 1 200px;min-width:0}.dshg-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.dshg-col{display:flex;flex-direction:column;gap:8px}.dshg-wraps{display:flex;gap:6px;flex-wrap:wrap}.dshg-foot{display:flex;gap:10px;align-items:center;flex-wrap:wrap;color:var(--dshg-text3);font-size:11.5px}.dshg-hint{color:var(--dshg-text2);font-size:11.5px;word-break:break-word}.dshg-note{color:var(--dshg-text3);font-size:11.5px}.dshg-mono{font-family:var(--dshg-mono);font-size:11.5px;white-space:pre-wrap;word-break:break-all;background:var(--dshg-layer2);border-radius:var(--dshg-radiusSm);padding:6px 8px;margin:0}.dshg-purpose{color:var(--dshg-text2);font-size:12px;padding:2px 2px 0}.dshg-section{border-top:1px dashed var(--dshg-stroke2);padding-top:8px;margin-top:2px}.dshg-subTitle{font-weight:600;font-size:12.5px;color:var(--dshg-text)}.dshg-wrap>div:empty{display:none}"],
+      ["card", ".dshg-card{border:1px solid var(--dshg-stroke);border-radius:var(--dshg-radiusLg);background:var(--dshg-card);overflow:hidden;box-shadow:0 1px 2px rgba(0,0,0,.12)}.dshg-cardHead{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 14px;border-bottom:1px solid var(--dshg-stroke2)}.dshg-cardTitle{font-weight:650;font-size:13px}.dshg-cardBody{display:flex;flex-direction:column;gap:10px;padding:12px 14px}.dshg-corrupt{border-color:var(--dshg-danger)}.dshg-list{display:flex;flex-direction:column;gap:8px}.dshg-panel{display:flex;flex-direction:column;gap:10px;outline:none}.dshg-chip{display:inline-flex;gap:5px;align-items:center;padding:2px 9px;border-radius:999px;border:1px solid var(--dshg-stroke);background:var(--dshg-layer2);color:var(--dshg-text2);font-size:11.5px;white-space:nowrap}"],
+      ["tabs", ".dshg-tabs{display:flex;gap:4px;align-items:center;padding:3px;border:1px solid var(--dshg-stroke);border-radius:var(--dshg-radiusMd);background:var(--dshg-layer2)}.dshg-tab{display:inline-flex;gap:6px;align-items:center;border:0;background:transparent;color:var(--dshg-text2);font:inherit;font-size:12.5px;padding:6px 12px;border-radius:var(--dshg-radiusSm);cursor:pointer;min-height:34px}.dshg-tab[aria-selected='true']{background:var(--dshg-card);color:var(--dshg-text);font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,.18)}.dshg-tabCount{color:var(--dshg-text3);font-size:11px}.dshg-tab:hover:not([aria-selected='true']){background:var(--dshg-hover);color:var(--dshg-text)}"],
+      ["controls", ".dshg-btn{display:inline-flex;gap:6px;align-items:center;justify-content:center;border:1px solid var(--dshg-stroke);background:var(--dshg-layer2);color:var(--dshg-text);font:inherit;font-size:12px;padding:6px 11px;border-radius:var(--dshg-radiusSm);cursor:pointer;min-height:32px}.dshg-btn[data-primary='true']{background:var(--dshg-accent);border-color:transparent;color:#fff;font-weight:600}.dshg-btn[data-danger='true']{color:var(--dshg-danger);border-color:var(--dshg-dangerSoft)}.dshg-btn:disabled{opacity:.5;cursor:not-allowed}.dshg-btn:hover:not(:disabled){background:var(--dshg-hover)}.dshg-btn[data-primary='true']:hover:not(:disabled){background:var(--dshg-accentHover)}.dshg-btn[data-danger='true']:hover:not(:disabled){background:var(--dshg-dangerHover)}.dshg-input{flex:1 1 220px;min-width:0;min-height:32px;padding:6px 10px;border:1px solid var(--dshg-stroke);border-radius:var(--dshg-radiusSm);background:var(--dshg-layer1);color:var(--dshg-text);font:inherit;font-size:12px}.dshg-select{min-height:32px;padding:6px 8px;border:1px solid var(--dshg-stroke);border-radius:var(--dshg-radiusSm);background:var(--dshg-layer1);color:var(--dshg-text);font:inherit;font-size:12px}.dshg-json{width:100%;min-height:240px;padding:10px 12px;border:1px solid var(--dshg-stroke);border-radius:var(--dshg-radiusMd);background:var(--dshg-layer1);color:var(--dshg-text);font-family:var(--dshg-mono);font-size:11.5px;line-height:1.5;resize:vertical}.dshg-field{display:flex;flex-direction:column;gap:4px;flex:1 1 200px;min-width:0}.dshg-form{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-start}.dshg-filters{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.dshg-filterBar{padding:10px 12px;border-radius:var(--dshg-radiusMd)}"],
+      ["seg", ".dshg-seg{display:inline-flex;gap:2px;padding:2px;border:1px solid var(--dshg-stroke);border-radius:var(--dshg-radiusSm);background:var(--dshg-layer1)}.dshg-seg button{border:0;background:transparent;color:var(--dshg-text2);font:inherit;font-size:11.5px;padding:4px 10px;border-radius:4px;cursor:pointer;min-height:26px}.dshg-seg button[aria-pressed='true']{font-weight:600;color:var(--dshg-text);background:var(--dshg-layer3)}.dshg-seg button[aria-pressed='true'][data-tier='1']{color:var(--dshg-tier-resident);background:var(--dshg-okSoft)}.dshg-seg button[aria-pressed='true'][data-tier='2']{color:var(--dshg-tier-ondemand);background:var(--dshg-businessSoft)}.dshg-seg button[aria-pressed='true'][data-tier='0']{color:var(--dshg-text);background:var(--dshg-layer3)}.dshg-seg button:hover:not([aria-pressed='true']){background:var(--dshg-hover);color:var(--dshg-text)}.dshg-seg button:hover:not([aria-pressed='true'])[data-tier='1']{color:var(--dshg-tier-resident)}.dshg-seg button:hover:not([aria-pressed='true'])[data-tier='2']{color:var(--dshg-tier-ondemand)}.dshg-seg button:hover:not([aria-pressed='true'])[data-tier='0']{color:var(--dshg-text)}"],
+      ["switch", ".dshg-switch{display:inline-flex;gap:8px;align-items:center;border:0;background:transparent;color:var(--dshg-text);font:inherit;font-size:12px;padding:2px 4px;cursor:pointer;min-height:32px}.dshg-switch i{width:30px;height:18px;border-radius:999px;background:var(--dshg-layer3);border:1px solid var(--dshg-stroke);position:relative;flex:0 0 auto;transition:background .12s ease}.dshg-switch[aria-checked='true'] i{background:var(--dshg-accent);border-color:transparent}.dshg-switch[aria-checked='true'] i::after{content:'';position:absolute;top:2px;left:14px;width:12px;height:12px;border-radius:50%;background:#fff}.dshg-switch[aria-checked='false'] i::after{content:'';position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;background:var(--dshg-text3)}.dshg-switch:disabled{opacity:.5;cursor:not-allowed}"],
+      ["groups", ".dshg-group{border:1px solid var(--dshg-stroke);border-radius:var(--dshg-radiusLg);background:var(--dshg-card);overflow:hidden}.dshg-subGroup{border:1px solid var(--dshg-stroke2);border-radius:var(--dshg-radiusMd);background:var(--dshg-layer1);overflow:hidden}.dshg-groupHeadWrap{display:flex;gap:8px;align-items:center;padding:4px 10px 4px 6px;background:var(--dshg-layer2)}.dshg-groupHead{display:flex;gap:8px;align-items:center;flex:1 1 auto;min-width:0;border:0;background:transparent;color:var(--dshg-text);font:inherit;font-size:12.5px;padding:8px 6px;text-align:left;cursor:pointer;min-height:40px}.dshg-groupCaret{color:var(--dshg-text3);width:12px;flex:0 0 auto}.dshg-groupName{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.dshg-groupCount{color:var(--dshg-text3);font-size:11.5px;white-space:nowrap}.dshg-groupOps{display:flex;gap:6px;align-items:center;flex:0 0 auto}.dshg-groupBody{display:flex;flex-direction:column;gap:8px;padding:10px}.dshg-groupHead:hover{background:var(--dshg-hover);border-radius:var(--dshg-radiusSm)}"],
+      ["rows", ".dshg-capRow{border:1px solid var(--dshg-stroke2);border-radius:var(--dshg-radiusMd);background:var(--dshg-layer1)}.dshg-capMain{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 12px;min-height:52px}.dshg-capId{font-family:var(--dshg-mono);font-size:12px;font-weight:600;word-break:break-all}.dshg-rowMeta{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:3px}.dshg-detail{display:flex;flex-direction:column;gap:8px;padding:0 12px 12px;border-top:1px dashed var(--dshg-stroke2);margin-top:2px;padding-top:10px}.dshg-chain{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.dshg-step{padding:2px 8px;border-radius:999px;border:1px solid var(--dshg-stroke2);background:var(--dshg-layer2);color:var(--dshg-text3);font-size:11px}.dshg-memberRow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:6px 8px;border-radius:var(--dshg-radiusSm);background:var(--dshg-layer2)}.dshg-memberName{font-family:var(--dshg-mono);font-size:11.5px;min-width:0;word-break:break-all}.dshg-importRow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:6px 8px;border-radius:var(--dshg-radiusSm);background:var(--dshg-layer2)}"],
+      ["badges", ".dshg-badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;background:var(--dshg-layer3);color:var(--dshg-text2);font-size:11px;white-space:nowrap}.dshg-tag{display:inline-flex;align-items:center;padding:1px 7px;border-radius:999px;background:var(--dshg-layer3);color:var(--dshg-text2);font-size:11px;white-space:nowrap}.dshg-tag[data-tone='ok']{background:var(--dshg-okSoft);color:var(--dshg-ok)}.dshg-tag[data-tone='warn']{background:var(--dshg-warnSoft);color:var(--dshg-warn)}.dshg-tag[data-tone='error']{background:var(--dshg-dangerSoft);color:var(--dshg-danger)}.dshg-tag[data-tone='business']{background:var(--dshg-businessSoft);color:var(--dshg-business)}.dshg-tag[data-tone='muted']{background:var(--dshg-layer2);color:var(--dshg-text3)}.dshg-tag[data-tone='info']{background:var(--dshg-layer3);color:var(--dshg-text2)}.dshg-chip[data-tone='ok']{color:var(--dshg-ok);border-color:var(--dshg-okSoft)}.dshg-chip[data-tone='business']{color:var(--dshg-business);border-color:var(--dshg-businessSoft)}.dshg-chip[data-tone='muted']{color:var(--dshg-text3)}.dshg-chip[data-tone='warn']{color:var(--dshg-warn);border-color:var(--dshg-warnSoft)}"],
+      ["feedback", ".dshg-alert{padding:8px 11px;border-radius:var(--dshg-radiusSm);border:1px solid var(--dshg-stroke);background:var(--dshg-layer2);color:var(--dshg-text2);font-size:12px}.dshg-alert[data-tone='error']{border-color:var(--dshg-dangerSoft);background:var(--dshg-dangerSoft);color:var(--dshg-danger)}.dshg-alert[data-tone='warn']{border-color:var(--dshg-warnSoft);background:var(--dshg-warnSoft);color:var(--dshg-warn)}.dshg-alert[data-tone='info']{border-color:var(--dshg-businessSoft);background:var(--dshg-businessSoft);color:var(--dshg-text)}.dshg-alert[data-tone='ok']{border-color:var(--dshg-okSoft);background:var(--dshg-okSoft);color:var(--dshg-ok)}.dshg-empty{padding:18px 12px;border:1px dashed var(--dshg-stroke2);border-radius:var(--dshg-radiusMd);color:var(--dshg-text3);font-size:12px;text-align:center}.dshg-skeleton{height:38px;border-radius:var(--dshg-radiusSm);background:linear-gradient(90deg,var(--dshg-layer2),var(--dshg-layer3),var(--dshg-layer2))}.dshg-toasts{display:flex;flex-direction:column;gap:6px}.dshg-toast{display:flex;gap:10px;align-items:center;padding:8px 10px;border-radius:var(--dshg-radiusSm);border:1px solid var(--dshg-stroke);background:var(--dshg-layer2);font-size:12px}.dshg-toast[data-tone='ok']{border-color:var(--dshg-okSoft)}.dshg-toast[data-tone='warn']{border-color:var(--dshg-warnSoft);color:var(--dshg-warn)}.dshg-toast[data-tone='error']{border-color:var(--dshg-dangerSoft);color:var(--dshg-danger)}.dshg-toastClose{margin-left:auto;min-height:24px;padding:0 8px}.dshg-confirm{position:fixed;left:50%;top:18px;transform:translateX(-50%);z-index:40;display:flex;flex-direction:column;gap:10px;width:min(560px,92vw);padding:14px;border:1px solid var(--dshg-stroke);border-radius:var(--dshg-radiusLg);background:var(--dshg-layer2);box-shadow:0 12px 32px rgba(0,0,0,.4)}.dshg-diff{display:flex;flex-direction:column;gap:4px;padding:8px 10px;border-radius:var(--dshg-radiusSm);border:1px solid var(--dshg-stroke2);background:var(--dshg-layer2)}.dshg-diffRow{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;padding:2px 0;font-size:11.5px;color:var(--dshg-text2)}"],
+      ["save", ".dshg-saveBar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px 12px;border:1px solid var(--dshg-stroke);border-radius:var(--dshg-radiusLg);background:var(--dshg-layer2);position:sticky;bottom:0}.dshg-saveClean{border-style:dashed;padding:6px 10px}.dshg-saveTitle{font-weight:600;font-size:12.5px}"],
+      ["a11y", ".dshg-wrap :focus-visible{outline:2px solid var(--dshg-focus);outline-offset:2px}.dshg-wrap [aria-busy='true']{cursor:progress}.dshg-wrap [hidden]{display:none !important}"],
+      ["responsive", "@media (max-width:720px){.dshg-top{flex-wrap:wrap}.dshg-capMain{flex-wrap:wrap}.dshg-saveBar{flex-direction:column;align-items:stretch}.dshg-filters{flex-direction:column;align-items:stretch}.dshg-input,.dshg-select{flex-basis:100%;width:100%}.dshg-groupHeadWrap{flex-wrap:wrap}.dshg-groupOps{width:auto;margin-left:auto;justify-content:flex-end}.dshg-groupOps .dshg-select{width:auto;flex-basis:auto}.dshg-tabs{overflow-x:auto}.dshg-json{min-height:180px}.dshg-foot{flex-direction:column;align-items:flex-start}.dshg-confirm{width:92vw;top:8px}}"],
+      ["motion", "@media (prefers-reduced-motion:reduce){.dshg-wrap *{transition:none !important;animation:none !important;scroll-behavior:auto !important}}"],
     ]);
 
     const styleText = () => STYLE_SECTIONS.map((section) => section[1]).join("");
@@ -639,6 +680,7 @@ window.__ModuleLoader__.load({
             const skills = isObject(content.skills) ? content.skills : {};
             return skills.takeover !== false;
           }
+          if (field === "enabled") return content.enabled !== false;
         }
         return undefined;
       };
@@ -880,6 +922,7 @@ window.__ModuleLoader__.load({
         const skills = {};
         let skillpack;
         let takeover;
+        let enabled;
         const guardrail = {};
         const catalog = {};
         let signatureEnabled;
@@ -904,7 +947,9 @@ window.__ModuleLoader__.load({
           else if (key === keys.signature("tools")) signatureTools = listOf(cell.value);
           else if (key === keys.defaults("skillpack")) skillpack = cell.value;
           else if (key === keys.defaults("takeover")) takeover = cell.value === true;
+          else if (key === keys.defaults("enabled")) enabled = cell.value === true;
         }
+        const removedOff = offRemoved();
         return {
           revision: state.revision,
           jsonDirty: state.jsonDirty === true,
@@ -915,8 +960,10 @@ window.__ModuleLoader__.load({
           skills: skills,
           skillpack: skillpack,
           takeover: takeover,
+          enabled: enabled,
           imports: importsDirty() ? importsSnapshot() : null,
-          offRemoved: offRemoved(),
+          offRemoved: removedOff,
+          offList: offOf(basePolicy()).filter((name) => removedOff.indexOf(name) < 0),
           signature: { enabled: signatureEnabled, tools: signatureTools },
           guardrail: guardrail,
           catalog: catalog,
@@ -933,6 +980,7 @@ window.__ModuleLoader__.load({
         if (!isObject(content.catalog)) content.catalog = { groupByPlugin: true, maxDescriptionLength: 64 };
         if (!isObject(content.repeatGuard)) content.repeatGuard = { enabled: true, windowSize: 10, threshold: 3, reminders: 1, previewChars: 400, exclusions: [] };
         const snapshot = policySnapshot();
+        if (snapshot.enabled !== undefined) content.enabled = snapshot.enabled === true;
         const capIds = Object.keys(snapshot.caps);
         for (let index = 0; index < capIds.length; index += 1) {
           const id = capIds[index];
@@ -990,29 +1038,34 @@ window.__ModuleLoader__.load({
             tools: snapshot.signature.tools === undefined ? listOf(baseSummary.tools) : snapshot.signature.tools,
           };
         }
+        const readOnlyFields = ["revision", "corrupt", "path", "warnings", "ok", "error", "code", "generatedAt", "readAt", "mtimeMs", "size", "source"];
+        for (let index = 0; index < readOnlyFields.length; index += 1) delete content[readOnlyFields[index]];
         return content;
       };
 
       const revisionOf = () => (state.baselineMeta && state.baselineMeta.revision !== undefined ? state.baselineMeta.revision : null);
 
-      const toPolicyBody = (options) => Object.assign(clone(toPolicy()), { replace: true, revision: revisionOf() }, options || {});
+      const withRevision = (body) => {
+        const rev = revisionOf();
+        if (rev !== null) body.expectedRevision = rev;
+        return body;
+      };
+      const toPolicyBody = (options) => {
+        const body = Object.assign(clone(toPolicy()), { replace: true, acknowledge: true }, options || {});
+        if (body.expectedRevision === undefined && revisionOf() !== null) body.expectedRevision = revisionOf();
+        return body;
+      };
       const toSignatureBody = () => {
         const snapshot = signatureSnapshot();
-        const body = { catalog: { signatureSummary: { enabled: snapshot.enabled === true, tools: listOf(snapshot.tools) } } };
-        if (revisionOf() !== null) body.revision = revisionOf();
-        return body;
+        return withRevision({ catalog: { signatureSummary: { enabled: snapshot.enabled === true, tools: listOf(snapshot.tools) } } });
       };
       const toGuardBody = () => {
         const snapshot = policySnapshot();
-        const body = { repeatGuard: snapshot.guardrail };
-        if (revisionOf() !== null) body.revision = revisionOf();
-        return body;
+        return withRevision({ repeatGuard: snapshot.guardrail });
       };
       const toCatalogBody = () => {
         const snapshot = policySnapshot();
-        const body = { catalog: snapshot.catalog };
-        if (revisionOf() !== null) body.revision = revisionOf();
-        return body;
+        return withRevision({ catalog: snapshot.catalog });
       };
 
       const toSkillOperations = () => {
@@ -1022,7 +1075,7 @@ window.__ModuleLoader__.load({
         if (snapshot.takeover !== undefined) operations.push({ action: "takeover", value: snapshot.takeover === true, key: keys.defaults("takeover") });
         const names = Object.keys(snapshot.skills);
         for (let index = 0; index < names.length; index += 1) operations.push({ action: "tier", name: names[index], tier: snapshot.skills[names[index]], key: keys.skill(names[index]) });
-        for (let index = 0; index < snapshot.offRemoved.length; index += 1) operations.push({ action: "off-remove", name: snapshot.offRemoved[index], key: keys.close(snapshot.offRemoved[index]) });
+        if (snapshot.offRemoved.length > 0) operations.push({ action: "off", off: snapshot.offList.slice(), key: keys.close(snapshot.offRemoved[0]) });
         return operations;
       };
 
@@ -1505,14 +1558,36 @@ window.__ModuleLoader__.load({
           return false;
         });
 
+        const nativeClusterOf = (row) => {
+          const raw = String(row.id || "").toLowerCase().replace(/^native:/, "");
+          if (/^(read|write|edit|glob|grep|file|notebook|image|patch|diff)/.test(raw) || /read_image/.test(raw)) return { key: "files", label: "文件与检索", order: 0 };
+          if (/^(bash|pwsh|shell|exec|terminal|user_terminal|job|working_directory|run_code|process|pty)/.test(raw)) return { key: "exec", label: "命令与终端", order: 1 };
+          if (/^(web|fetch|search|http|ssh|remote|weather|video|domain|platform|research|cache_search|multi_search|advanced_search|free_search|url)/.test(raw)) return { key: "net", label: "网络与远程", order: 2 };
+          if (/^(subagent|agent|team|goal|todo|ask_user|schedule|plan|ralph|present|suggest|propose|session|compress|decompress|acp|wait_agent|send_message|list_agent|worktree|validate_dsh_ui|render_ui)/.test(raw)) return { key: "agent", label: "代理与会话", order: 3 };
+          return { key: "other", label: "其它内置", order: 4 };
+        };
+
         const groups = [];
         const buckets = {};
         for (let index = 0; index < filtered.length; index += 1) {
           const row = filtered[index];
-          if (!buckets[row.kind]) { buckets[row.kind] = []; groups.push({ kind: row.kind, label: KIND_LABEL[row.kind] || row.kind, rows: buckets[row.kind] }); }
+          if (!buckets[row.kind]) { buckets[row.kind] = []; groups.push({ kind: row.kind, label: KIND_LABEL[row.kind] || row.kind, rows: buckets[row.kind], subgroups: [] }); }
           buckets[row.kind].push(row);
         }
         groups.sort((left, right) => (KIND_ORDER[left.kind] === undefined ? 9 : KIND_ORDER[left.kind]) - (KIND_ORDER[right.kind] === undefined ? 9 : KIND_ORDER[right.kind]));
+        for (let index = 0; index < groups.length; index += 1) {
+          if (groups[index].kind !== "native") continue;
+          const subMap = {};
+          const subList = [];
+          for (let cursor = 0; cursor < groups[index].rows.length; cursor += 1) {
+            const row = groups[index].rows[cursor];
+            const cluster = nativeClusterOf(row);
+            if (!subMap[cluster.key]) { subMap[cluster.key] = { key: cluster.key, label: cluster.label, order: cluster.order, rows: [] }; subList.push(subMap[cluster.key]); }
+            subMap[cluster.key].rows.push(row);
+          }
+          subList.sort((left, right) => left.order - right.order);
+          groups[index].subgroups = subList;
+        }
 
         const residueCount = rows.filter((row) => row.chain.hitRule === "defaults" && row.chain.reasonChain.length === 0).length;
         const invalidCount = rows.filter((row) => row.blocking).length;
@@ -1615,7 +1690,8 @@ window.__ModuleLoader__.load({
         { key: "skills", path: "/api/dsh-gate/skills" },
         { key: "mcp", path: "/api/dsh-gate/mcp" },
       ]);
-      const WRITE_ACTIONS = Object.freeze(["reload", "save-policy", "save-skills", "save-signature", "mcp"]);
+      const WRITE_ACTIONS = Object.freeze(["reload", "switch-session", "replace-json", "save-policy", "save-skills", "save-signature", "save-all", "mcp", "toggle-enabled"]);
+      const DISCARD_CONFIRM_ACTIONS = Object.freeze(["reload", "switch-session", "replace-json"]);
       const AUTO_INTERVALS = Object.freeze([15, 30, 60]);
       const CONFLICT_CHOICES = Object.freeze([
         { value: "load-latest", label: "载入最新并丢弃我的", consequence: "服务端 revision 更新；本地未提交草稿全部丢弃" },
@@ -1942,7 +2018,8 @@ window.__ModuleLoader__.load({
       const preflight = (action, summary) => {
         const current = summary || (draft && typeof draft.dirtySummary === "function" ? draft.dirtySummary() : { total: 0, text: "", jsonDirty: false });
         const total = current.total === undefined ? 0 : current.total;
-        const needsConfirm = total > 0;
+        const isDiscardAction = DISCARD_CONFIRM_ACTIONS.indexOf(action) >= 0;
+        const needsConfirm = total > 0 && isDiscardAction;
         return {
           action: action,
           known: WRITE_ACTIONS.indexOf(action) >= 0,
@@ -1989,11 +2066,15 @@ window.__ModuleLoader__.load({
         if (!result || !result.ok) return { ok: false, sessions: [], error: result ? result.error : "读取失败" };
         const body = isObject(result.body) ? result.body : {};
         const runtime = isObject(body.runtime) ? body.runtime : {};
-        const rows = Array.isArray(body.sessions) ? body.sessions : (Array.isArray(runtime.sessions) ? runtime.sessions : []);
+        const agentIds = isObject(runtime.agents) && Array.isArray(runtime.agents.ids) ? runtime.agents.ids : null;
+        const rows = agentIds && agentIds.length > 0
+          ? agentIds
+          : (Array.isArray(body.sessions) ? body.sessions : (Array.isArray(runtime.sessions) ? runtime.sessions : []));
         return {
           ok: true,
           error: "",
           sessions: rows.map((item, index) => {
+            if (typeof item === "string" && item.length > 0) return { id: item, label: item, source: "panel" };
             const row = isObject(item) ? item : {};
             const id = String(row.agent !== undefined ? row.agent : (row.id !== undefined ? row.id : "session-" + index));
             return { id: id, label: String(row.label !== undefined ? row.label : id), source: "panel" };
@@ -2017,10 +2098,25 @@ window.__ModuleLoader__.load({
         return true;
       };
 
-      const savePolicy = (body) => write({ path: "/api/dsh-gate/policy", action: "policy", body: body, queueKey: "policy:" + (body && body.revision) });
+      const savePolicy = (body) => write({ path: "/api/dsh-gate/policy", action: "policy", body: body, queueKey: "policy:" + (body && (body.expectedRevision || body.revision)) });
       const saveSignature = (body) => write({ path: "/api/dsh-gate/policy", action: "signature", body: body, queueKey: "signature" });
       const saveGuard = (body) => write({ path: "/api/dsh-gate/policy", action: "guardrail", body: body, queueKey: "guardrail" });
       const saveCatalog = (body) => write({ path: "/api/dsh-gate/policy", action: "catalog", body: body, queueKey: "catalog" });
+      const toggleEnabled = (nextEnabled) => {
+        const body = { enabled: Boolean(nextEnabled) };
+        if (lastRevision !== null) body.expectedRevision = lastRevision;
+        return write({ path: "/api/dsh-gate/policy", action: "toggle-enabled", body: body, queueKey: "toggle-enabled" });
+      };
+      const recoverCorruptPolicy = (template) => {
+        const body = Object.assign(clone(isObject(template) ? template : fallbackTemplate()), {
+          replace: true,
+          acknowledge: true,
+          replaceCorrupt: true,
+          forceOverwriteCorrupt: true,
+        });
+        return write({ path: "/api/dsh-gate/policy", action: "recover-corrupt", body: body, queueKey: "recover-corrupt" });
+      };
+      const mcpMutate = (payload) => write({ path: "/api/dsh-gate/mcp", action: "mcp", body: payload, queueKey: "mcp:" + String(payload && payload.action || "") + ":" + String(payload && payload.name || "") });
 
       const dispose = () => {
         disposed = true;
@@ -2047,6 +2143,9 @@ window.__ModuleLoader__.load({
         saveSignature: saveSignature,
         saveGuard: saveGuard,
         saveCatalog: saveCatalog,
+        toggleEnabled: toggleEnabled,
+        recoverCorruptPolicy: recoverCorruptPolicy,
+        mcpMutate: mcpMutate,
         receiptOf: receiptOf,
         preflight: preflight,
         detectExternalChange: detectExternalChange,
@@ -2090,12 +2189,14 @@ window.__ModuleLoader__.load({
             const tone = TOAST_LIFETIME[entry.tone] === undefined ? "info" : entry.tone;
             const index = items.findIndex((item) => item.key === key);
             if (index >= 0) {
-              const merged = Object.assign({}, items[index], { text: String(entry.text === undefined ? items[index].text : entry.text), tone: tone, count: (items[index].count || 1) + 1, lifetime: lifetimeOf(tone) });
+              const mergedLifetime = lifetimeOf(tone);
+              const merged = Object.assign({}, items[index], { text: String(entry.text === undefined ? items[index].text : entry.text), tone: tone, count: (items[index].count || 1) + 1, lifetime: mergedLifetime, expiresAt: mergedLifetime > 0 ? Date.now() + mergedLifetime : 0 });
               items = items.slice();
               items[index] = merged;
               return merged;
             }
-            const next = { key: key, tone: tone, text: String(entry.text === undefined ? "" : entry.text), count: 1, lifetime: lifetimeOf(tone) };
+            const nextLifetime = lifetimeOf(tone);
+            const next = { key: key, tone: tone, text: String(entry.text === undefined ? "" : entry.text), count: 1, lifetime: nextLifetime, expiresAt: nextLifetime > 0 ? Date.now() + nextLifetime : 0 };
             items = items.concat([next]);
             while (items.length > MAX_TOASTS) items.shift();
             return next;
@@ -2123,10 +2224,10 @@ window.__ModuleLoader__.load({
         const key = value.key || "state";
         if (state === "loading") return skeleton({ key: key, rows: value.rows });
         if (state === "ready") return h("div", { key: key, className: "dshg-col" }, value.children === undefined ? null : value.children);
-        if (state === "empty") return h("div", { key: key, className: "dshg-empty" }, value.message || text("common.empty"));
+        if (state === "empty") return h("div", { key: key, className: "dshg-empty" }, value.message || text("common.none"));
         if (state === "partial") {
           return h("div", { key: key, className: "dshg-col" }, [
-            h("div", { key: "banner", className: "dshg-alert", "data-tone": "warn", role: "status" }, value.message || text("common.partial")),
+            h("div", { key: "banner", className: "dshg-alert", "data-tone": "warn", role: "status" }, value.message || text("common.error")),
             h("div", { key: "body", className: "dshg-col" }, value.children === undefined ? null : value.children),
           ]);
         }
@@ -2183,6 +2284,7 @@ window.__ModuleLoader__.load({
           key: String(option.value),
           type: "button",
           "data-value": String(option.value),
+          "data-tier": option.tier === undefined || option.tier === null ? undefined : String(option.tier),
           "aria-pressed": option.value === value.value,
           disabled: value.disabled === true,
           title: value.disabled === true ? (value.reason || "") : (option.title || ""),
@@ -2255,9 +2357,14 @@ window.__ModuleLoader__.load({
           "aria-atomic": "true",
         }, [
           h("span", { key: "text", className: "dshg-grow" }, item.text + (item.count > 1 ? "（" + item.count + "）" : "")),
-          item.tone === "error" || item.lifetime === 0
-            ? h("button", { key: "close", type: "button", className: "dshg-btn", "aria-label": "关闭提示", onClick: () => value.onDismiss(item.key) }, "×")
-            : null,
+          h("button", {
+            key: "close",
+            type: "button",
+            className: "dshg-btn dshg-toastClose",
+            "aria-label": text("toast.dismiss"),
+            title: text("toast.dismiss"),
+            onClick: () => value.onDismiss(item.key),
+          }, "×"),
         ])));
       };
 
@@ -2281,7 +2388,7 @@ window.__ModuleLoader__.load({
         return h("div", { key: value.key || "errorCard", className: "dshg-card" }, [
           h("div", { key: "head", className: "dshg-cardHead" }, [
             h("span", { key: "title" }, value.title || text("error.title")),
-            h("span", { key: "hint", className: "dshg-hint" }, text("error.summary") + "：" + String(value.message || "")),
+            h("span", { key: "hint", className: "dshg-hint" }, String(value.message || "")),
           ]),
           h("div", { key: "body", className: "dshg-cardBody" }, [
             h("div", { key: "summary", className: "dshg-alert", "data-tone": "error", role: "alert" }, String(value.summary || value.message || text("error.title"))),
@@ -2291,7 +2398,7 @@ window.__ModuleLoader__.load({
             ]) : null,
             h("div", { key: "actions", className: "dshg-row" }, [
               typeof value.onRetry === "function" ? h("button", { key: "retry", type: "button", className: "dshg-btn", onClick: value.onRetry }, text("retry")) : null,
-              typeof value.onCopy === "function" ? h("button", { key: "copy", type: "button", className: "dshg-btn", onClick: value.onCopy }, text("error.copy")) : null,
+              typeof value.onCopy === "function" ? h("button", { key: "copy", type: "button", className: "dshg-btn", onClick: value.onCopy }, text("error.copyDiagnostics")) : null,
             ]),
             value.diagnostics ? h("div", { key: "diag", className: "dshg-col" }, [
               h("div", { key: "label", className: "dshg-hint" }, text("error.diagnostics")),
@@ -2343,8 +2450,8 @@ window.__ModuleLoader__.load({
     }
 
     /* =====================================================================
-     * L6 · 页签视图（只做展示与事件上抛；页签局部状态由外壳持有并保留）
-     * 五视图：能力 / 技能 / MCP / JSON / 设置（K129-K134 全量入口）
+     * L6 · 页签视图（宽松卡片风：一页一用途，展示与事件上抛）
+     * 四页签：能力 / 技能 / MCP / 高级（原 JSON 编辑器并入高级页）
      * ===================================================================== */
     function createL6Views(deps) {
       const env = deps || {};
@@ -2352,13 +2459,19 @@ window.__ModuleLoader__.load({
       const text = typeof env.text === "function" ? env.text : (key) => key;
       const primitives = env.primitives;
 
-      const card = (key, title, children, headExtra) => h("div", { key: key, className: "dshg-card" }, [
-        h("div", { key: "head", className: "dshg-cardHead" }, [h("span", { key: "title" }, String(title))].concat(Array.isArray(headExtra) ? headExtra : [])),
-        h("div", { key: "body", className: "dshg-cardBody" }, children),
-      ]);
+      const card = (key, title, children, headExtra) => {
+        const head = [h("span", { key: "title", className: "dshg-cardTitle" }, String(title))];
+        if (Array.isArray(headExtra)) head.push.apply(head, headExtra);
+        else if (headExtra !== undefined && headExtra !== null && headExtra !== false) head.push(headExtra);
+        return h("div", { key: key, className: "dshg-card" }, [
+          h("div", { key: "head", className: "dshg-cardHead" }, head),
+          h("div", { key: "body", className: "dshg-cardBody" }, children),
+        ]);
+      };
+      const purpose = (key, content) => h("div", { key: key, className: "dshg-purpose" }, content);
       const hint = (key, content) => h("div", { key: key, className: "dshg-hint" }, content);
-      const note = (key, content) => h("div", { key: key, className: "dshg-note" }, content);
-      const alert = (key, content, tone) => h("div", { key: key, className: "dshg-alert", "data-tone": tone || "warn", role: tone === "error" ? "alert" : "status" }, content);
+      const tag = (key, label, tone) => h("span", { key: key, className: "dshg-tag", "data-tone": tone }, String(label));
+      const alert = (key, content, tone) => h("div", { key: key, className: "dshg-alert", "data-tone": tone || "info", role: tone === "error" ? "alert" : "status" }, content);
       const button = (key, label, onClick, options) => {
         const opts = options || {};
         return h("button", {
@@ -2368,370 +2481,444 @@ window.__ModuleLoader__.load({
           "data-primary": opts.primary === true ? "true" : undefined,
           "data-danger": opts.danger === true ? "true" : undefined,
           disabled: opts.disabled === true,
-          title: opts.reason || (opts.disabled === true ? "" : opts.title || ""),
+          title: opts.reason || opts.title || "",
           onClick: opts.disabled === true ? undefined : onClick,
         }, String(label));
       };
       const tierOptions = () => [
-        { value: 1, label: text("tier.resident") },
-        { value: 2, label: text("tier.ondemand") },
-        { value: 0, label: text("tier.off") },
+        { value: TIER_RESIDENT, tier: TIER_RESIDENT, label: text("tier.resident"), title: text("tier.residentHint") },
+        { value: TIER_ONDEMAND, tier: TIER_ONDEMAND, label: text("tier.ondemand"), title: text("tier.ondemandHint") },
+        { value: TIER_OFF, tier: TIER_OFF, label: text("tier.off"), title: text("tier.offHint") },
       ];
-      const tierLabel = (tier) => (TIER_LABEL[tier] === undefined ? text("tier.unset") : TIER_LABEL[tier]);
+      const tierLabel = (tier) => (TIER_LABEL[tier] === undefined ? text("common.none") : TIER_LABEL[tier]);
+      const purposeOf = (key, key2) => purpose(key, text(key2));
+      const statePanel = (key, purposeNode, stateNode) => h("div", { key: key, className: "dshg-col" }, [purposeNode, stateNode]);
+      const tierTag = (key, tier) => tag(key, tierLabel(tier), tier === TIER_RESIDENT ? "ok" : (tier === TIER_ONDEMAND ? "business" : "muted"));
 
+      // ---- 能力行（宽松卡片行：名称 + 标记 + 层色标 + 展开详情） ----
       const renderRow = (props, row) => {
-        const expanded = props.view.expanded[row.id] === true;
+        const view = props.view;
+        const expanded = view.expanded[row.id] === true;
         const disabled = row.blocking === true || row.readonlyService === true;
-        const markerNodes = [];
-        if (row.synthetic) markerNodes.push(h("span", { key: "m:synthetic", className: "dshg-tag", "data-tone": "business" }, "技能目录（聚合）"));
-        if (row.managed) markerNodes.push(h("span", { key: "m:managed", className: "dshg-tag", "data-tone": "business" }, text("caps.managed")));
-        if (row.draftTier !== null) markerNodes.push(h("span", { key: "m:pending", className: "dshg-tag", "data-tone": "warn" }, text("caps.pending")));
-        if (row.exceptionCount > 0) markerNodes.push(h("span", { key: "m:exc", className: "dshg-tag", "data-tone": "warn" }, text("caps.exception") + " " + row.exceptionCount));
-        if (row.deviations.length > 0) markerNodes.push(h("span", { key: "m:dev", className: "dshg-tag", "data-tone": "error" }, "偏离 " + row.deviations.length));
-        if (row.blocking) markerNodes.push(h("span", { key: "m:invalid", className: "dshg-tag", "data-tone": "error" }, text("caps.invalid")));
-        if (row.invalid && !row.blocking) markerNodes.push(h("span", { key: "m:invalidmark", className: "dshg-tag", "data-tone": "warn" }, text("tier.invalid")));
-        if (row.merged) markerNodes.push(h("span", { key: "m:merged", className: "dshg-tag" }, "已合并真实行"));
+        const markers = [];
+        if (row.synthetic === true) markers.push(tag("m:synthetic", text("caps.synthetic"), "info"));
+        if (row.merged === true) markers.push(tag("m:merged", text("caps.merged")));
+        if (row.managed === true) markers.push(tag("m:managed", text("caps.managed"), "info"));
+        if (row.readonlyService === true) markers.push(tag("m:readonly", text("caps.readonly"), "warn"));
+        if (row.draftTier !== null && row.draftTier !== undefined) markers.push(tag("m:pending", text("caps.pending"), "warn"));
+        if (row.exceptionCount > 0) markers.push(tag("m:exc", text("caps.exception") + " " + String(row.exceptionCount), "warn"));
+        if (row.deviations.length > 0) markers.push(tag("m:dev", text("caps.deviations") + " " + String(row.deviations.length), "error"));
+        if (row.upstreamHidden.length > 0) markers.push(tag("m:up", text("caps.upstream") + " " + String(row.upstreamHidden.length), "warn"));
+        if (row.blocking === true) markers.push(tag("m:blocked", text("caps.blocked"), "error"));
+        const chainSteps = [h("span", { key: "label", className: "dshg-hint" }, text("caps.chainTitle"))];
+        for (let index = 0; index < row.chain.steps.length; index += 1) {
+          const step = row.chain.steps[index];
+          chainSteps.push(h("span", { key: "step:" + step.key, className: "dshg-step", "data-hit": step.hit === true ? "true" : "false", "data-winner": step.winner === true ? "true" : "false" }, step.label + (step.count > 0 ? " " + String(step.count) : "") + (step.winner === true ? " · " + text("caps.winner") : "")));
+        }
+        const memberNodes = row.members.all.length === 0
+          ? hint("noMembers", text("caps.memberEmpty"))
+          : h("div", { key: "members", className: "dshg-col" }, row.members.all.map((member) => h("div", { key: "mem:" + member.kind + ":" + member.name, className: "dshg-memberRow" }, [
+            h("span", { key: "name", className: "dshg-memberName", title: member.name }, member.name),
+            tierTag("tier", member.tier),
+            h("span", { key: "reason", className: "dshg-hint" }, member.reason),
+            h("span", { key: "conf", className: "dshg-hint" }, text("caps.confidence") + " " + String(member.confidence)),
+            h("select", {
+              key: "exc",
+              className: "dshg-select",
+              "aria-label": text("caps.exception") + " " + member.name,
+              disabled: member.takenOver === true,
+              title: member.takenOver === true ? text("caps.managed") : text("caps.exception"),
+              value: member.exception && member.exception.tier !== undefined && member.exception.tier !== null ? String(member.exception.tier) : "",
+              onChange: (event) => props.actions.stageException(row.id, member.kind, member.name, event.target.value === "" ? null : Number(event.target.value)),
+            }, [
+              h("option", { key: "follow", value: "" }, text("caps.memberTier")),
+              h("option", { key: "1", value: "1" }, text("tier.resident")),
+              h("option", { key: "2", value: "2" }, text("tier.ondemand")),
+              h("option", { key: "0", value: "0" }, text("tier.off")),
+            ]),
+          ])));
         const detail = expanded ? h("div", { key: "detail", className: "dshg-detail" }, [
-          h("div", { key: "chain", className: "dshg-chain" }, row.chain.steps.map((step) => h("span", { key: "step:" + step.key, className: "dshg-step", "data-hit": step.hit, "data-winner": step.winner }, step.label + (step.count > 0 ? " " + step.count : "") + (step.winner ? " · " + text("chain.winner") : "")))),
-          hint("chainText", row.chain.text),
-          hint("final", text("chain.final") + "：" + tierLabel(row.effectiveTier) + " · " + text("chain.hit") + "：" + (row.chain.winnerLabel || text("common.none"))),
-          row.members.all.length === 0
-            ? hint("noMembers", row.synthetic ? "技能目录由 defaults.skillpack 统一控制" : "策略里有这个能力，但当前表面没有成员")
-            : h("div", { key: "members", className: "dshg-col" }, row.members.all.map((member) => h("div", { key: "mem:" + member.kind + ":" + member.name, className: "dshg-member" }, [
-                h("span", { key: "name", className: "dshg-memberName", title: member.name }, member.name),
-                h("span", { key: "tier", className: "dshg-tag" }, tierLabel(member.tier)),
-                h("span", { key: "reason", className: "dshg-hint" }, member.reason),
-                h("span", { key: "conf", className: "dshg-hint" }, "置信 " + member.confidence),
-                h("select", {
-                  key: "exc",
-                  className: "dshg-select",
-                  "aria-label": text("caps.exception") + " " + member.name,
-                  disabled: member.takenOver === true || member.reason === "own" || member.reason === "protected" || member.reason === "loaded",
-                  title: member.takenOver === true ? text("caps.locked") : "",
-                  value: member.exception && member.exception.tier !== undefined && member.exception.tier !== null ? String(member.exception.tier) : "",
-                  onChange: (event) => props.actions.stageException(row.id, member.kind, member.name, event.target.value === "" ? null : Number(event.target.value)),
-                }, [
-                  h("option", { key: "follow", value: "" }, text("caps.followCap")),
-                  h("option", { key: "1", value: "1" }, text("tier.resident")),
-                  h("option", { key: "2", value: "2" }, text("tier.ondemand")),
-                  h("option", { key: "0", value: "0" }, text("tier.off")),
-                ]),
-              ]))),
-          row.blocking ? alert("invalid", row.invalidReason + "（" + text("caps.blocked") + "）", "error") : null,
+          h("div", { key: "chain", className: "dshg-chain" }, chainSteps),
+          hint("chainText", row.chain.text || text("caps.chainNone")),
+          row.chain.winnerLabel ? hint("winner", text("caps.winner") + "：" + row.chain.winnerLabel) : null,
+          h("div", { key: "counts", className: "dshg-row" }, [
+            hint("tools", text("caps.tools") + " " + String(row.members.tools.length)),
+            hint("sections", text("caps.sections") + " " + String(row.members.sections.length)),
+            hint("tier", text("tier.label") + " " + tierLabel(row.effectiveTier)),
+          ]),
+          memberNodes,
+          row.invalidReason ? alert("invalid", String(row.invalidReason), "error") : null,
+          row.warnings.length > 0 ? h("div", { key: "warnings", className: "dshg-col" }, row.warnings.map((item, index) => alert("w:" + index, String(item), "warn"))) : null,
         ]) : null;
-        return h("div", { key: "row:" + row.id, className: "dshg-cap" }, [
+        const kindLabel = props.model && props.model.labels && props.model.labels.kinds && props.model.labels.kinds[row.kind] ? props.model.labels.kinds[row.kind] : row.kind;
+        return h("div", { key: "row:" + row.id, className: "dshg-capRow" }, [
           h("div", { key: "main", className: "dshg-capMain" }, [
-            h("span", { key: "badge", className: "dshg-badge", "data-kind": row.kind }, row.kind),
+            h("span", { key: "badge", className: "dshg-badge", "data-kind": row.kind }, String(kindLabel)),
             h("div", { key: "grow", className: "dshg-grow" }, [
               h("div", { key: "id", className: "dshg-capId", title: row.id }, row.id),
-              h("div", { key: "meta", className: "dshg-capMeta" }, markerNodes.concat([
-                h("span", { key: "cfg", className: "dshg-hint" }, row.configured ? "策略已配置" : "走 defaults"),
-                h("span", { key: "mc", className: "dshg-hint" }, row.memberCount + " 成员"),
-                h("span", { key: "tb", className: "dshg-hint" }, primitives.tierBar({ saved: row.savedTier, draft: row.draftTier, effective: row.effectiveTier })),
+              h("div", { key: "meta", className: "dshg-rowMeta" }, markers.concat([
+                hint("mc", String(row.memberCount) + " " + text("caps.member")),
+                hint("conf", text("caps.confidence") + " " + String(row.confidence)),
+                primitives.tierBar({ key: "tb", saved: row.savedTier, draft: row.draftTier, effective: row.effectiveTier }),
               ])),
             ]),
             primitives.segmented({
               key: "seg:" + row.id,
-              ariaLabel: "切换 " + row.id + " 的层",
+              ariaLabel: text("tier.label") + " · " + row.id,
               value: row.effectiveTier,
               options: tierOptions(),
               disabled: disabled,
-              reason: row.readonlyService ? text("caps.managed") : text("caps.blocked"),
+              reason: row.readonlyService === true ? text("caps.readonly") : text("caps.blocked"),
               onSelect: (tier) => props.actions.stageCap(row, tier),
             }),
-            button("why:" + row.id, expanded ? text("caps.hide") : text("caps.why"), () => props.actions.toggleRow(row.id), { title: text("chain.title") }),
+            button("why:" + row.id, expanded ? text("caps.collapse") : text("caps.expand"), () => props.actions.toggleRow(row.id), { title: text("caps.why") }),
           ]),
           detail,
         ]);
       };
 
-      const renderCaps = (props) => {
-        const model = props.model;
-        if (!model) return primitives.stateContainer({ key: "caps:loading", state: "loading", rows: 4 });
-        const view = props.view;
-        const searching = String(view.query || "").trim().length > 0;
-        const groups = model.groups.map((group) => {
-          const id = "caps:" + group.kind;
-          const open = view.openGroups[id] === undefined ? searching : view.openGroups[id] === true;
-          const batchRow = h("div", { key: "batch", className: "dshg-row" }, [
-            h("span", { key: "label", className: "dshg-hint" }, text("caps.groupBatch") + "（" + group.rows.length + " 条）"),
-            button("b1", text("tier.resident"), () => props.actions.requestGroupBatch(group.kind, TIER_RESIDENT)),
-            button("b2", text("tier.ondemand"), () => props.actions.requestGroupBatch(group.kind, TIER_ONDEMAND)),
-            button("b0", text("tier.off"), () => props.actions.requestGroupBatch(group.kind, TIER_OFF)),
-            hint("impact", text("caps.groupImpact") + "：" + group.rows.length + " 条"),
-          ]);
-          return h("div", { key: id, className: "dshg-group" }, [
-            primitives.groupHead({ key: "head:" + id, id: id, label: group.label, count: group.rows.length, open: open, onToggle: () => props.actions.toggleGroup(id, searching) }),
-            batchRow,
-            primitives.groupBody({ key: "body:" + id, id: id, open: open, children: group.rows.map((row) => renderRow(props, row)) }),
-          ]);
-        });
-        const filters = h("div", { key: "filters", className: "dshg-row" }, [
-          h("input", {
-            key: "query",
-            className: "dshg-input",
-            type: "search",
-            "aria-label": text("caps.search"),
-            placeholder: text("caps.search"),
-            value: view.query,
-            onChange: (event) => props.actions.setView({ query: event.target.value }),
-          }),
-          h("select", { key: "source", className: "dshg-select", "aria-label": text("caps.sourceAll"), value: view.sourceFilter, onChange: (event) => props.actions.setView({ sourceFilter: event.target.value }) },
-            [{ value: "all", label: text("caps.sourceAll") }].concat(Object.keys(model.labels.kinds).map((kind) => ({ value: kind, label: model.labels.kinds[kind] }))).map((option) => h("option", { key: option.value, value: option.value }, option.label))),
-          h("select", { key: "status", className: "dshg-select", "aria-label": text("caps.statusAll"), value: view.statusFilter, onChange: (event) => props.actions.setView({ statusFilter: event.target.value }) }, [
-            h("option", { key: "all", value: "all" }, text("caps.statusAll")),
+      const renderSubgroup = (props, group, sub, searching) => {
+        const id = "caps:" + group.kind + ":" + sub.key;
+        const open = props.view.openGroups[id] === undefined ? searching : props.view.openGroups[id] === true;
+        return h("div", { key: id, className: "dshg-subGroup" }, [
+          h("div", { key: "wrap", className: "dshg-groupHeadWrap" }, [
+            primitives.groupHead({ key: "head", id: id, label: sub.label, count: sub.rows.length, open: open, onToggle: () => props.actions.toggleGroup(id, searching) }),
+          ]),
+          primitives.groupBody({ key: "body", id: id, label: sub.label, open: open, children: sub.rows.map((row) => renderRow(props, row)) }),
+        ]);
+      };
+
+      const renderGroup = (props, group, searching) => {
+        const id = "caps:" + group.kind;
+        const open = props.view.openGroups[id] === undefined ? searching : props.view.openGroups[id] === true;
+        const ops = h("div", { key: "ops", className: "dshg-groupOps" }, [
+          h("select", {
+            key: "batch",
+            className: "dshg-select",
+            "aria-label": group.label + " · " + text("caps.groupSet"),
+            title: text("caps.groupSetHint"),
+            value: "",
+            onChange: (event) => {
+              const raw = event && event.target ? event.target.value : "";
+              if (raw === "") return;
+              props.actions.requestGroupBatch(group.kind, Number(raw));
+            },
+          }, [
+            h("option", { key: "none", value: "" }, text("caps.groupSet")),
             h("option", { key: "1", value: "1" }, text("tier.resident")),
             h("option", { key: "2", value: "2" }, text("tier.ondemand")),
             h("option", { key: "0", value: "0" }, text("tier.off")),
-            h("option", { key: "exc", value: "exception" }, text("caps.statusException")),
-            h("option", { key: "pending", value: "pending" }, text("caps.statusPending")),
           ]),
-          button("clear", text("caps.clear"), () => props.actions.setView({ query: "", sourceFilter: "all", statusFilter: "all" }), { disabled: String(view.query).length === 0 && view.sourceFilter === "all" && view.statusFilter === "all" }),
         ]);
-        const complaints = model.complaints.length === 0 ? null : card("caps:complaints", text("caps.complaints") + "（" + model.complaints.length + "）", [
-          alert("hint", text("caps.complaintsHint")),
-          h("ul", { key: "list", className: "dshg-col" }, model.complaints.slice(0, 10).map((item, index) => h("li", { key: "c:" + index, className: "dshg-hint" }, item.path + "：" + item.message))),
+        const children = group.subgroups && group.subgroups.length > 0
+          ? group.subgroups.map((sub) => renderSubgroup(props, group, sub, searching))
+          : group.rows.map((row) => renderRow(props, row));
+        return h("div", { key: id, className: "dshg-group" }, [
+          h("div", { key: "wrap", className: "dshg-groupHeadWrap" }, [
+            primitives.groupHead({ key: "head", id: id, label: group.label, count: group.rows.length, open: open, onToggle: () => props.actions.toggleGroup(id, searching) }),
+            ops,
+          ]),
+          primitives.groupBody({ key: "body", id: id, label: group.label, open: open, children: children }),
         ]);
-        const body = model.filtered.length === 0
-          ? primitives.stateContainer({ key: "caps:empty", state: "empty", message: text("caps.empty") })
-          : h("div", { key: "list", className: "dshg-list" }, groups);
-        const pendingCard = card("caps:pending", "待保存变更（" + props.summary.total + "）", [
-          note("summary", props.summary.text),
-          props.summary.total > 0 ? button("discard", text("discard"), () => props.actions.discard(), { danger: true }) : hint("clean", text("noChanges")),
-          hint("undo", text("undoHint")),
-        ]);
-        return h("div", { key: "caps", className: "dshg-col" }, [
-          complaints,
-          card("caps:main", text("caps.title") + "（" + model.filtered.length + " / " + model.stats.rows + "）", [filters, body]),
-          pendingCard,
-        ].filter(Boolean));
       };
 
+      const renderCaps = (props) => {
+        const model = props.model;
+        const purposeNode = purpose("caps:purpose", text("purpose.caps"));
+        if (!model) {
+          return statePanel("caps", purposeNode, primitives.stateContainer({ key: "caps:loading", state: "loading", rows: 5 }));
+        }
+        const view = props.view;
+        const searching = String(view.query || "").trim().length > 0 || view.sourceFilter !== "all" || view.statusFilter !== "all";
+        const filterValues = [];
+        if (model.labels && model.labels.kinds) {
+          const kinds = Object.keys(model.labels.kinds);
+          for (let index = 0; index < kinds.length; index += 1) filterValues.push({ value: kinds[index], label: model.labels.kinds[kinds[index]] });
+        }
+        const filters = h("div", { key: "caps:filters", className: "dshg-card dshg-filterBar" }, [
+          h("div", { key: "row", className: "dshg-filters" }, [
+            h("input", {
+              key: "query",
+              className: "dshg-input",
+              type: "search",
+              "aria-label": text("caps.search"),
+              placeholder: text("caps.search"),
+              value: view.query,
+              onChange: (event) => props.actions.setView({ query: event.target.value }),
+            }),
+            h("select", { key: "source", className: "dshg-select", "aria-label": text("caps.filterSource"), title: text("caps.filterSource"), value: view.sourceFilter, onChange: (event) => props.actions.setView({ sourceFilter: event.target.value }) },
+              [{ value: "all", label: text("caps.all") }].concat(filterValues).map((option) => h("option", { key: option.value, value: option.value }, option.label))),
+            h("select", { key: "status", className: "dshg-select", "aria-label": text("caps.filterStatus"), title: text("caps.filterStatus"), value: view.statusFilter, onChange: (event) => props.actions.setView({ statusFilter: event.target.value }) }, [
+              h("option", { key: "all", value: "all" }, text("caps.all")),
+              h("option", { key: "r", value: "1" }, text("tier.resident")),
+              h("option", { key: "o", value: "2" }, text("tier.ondemand")),
+              h("option", { key: "f", value: "0" }, text("tier.off")),
+              h("option", { key: "exc", value: "exception" }, text("caps.exception")),
+              h("option", { key: "pending", value: "pending" }, text("caps.pending")),
+            ]),
+            button("clear", text("caps.clearFilter"), () => props.actions.setView({ query: "", sourceFilter: "all", statusFilter: "all" }), { disabled: searching !== true }),
+            hint("count", text("caps.filtered") + " " + String(model.filtered.length) + " / " + String(model.stats.rows) + " " + text("common.count")),
+          ]),
+        ]);
+        const complaints = model.complaints.length === 0 ? null : card("caps:complaints", text("caps.deviations") + " · " + text("caps.warnings") + "（" + String(model.complaints.length) + "）",
+          model.complaints.slice(0, 10).map((item, index) => alert("c:" + index, String(item.path) + "：" + String(item.message), "warn")));
+        const groups = model.groups.map((group) => renderGroup(props, group, searching));
+        const listNode = model.filtered.length === 0
+          ? primitives.stateContainer({ key: "caps:empty", state: "empty", message: text("caps.empty") })
+          : h("div", { key: "caps:list", className: "dshg-list" }, groups);
+        return h("div", { key: "caps", className: "dshg-col" }, [purposeNode, filters, complaints, listNode].filter(Boolean));
+      };
+
+      // ---- 技能页 ----
       const renderSkills = (props) => {
         const snapshot = props.snapshot;
         const status = snapshot.status.skills;
         const payload = snapshot.data.skills;
-        if (status === "loading" && !payload) return primitives.stateContainer({ key: "skills:loading", state: "loading", rows: 4 });
-        if (status === "error" && !payload) return primitives.stateContainer({ key: "skills:error", state: "error", message: text("common.error") + "：" + snapshot.errors.skills, onRetry: () => props.actions.reload() });
-        const skills = listOf(payload && payload.skills).filter((row) => isObject(row) && typeof row.name === "string");
+        const purposeNode = purpose("skills:purpose", text("purpose.skills"));
+        if (status === "loading" && !payload) {
+          return statePanel("skills", purposeNode, primitives.stateContainer({ key: "skills:loading", state: "loading", rows: 4 }));
+        }
+        if (status === "error" && !payload) {
+          return statePanel("skills", purposeNode, primitives.stateContainer({
+            key: "skills:error",
+            state: "error",
+            message: text("common.error") + "：" + String(snapshot.errors.skills === undefined ? text("common.none") : snapshot.errors.skills),
+            onRetry: () => props.actions.reload(),
+          }));
+        }
         const draft = props.draft;
-        const summary = props.summary;
         const view = props.view;
+        const skills = listOf(payload && payload.skills).filter((row) => isObject(row) && typeof row.name === "string");
         const query = String(view.skillQuery || "").trim().toLowerCase();
         const filtered = skills.filter((row) => {
           if (query.length === 0) return true;
           const haystack = [row.name, row.provider, row.path, row.description].filter((value) => typeof value === "string").join(" ").toLowerCase();
           return haystack.indexOf(query) >= 0;
         });
-        const baseTakeover = !(payload && payload.takeover === false);
-        const takeover = draft.takeover === undefined ? baseTakeover : draft.takeover === true;
+        const takeoverBase = !(payload && payload.takeover === false);
+        const takeover = draft.takeover === undefined ? takeoverBase : draft.takeover === true;
         const relayBase = isObject(payload && payload.activationRelay) ? payload.activationRelay.enabled === true : Boolean(payload && payload.activationRelay === true);
         const relay = draft.catalog.activationRelay === undefined ? relayBase : draft.catalog.activationRelay === true;
         const promoteBase = isObject(payload && payload.activationPromote) ? payload.activationPromote.enabled === true : Boolean(payload && payload.activationPromote === true);
         const promote = draft.catalog.activationPromote === undefined ? promoteBase : draft.catalog.activationPromote === true;
-        const providers = [];
         const buckets = {};
+        const providers = [];
         for (let index = 0; index < filtered.length; index += 1) {
           const row = filtered[index];
-          const name = String(row.provider || "未标注 provider");
+          const name = String(row.provider || text("skills.providers"));
           if (!buckets[name]) { buckets[name] = []; providers.push(name); }
           buckets[name].push(row);
         }
         providers.sort((left, right) => buckets[right].length - buckets[left].length || (left < right ? -1 : 1));
+        const searching = query.length > 0;
         const groupNodes = providers.map((name) => {
           const id = "skills:" + name;
-          const searching = query.length > 0;
           const open = view.openGroups[id] === undefined ? searching : view.openGroups[id] === true;
           return h("div", { key: id, className: "dshg-group" }, [
-            primitives.groupHead({ key: "head:" + id, id: id, label: name, count: buckets[name].length, open: open, onToggle: () => props.actions.toggleGroup(id, searching) }),
-            primitives.groupBody({ key: "body:" + id, id: id, open: open, children: buckets[name].map((row) => {
-              const tier = hasOwn(draft.skills, row.name) ? draft.skills[row.name] : (row.tier === undefined ? 2 : row.tier);
-              return h("div", { key: "skill:" + row.name, className: "dshg-member" }, [
-                h("span", { key: "name", className: "dshg-memberName", title: row.name }, row.name),
-                h("span", { key: "origin", className: "dshg-tag" }, row.origin === "import" ? "导入" : "宿主"),
-                h("span", { key: "provider", className: "dshg-hint" }, row.provider || text("common.none")),
-                primitives.segmented({ key: "seg:" + row.name, ariaLabel: "切换 " + row.name + " 的层", value: tier, options: tierOptions(), onSelect: (next) => props.actions.stageSkill(row.name, next) }),
-                row.shadowed ? h("span", { key: "shadowed", className: "dshg-tag", "data-tone": "warn" }, "shadowed · 不可用") : null,
+            h("div", { key: "wrap", className: "dshg-groupHeadWrap" }, [
+              primitives.groupHead({ key: "head", id: id, label: name, count: buckets[name].length, open: open, onToggle: () => props.actions.toggleGroup(id, searching) }),
+            ]),
+            primitives.groupBody({ key: "body", id: id, label: name, open: open, children: buckets[name].map((row) => {
+              const tier = hasOwn(draft.skills, row.name) ? draft.skills[row.name] : (row.tier === undefined || row.tier === null ? TIER_ONDEMAND : row.tier);
+              return h("div", { key: "skill:" + row.name, className: "dshg-capRow" }, [
+                h("div", { key: "main", className: "dshg-capMain" }, [
+                  h("div", { key: "grow", className: "dshg-grow" }, [
+                    h("div", { key: "id", className: "dshg-capId", title: row.name }, row.name),
+                    h("div", { key: "meta", className: "dshg-rowMeta" }, [
+                      hint("prov", String(row.provider || text("common.none"))),
+                      typeof row.path === "string" && row.path.length > 0 ? hint("path", row.path) : null,
+                      row.shadowed === true ? tag("shadowed", text("skills.shadowed"), "warn") : null,
+                    ]),
+                  ]),
+                  primitives.segmented({ key: "seg:" + row.name, ariaLabel: text("tier.label") + " · " + row.name, value: tier, options: tierOptions(), onSelect: (next) => props.actions.stageSkill(row.name, next) }),
+                ]),
               ]);
             }) }),
           ]);
         });
-        const offList = listOf(payload && payload.off).filter((name) => typeof name === "string");
+        const takeoverCard = card("skills:takeover", text("skills.takeoverTitle"), [
+          h("div", { key: "switches", className: "dshg-row" }, [
+            primitives.switchButton({ key: "takeover", on: takeover, label: text("skills.takeover"), onToggle: () => props.actions.stageTakeover(!takeover) }),
+            primitives.switchButton({ key: "relay", on: relay, label: text("skills.relay"), disabled: !takeover, reason: text("skills.takeoverHint"), onToggle: () => props.actions.stageCatalog("activationRelay", !relay) }),
+            primitives.switchButton({ key: "promote", on: promote, label: text("skills.promote"), disabled: !relay, reason: text("skills.takeoverHint"), onToggle: () => props.actions.stageCatalog("activationPromote", !promote) }),
+          ]),
+          hint("hint", text("skills.takeoverHint")),
+        ]);
+        const searchCard = card("skills:search", text("skills.title") + "（" + String(filtered.length) + " / " + String(skills.length) + "）", [
+          h("div", { key: "row", className: "dshg-filters" }, [
+            h("input", { key: "q", className: "dshg-input", type: "search", "aria-label": text("skills.search"), placeholder: text("skills.search"), value: view.skillQuery, onChange: (event) => props.actions.setView({ skillQuery: event.target.value }) }),
+            button("clear", text("caps.clearFilter"), () => props.actions.setView({ skillQuery: "" }), { disabled: String(view.skillQuery || "").length === 0 }),
+            hint("hint", text("skills.searchEmpty")),
+          ]),
+          filtered.length === 0
+            ? primitives.stateContainer({ key: "empty", state: "empty", message: text("skills.empty") })
+            : h("div", { key: "groups", className: "dshg-list" }, groupNodes),
+        ]);
         const imports = draft.imports === null ? listOf(payload && payload.imports) : draft.imports;
+        const importsCard = card("skills:imports", text("skills.importsTitle"), [
+          h("div", { key: "row", className: "dshg-filters" }, [
+            h("input", { key: "p", className: "dshg-input", "aria-label": text("skills.importPlaceholder"), placeholder: text("skills.importPlaceholder"), value: view.importDraft, onChange: (event) => props.actions.setView({ importDraft: event.target.value }) }),
+            button("add", text("skills.importAdd"), () => {
+              const value = String(view.importDraft || "").trim();
+              if (value.length === 0) return;
+              props.actions.addImport(value);
+              props.actions.setView({ importDraft: "" });
+            }, { disabled: String(view.importDraft || "").trim().length === 0 }),
+          ]),
+          hint("hint", text("skills.importsHint")),
+          imports.length === 0
+            ? hint("empty", text("skills.importEmpty"))
+            : h("div", { key: "list", className: "dshg-col" }, imports.map((item, index) => h("div", { key: "imp:" + String(item) + ":" + index, className: "dshg-importRow" }, [
+              h("span", { key: "p", className: "dshg-grow", title: String(item) }, String(item)),
+              button("rm", text("skills.importRemove"), () => props.actions.removeImport(String(item))),
+            ]))),
+        ]);
+        const offList = listOf(payload && payload.off).filter((name) => typeof name === "string");
+        const offCard = offList.length === 0 ? null : card("skills:off", text("skills.offTitle") + "（" + String(offList.length) + "）", [
+          hint("hint", text("skills.offHint")),
+          h("div", { key: "list", className: "dshg-col" }, offList.map((name) => h("div", { key: "off:" + name, className: "dshg-importRow" }, [
+            h("span", { key: "n", className: "dshg-grow" }, name),
+            button("rm", text("skills.importRemove"), () => props.actions.removeOff(name)),
+          ]))),
+          button("clear", text("skills.offClear"), () => props.actions.clearOff(), { danger: true }),
+        ]);
         const warnings = listOf(payload && payload.warnings).map(warningText).concat(snapshot.warnings);
+        const warningsCard = warnings.length === 0 ? null : card("skills:warnings", text("caps.warnings") + "（" + String(warnings.length) + "）",
+          warnings.slice(0, 8).map((item, index) => alert("w:" + index, String(item), "warn")));
         const prescan = isObject(payload && payload.prescan) ? payload.prescan : null;
-        return h("div", { key: "skills", className: "dshg-col" }, [
-          card("skills:head", text("skills.title") + "（" + filtered.length + " / " + skills.length + "）", [
-            h("div", { key: "switches", className: "dshg-row" }, [
-              primitives.switchButton({ key: "takeover", on: takeover, label: text("skills.takeover"), onToggle: () => props.actions.stageTakeover(!takeover), title: text("skills.relayHint") }),
-              primitives.switchButton({ key: "relay", on: relay, label: text("skills.relay"), disabled: !takeover, reason: text("skills.relayHint"), onToggle: () => props.actions.stageCatalog("activationRelay", !relay) }),
-              primitives.switchButton({ key: "promote", on: promote, label: text("skills.promote"), disabled: !relay, reason: text("skills.promoteHint"), onToggle: () => props.actions.stageCatalog("activationPromote", !promote) }),
-            ]),
-            hint("relayHint", text("skills.relayHint")),
-            hint("promoteHint", text("skills.promoteHint")),
-            h("div", { key: "actions", className: "dshg-row" }, [
-              note("state", summary.total > 0 ? text("skills.dirty") : text("skills.synced")),
-              button("discard", text("discard"), () => props.actions.discard(), { disabled: summary.total === 0 }),
-              button("save", text("skills.save") + (summary.total > 0 ? " (" + summary.total + ")" : ""), () => props.actions.saveSkills(), { primary: true, disabled: summary.total === 0 || props.saving }),
-            ]),
-            prescan && prescan.active === true ? alert("prescan", text("skills.prescan") + "：" + (prescan.complete === false ? "只拿到部分名单" : "已取到") + (prescan.reason ? "；原因：" + String(prescan.reason) : "") + "（" + text("skills.prescanRetry") + "）") : null,
-          ]),
-          warnings.length > 0 ? card("skills:warnings", text("skills.warnings") + "（" + warnings.length + "）", h("div", { key: "list", className: "dshg-col" }, warnings.slice(0, 8).map((item, index) => alert("w:" + index, item)))) : null,
-          card("skills:filters", text("caps.search"), [
-            h("div", { key: "row", className: "dshg-row" }, [
-              h("input", { key: "q", className: "dshg-input", type: "search", "aria-label": text("skills.search"), placeholder: text("skills.search"), value: view.skillQuery, onChange: (event) => props.actions.setView({ skillQuery: event.target.value }) }),
-              button("clear", text("caps.clear"), () => props.actions.setView({ skillQuery: "" }), { disabled: String(view.skillQuery).length === 0 }),
-            ]),
-            filtered.length === 0 ? primitives.stateContainer({ key: "empty", state: "empty", message: text("skills.empty") }) : h("div", { key: "groups", className: "dshg-list" }, groupNodes),
-          ]),
-          card("skills:imports", text("skills.imports"), [
-            h("div", { key: "add", className: "dshg-row" }, [
-              h("input", { key: "path", className: "dshg-input", "aria-label": text("skills.imports"), placeholder: "技能目录路径…", value: view.importDraft, onChange: (event) => props.actions.setView({ importDraft: event.target.value }) }),
-              button("addBtn", text("skills.importAdd"), () => props.actions.addImport(view.importDraft)),
-            ]),
-            hint("preview", text("skills.importPreview") + "：" + (String(view.importDraft || "").trim().length === 0 ? text("common.none") : String(view.importDraft).trim())),
-            imports.length === 0 ? hint("none", text("common.empty")) : h("div", { key: "list", className: "dshg-col" }, imports.map((item, index) => h("div", { key: "imp:" + String(item && item.path || index), className: "dshg-member" }, [
-              h("span", { key: "p", className: "dshg-memberName" }, String(item && item.path || "")),
-              button("remove:" + index, text("skills.importRemove"), () => props.actions.removeImport(String(item && item.path || ""))),
-            ]))),
-          ]),
-          card("skills:off", text("skills.off") + (offList.length > 0 ? "（" + offList.length + "）" : ""), [
-            hint("hint", "旧关闭清单每项可移除（可撤销）；清空需要确认"),
-            offList.length === 0 ? hint("none", text("common.empty")) : h("div", { key: "list", className: "dshg-col" }, offList.map((name) => h("div", { key: "off:" + name, className: "dshg-member" }, [
-              h("span", { key: "n", className: "dshg-memberName" }, name),
-              button("rm:" + name, text("skills.offRemove"), () => props.actions.removeOff(name)),
-            ]))),
-            button("clear", text("skills.offClear"), () => props.actions.clearOff(), { danger: true, disabled: offList.length === 0 }),
-          ]),
-          summary.total > 0 ? card("skills:diff", text("json.diff"), primitives.diffPreview({ diff: props.diff, title: text("json.diff") })) : null,
-        ].filter(Boolean));
+        const prescanNode = prescan && prescan.active === true ? alert("prescan", text("skills.takeoverHint"), "info") : null;
+        return h("div", { key: "skills", className: "dshg-col" }, [purposeNode, takeoverCard, prescanNode, searchCard, importsCard, offCard, warningsCard].filter(Boolean));
       };
 
+      // ---- MCP 页（即时生效，不走吸底保存栏） ----
       const renderMcp = (props) => {
         const snapshot = props.snapshot;
         const status = snapshot.status.mcp;
         const payload = snapshot.data.mcp;
-        if (status === "loading" && !payload) return primitives.stateContainer({ key: "mcp:loading", state: "loading", rows: 3 });
-        if (status === "missing") return card("mcp:missing", text("mcp.title"), [alert("hint", "服务端还没有 GET /api/dsh-gate/mcp（能力不存在），这里显示「未接入」而不是报错", "warn"), button("retry", text("retry"), () => props.actions.reload())]);
-        if (status === "error" && !payload) return primitives.stateContainer({ key: "mcp:error", state: "error", message: text("common.error") + "：" + snapshot.errors.mcp, onRetry: () => props.actions.reload() });
-        const servers = listOf(payload && (payload.servers || payload.mcp)).filter(isObject);
-        const writable = Boolean(payload && payload.writable === true);
-        const warnings = listOf(payload && payload.warnings).map(warningText);
-        const stateOrder = ["owned", "external", "stopped", "unavailable"];
-        const buckets = {};
-        const groupNames = [];
-        for (let index = 0; index < servers.length; index += 1) {
-          const name = String(servers[index].state || "unavailable");
-          if (!buckets[name]) { buckets[name] = []; groupNames.push(name); }
-          buckets[name].push(servers[index]);
+        const purposeNode = purpose("mcp:purpose", text("purpose.mcp"));
+        if (status === "loading" && !payload) {
+          return statePanel("mcp", purposeNode, primitives.stateContainer({ key: "mcp:loading", state: "loading", rows: 3 }));
         }
-        groupNames.sort((left, right) => (stateOrder.indexOf(left) < 0 ? 9 : stateOrder.indexOf(left)) - (stateOrder.indexOf(right) < 0 ? 9 : stateOrder.indexOf(right)));
-        const groups = groupNames.map((name) => {
-          const id = "mcp:" + name;
-          const open = props.view.openGroups[id] === undefined ? true : props.view.openGroups[id] === true;
-          return h("div", { key: id, className: "dshg-group" }, [
-            primitives.groupHead({ key: "head:" + id, id: id, label: name, count: buckets[name].length, open: open, onToggle: () => props.actions.toggleGroup(id, false) }),
-            primitives.groupBody({ key: "body:" + id, id: id, open: open, children: buckets[name].map((row) => {
-              const name2 = String(row.name || "");
-              const owned = row.state === "owned" || row.state === "stopped";
-              const target = typeof row.target === "string" ? row.target : (typeof row.command === "string" ? row.command : (typeof row.url === "string" ? row.url : text("common.none")));
-              return h("div", { key: "srv:" + name2, className: "dshg-member" }, [
-                h("span", { key: "n", className: "dshg-memberName" }, name2),
-                h("span", { key: "t", className: "dshg-hint" }, String(row.transport || "stdio")),
-                h("span", { key: "target", className: "dshg-hint dshg-mono" }, target),
-                h("span", { key: "state", className: "dshg-tag" }, String(row.state || "unavailable")),
-                h("span", { key: "tools", className: "dshg-hint" }, String(listOf(row.tools).length) + " 工具"),
-                owned
-                  ? h("span", { key: "actions", className: "dshg-row" }, [
-                      button("toggle", row.state === "stopped" ? "启动" : "停止", () => props.actions.mcpAction(row.state === "stopped" ? "enable" : "disable", name2), { disabled: !writable, reason: text("mcp.notWritable") }),
-                      button("remove", "删除", () => props.actions.mcpRemove(name2), { danger: true, disabled: !writable, reason: text("mcp.notWritable") }),
-                    ])
-                  : h("span", { key: "readonly", className: "dshg-hint" }, text("mcp.readonly")),
-              ]);
-            }) }),
+        if (status === "error" && !payload) {
+          return statePanel("mcp", purposeNode, primitives.stateContainer({
+            key: "mcp:error",
+            state: "error",
+            message: text("common.error") + "：" + String(snapshot.errors.mcp === undefined ? text("common.none") : snapshot.errors.mcp),
+            onRetry: () => props.actions.reload(),
+          }));
+        }
+        const view = props.view;
+        const policyContent = isObject(props.snapshot.data.policy) && isObject(props.snapshot.data.policy.content) ? props.snapshot.data.policy.content : {};
+        const policyServers = isObject(policyContent.mcp) && isObject(policyContent.mcp.servers) ? policyContent.mcp.servers : {};
+        const writable = !(payload && payload.writable === false);
+        const servers = listOf(payload && payload.servers).filter((row) => isObject(row) && typeof row.name === "string");
+        const draft = view.mcpDraft;
+        const editing = String(view.mcpEditing || "");
+        const formOpen = view.mcpAddOpen === true || editing.length > 0;
+        const serverRows = servers.map((row) => {
+          const stateTone = row.state === "owned" ? "ok" : (row.state === "stopped" ? "warn" : "error");
+          return h("div", { key: "mcp:" + row.name, className: "dshg-capRow" }, [
+            h("div", { key: "main", className: "dshg-capMain" }, [
+              h("div", { key: "grow", className: "dshg-grow" }, [
+                h("div", { key: "id", className: "dshg-capId", title: row.name }, row.name),
+                h("div", { key: "meta", className: "dshg-rowMeta" }, [
+                  tag("state", text("mcp.state") + " " + String(row.state === undefined ? text("common.none") : row.state), stateTone),
+                  hint("transport", String(row.transport === undefined ? text("common.none") : row.transport)),
+                  hint("target", String(row.target === undefined ? "" : row.target)),
+                  hint("tools", text("mcp.tools") + " " + String(row.toolCount === undefined || row.toolCount === null ? text("mcp.noTools") : row.toolCount)),
+                ]),
+              ]),
+              primitives.switchButton({
+                key: "sw",
+                on: row.enabled === true,
+                label: text("mcp.enable"),
+                disabled: writable !== true,
+                reason: text("mcp.writable"),
+                onToggle: () => props.actions.mcpAction(row.enabled === true ? "disable" : "enable", row.name),
+              }),
+              button("edit", text("mcp.edit"), () => {
+                const stored = isObject(policyServers[row.name]) ? policyServers[row.name] : null;
+                const source = isObject(row.server) ? row.server : (stored === null ? row : stored);
+                const stdio = row.transport === "stdio";
+                const rawCommand = isObject(source) && typeof source.command === "string" ? source.command : (stdio ? String(row.target || "") : "");
+                const rawUrl = isObject(source) && typeof source.url === "string" ? source.url : (stdio ? "" : String(row.target || ""));
+                const rawArgs = isObject(source) && Array.isArray(source.args) ? source.args.join(" ") : "";
+                props.actions.setMcpDraft({
+                  name: row.name,
+                  transport: stdio ? "stdio" : "streamable-http",
+                  url: stdio ? "" : rawUrl,
+                  command: stdio ? rawCommand : "",
+                  args: stdio ? rawArgs : "",
+                  rawServer: clone(source),
+                });
+                props.actions.setView({ mcpEditing: row.name, mcpAddOpen: true });
+              }, { disabled: writable !== true, reason: text("mcp.writable") }),
+              button("rm", text("mcp.remove"), () => props.actions.mcpRemove(row.name), { danger: true, disabled: writable !== true, reason: text("mcp.writable") }),
+            ]),
           ]);
         });
-        const argsPreview = props.argsPreview;
-        const form = writable ? h("div", { key: "form", className: "dshg-col" }, [
-          h("div", { key: "row", className: "dshg-row" }, [
-            h("input", { key: "name", className: "dshg-input", "aria-label": text("mcp.name"), placeholder: text("mcp.name"), value: props.view.mcpDraft.name, onChange: (event) => props.actions.setMcpDraft({ name: event.target.value }) }),
-            h("select", { key: "transport", className: "dshg-select", "aria-label": "transport", value: props.view.mcpDraft.transport, onChange: (event) => props.actions.setMcpDraft({ transport: event.target.value }) }, [
-              h("option", { key: "stdio", value: "stdio" }, "stdio"),
-              h("option", { key: "http", value: "http" }, "http"),
-            ]),
-          ]),
-          props.view.mcpDraft.transport === "http"
-            ? h("input", { key: "url", className: "dshg-input", "aria-label": text("mcp.url"), placeholder: text("mcp.url"), value: props.view.mcpDraft.url, onChange: (event) => props.actions.setMcpDraft({ url: event.target.value }) })
-            : h("div", { key: "stdio", className: "dshg-col" }, [
-                h("input", { key: "cmd", className: "dshg-input", "aria-label": text("mcp.command"), placeholder: text("mcp.command"), value: props.view.mcpDraft.command, onChange: (event) => props.actions.setMcpDraft({ command: event.target.value }) }),
-                h("input", { key: "args", className: "dshg-input", "aria-label": text("mcp.args"), placeholder: text("mcp.args"), value: props.view.mcpDraft.args, onChange: (event) => props.actions.setMcpDraft({ args: event.target.value }) }),
-                hint("preview", text("mcp.argsPreview") + "：" + (argsPreview.length === 0 ? text("common.none") : JSON.stringify(argsPreview))),
-              ]),
-          button("add", text("mcp.add"), () => props.actions.mcpAdd(), { primary: true }),
-        ]) : hint("ro", text("mcp.notWritable"));
-        return h("div", { key: "mcp", className: "dshg-col" }, [
-          card("mcp:main", text("mcp.title") + "（" + servers.length + "）", [
-            note("legend", "owned = gate 托管（可改）；external = 宿主配置（只读）"),
-            form,
-            servers.length === 0 ? primitives.stateContainer({ key: "empty", state: "empty", message: text("mcp.empty") }) : h("div", { key: "groups", className: "dshg-list" }, groups),
-            warnings.length > 0 ? h("div", { key: "warnings", className: "dshg-col" }, warnings.map((item, index) => alert("w:" + index, item))) : null,
-          ]),
+        const serversCard = card("mcp:servers", text("mcp.title") + "（" + String(servers.length) + " " + text("mcp.count") + "）", [
+          servers.length === 0
+            ? primitives.stateContainer({ key: "empty", state: "empty", message: text("mcp.empty") })
+            : h("div", { key: "list", className: "dshg-list" }, serverRows),
         ]);
-      };
-
-      const renderJson = (props) => {
-        const view = props.view;
-        const notice = view.jsonNotice;
-        const parsed = props.jsonParsed;
-        const diff = props.jsonDiff;
-        return h("div", { key: "json", className: "dshg-col" }, [
-          card("json:main", text("json.title"), [
-            note("hint", text("json.replaceHint")),
-            h("textarea", {
-              key: "editor",
-              className: "dshg-json",
-              spellCheck: false,
-              "aria-label": text("json.title"),
-              value: view.jsonText,
-              onChange: (event) => props.actions.editJson(event.target.value),
-            }),
-            h("div", { key: "meta", className: "dshg-row" }, [
-              hint("size", bytesOf(view.jsonText) + " " + text("json.bytes") + " · " + (view.jsonText.length === 0 ? 0 : view.jsonText.split(newline).length) + " " + text("json.lines")),
-              button("validate", text("json.validate"), () => props.actions.validateJson()),
-              button("format", text("json.format"), () => props.actions.formatJson()),
-              button("restore", text("json.restore"), () => props.actions.requestJsonRestore(), { danger: true }),
-              button("save", text("json.save"), () => props.actions.requestJsonSave(), { primary: true, disabled: props.summary.blocking === true }),
-            ]),
-            notice ? alert("notice", notice.text, notice.tone) : null,
-            diff ? primitives.diffPreview({ diff: diff, title: text("json.diff") }) : null,
-          ]),
-          card("json:exchange", "导入导出", [
+        const field = (key, label, node) => h("label", { key: key, className: "dshg-field" }, [
+          h("span", { key: "l", className: "dshg-hint" }, label),
+          node,
+        ]);
+        const formFields = [
+          field("name", text("mcp.name"), h("input", { key: "i", className: "dshg-input", "aria-label": text("mcp.name"), value: String(draft.name || ""), disabled: editing.length > 0, onChange: (event) => props.actions.setMcpDraft({ name: event.target.value }) })),
+          field("transport", text("mcp.transport"), h("select", { key: "i", className: "dshg-select", "aria-label": text("mcp.transport"), value: String(draft.transport || "stdio"), onChange: (event) => props.actions.setMcpDraft({ transport: event.target.value }) }, [
+            h("option", { key: "stdio", value: "stdio" }, "stdio"),
+            h("option", { key: "http", value: "streamable-http" }, "streamable-http"),
+          ])),
+        ];
+        if (String(draft.transport || "stdio") === "stdio") {
+          formFields.push(field("command", text("mcp.command"), h("input", { key: "i", className: "dshg-input", "aria-label": text("mcp.command"), value: String(draft.command || ""), onChange: (event) => props.actions.setMcpDraft({ command: event.target.value }) })));
+          formFields.push(field("args", text("mcp.args"), h("input", { key: "i", className: "dshg-input", "aria-label": text("mcp.args"), value: String(draft.args || ""), onChange: (event) => props.actions.setMcpDraft({ args: event.target.value }) })));
+          formFields.push(hint("preview", text("mcp.argsPreview") + " " + JSON.stringify(props.argsPreview)));
+        } else {
+          formFields.push(field("url", text("mcp.url"), h("input", { key: "i", className: "dshg-input", "aria-label": text("mcp.url"), value: String(draft.url || ""), onChange: (event) => props.actions.setMcpDraft({ url: event.target.value }) })));
+        }
+        const formCard = card("mcp:form", editing.length > 0 ? text("mcp.editTitle") : text("mcp.addTitle"), formOpen
+          ? [
+            h("div", { key: "fields", className: "dshg-form" }, formFields),
             h("div", { key: "actions", className: "dshg-row" }, [
-              button("export", text("json.export"), () => props.actions.exportJson()),
-              button("import", text("json.import"), () => props.actions.importJson()),
+              editing.length > 0
+                ? button("save", text("mcp.saveEdit"), () => {
+                  props.actions.mcpAction("update", editing);
+                  props.actions.resetMcpDraft();
+                  props.actions.setView({ mcpEditing: "", mcpAddOpen: false });
+                }, { primary: true, disabled: writable !== true, reason: text("mcp.writable") })
+                : button("add", text("mcp.addTitle"), () => props.actions.mcpAdd(), {
+                  primary: true,
+                  disabled: writable !== true || String(draft.name || "").trim().length === 0,
+                  reason: String(draft.name || "").trim().length === 0 ? text("mcp.emptyName") : text("mcp.writable"),
+                }),
+              button("cancel", editing.length > 0 ? text("mcp.cancelEdit") : text("mcp.addCollapse"), () => {
+                props.actions.resetMcpDraft();
+                props.actions.setView({ mcpAddOpen: false, mcpEditing: "" });
+              }),
             ]),
-            h("textarea", {
-              key: "exchange",
-              className: "dshg-json",
-              spellCheck: false,
-              "aria-label": "导入导出",
-              value: view.exchangeText,
-              onChange: (event) => props.actions.setView({ exchangeText: event.target.value }),
-            }),
-            hint("exchangeHint", "导入接受裸对象或信封（{policy:…}）；版本高于当前阻断、低于当前提示迁移"),
-            parsed ? hint("parsed", "当前编辑器可解析：version=" + String(parsed.version) + "，能力 " + String(parsed.capabilities) + " 条") : hint("parsed", text("json.invalid")),
-          ]),
-        ]);
+          ]
+          : [button("open", text("mcp.addToggle"), () => props.actions.setView({ mcpAddOpen: true }), { disabled: writable !== true, reason: text("mcp.writable") })]);
+        return h("div", { key: "mcp", className: "dshg-col" }, [
+          purposeNode,
+          alert("live", text("mcp.liveHint"), "info"),
+          writable === true ? null : alert("writable", text("mcp.writable"), "warn"),
+          serversCard,
+          formCard,
+        ].filter(Boolean));
       };
 
+      // ---- 高级页（会话诊断 / 护栏与目录摘要 / 策略 JSON / 运行态指标） ----
       const renderSettings = (props) => {
         const guard = props.guard;
-        const auto = props.autoRefresh;
-        const decision = props.autoDecision;
-        const sessionLabel = props.sessionLabel;
+        const catalog = props.catalog;
         const signature = props.draft.signature;
-        const metrics = props.metrics;
-        const numeric = (key, field, label, min, max) => h("label", { key: key, className: "dshg-row" }, [
+        const view = props.view;
+        const purposeNode = purpose("settings:purpose", text("purpose.settings"));
+        const numeric = (key, field, label) => h("label", { key: key, className: "dshg-field" }, [
           h("span", { key: "l", className: "dshg-hint" }, label),
           h("input", {
             key: "i",
@@ -2741,83 +2928,120 @@ window.__ModuleLoader__.load({
             value: String(guard[field] === undefined || guard[field] === null ? "" : guard[field]),
             onChange: (event) => props.actions.stageGuard(field, event.target.value === "" ? null : Number(event.target.value)),
           }),
-          hint("range", min + "–" + max),
         ]);
-        return h("div", { key: "settings", className: "dshg-col" }, [
-          card("settings:health", text("settings.title"), [
-            primitives.healthBar({ health: props.health, sessionLabel: sessionLabel, readAtText: props.readAtText }),
-            h("div", { key: "session", className: "dshg-row" }, [
-              hint("s", text("settings.session") + "：" + sessionLabel),
-              button("list", text("settings.listSessions"), () => props.actions.listSessions()),
-              h("select", {
-                key: "select",
-                className: "dshg-select",
-                "aria-label": text("settings.session"),
-                value: props.session.agent || "",
-                onChange: (event) => props.actions.selectSession(event.target.value),
-              }, [h("option", { key: "auto", value: "" }, text("settings.sessionAuto"))].concat(listOf(props.sessions).map((item) => h("option", { key: item.id, value: item.id }, item.label)))),
-            ]),
-            props.sessionNotice ? alert("sessionNotice", props.sessionNotice) : null,
+        const sessionCard = card("settings:session", text("settings.sessionTitle"), [
+          primitives.healthBar({ key: "health", health: props.health, sessionLabel: props.sessionLabel, readAtText: props.readAtText }),
+          h("div", { key: "session", className: "dshg-row" }, [
+            hint("s", text("health.session") + "：" + String(props.sessionLabel || text("common.none"))),
+            button("list", text("settings.sessionList"), () => props.actions.listSessions()),
+            h("select", {
+              key: "select",
+              className: "dshg-select",
+              "aria-label": text("health.session"),
+              value: props.session.agent || "",
+              onChange: (event) => props.actions.selectSession(event.target.value),
+            }, [h("option", { key: "auto", value: "" }, text("settings.sessionAuto"))].concat(listOf(props.sessions).map((item) => h("option", { key: item.id, value: item.id }, item.label)))),
           ]),
-          card("settings:guard", text("settings.guard"), [
-            h("div", { key: "row", className: "dshg-row" }, [
-              primitives.switchButton({ key: "g", on: guard.enabled !== false, label: text("settings.guardEnabled"), onToggle: () => props.actions.stageGuard("enabled", guard.enabled === false) }),
-              hint("fixed", text("settings.fixedItems")),
-            ]),
-            numeric("w", "windowSize", text("settings.window"), 2, 200),
-            numeric("t", "threshold", text("settings.threshold"), 2, 50),
-            numeric("r", "reminders", text("settings.reminders"), 1, 5),
-            numeric("p", "previewChars", text("settings.preview"), 40, 4000),
-            h("div", { key: "ex", className: "dshg-row" }, [
-              hint("l", text("settings.exclusions")),
-              h("input", { key: "i", className: "dshg-input", "aria-label": text("settings.exclusions"), value: listOf(guard.exclusions).join(", "), onChange: (event) => props.actions.stageGuard("exclusions", event.target.value.split(",").map((item) => item.trim()).filter((item) => item.length > 0)) }),
-            ]),
-            h("div", { key: "runtime", className: "dshg-col" }, [
-              hint("l", text("settings.runtime")),
-              metrics && metrics.counters ? h("div", { key: "kv", className: "dshg-row" }, Object.keys(metrics.counters).map((key) => h("span", { key: key, className: "dshg-tag" }, key + " " + String(metrics.counters[key])))) : hint("none", text("settings.noMetrics")),
-            ]),
-            button("saveGuard", text("save"), () => props.actions.saveGuard(), { primary: true, disabled: props.draft.guardrailDirty !== true }),
+          hint("hint", text("settings.sessionHint")),
+          props.sessionNotice ? alert("sessionNotice", String(props.sessionNotice), "warn") : null,
+          listOf(props.sessions).length === 0 ? hint("empty", text("settings.sessionEmpty")) : null,
+        ]);
+        const groupMode = catalog.skillGroups === true ? "skill" : (catalog.groupByPlugin === false ? "flat" : "plugin");
+        const catalogMode = h("div", { key: "mode", className: "dshg-row" }, [
+          h("span", { key: "l", className: "dshg-hint" }, text("settings.catalogThree")),
+          primitives.segmented({
+            key: "seg",
+            ariaLabel: text("settings.catalogThree"),
+            value: groupMode,
+            options: [
+              { value: "plugin", label: text("settings.catalogByPlugin") },
+              { value: "skill", label: text("settings.catalogBySkillGroup") },
+              { value: "flat", label: text("settings.catalogFlat") },
+            ],
+            onSelect: (next) => {
+              props.actions.stageCatalog("groupByPlugin", next === "plugin");
+              props.actions.stageCatalog("skillGroups", next === "skill");
+            },
+          }),
+        ]);
+        const guardCard = card("settings:guard", text("settings.guardTitle"), [
+          hint("guardHint", text("settings.guardHint")),
+          h("div", { key: "row", className: "dshg-row" }, [
+            primitives.switchButton({ key: "g", on: guard.enabled !== false, label: text("settings.guardEnabled"), onToggle: () => props.actions.stageGuard("enabled", guard.enabled === false) }),
           ]),
-          card("settings:catalog", text("settings.catalog"), [
-            h("div", { key: "row", className: "dshg-row" }, [
-              primitives.switchButton({ key: "g", on: props.catalog.groupByPlugin !== false, label: text("settings.groupByPlugin"), onToggle: () => props.actions.stageCatalog("groupByPlugin", props.catalog.groupByPlugin === false) }),
-              primitives.switchButton({ key: "s", on: props.catalog.skillGroups === true, label: text("settings.skillGroups"), onToggle: () => props.actions.stageCatalog("skillGroups", props.catalog.skillGroups !== true) }),
+          h("div", { key: "grid", className: "dshg-form" }, [
+            numeric("w", "windowSize", text("settings.window")),
+            numeric("t", "threshold", text("settings.threshold")),
+            numeric("r", "reminders", text("settings.reminders")),
+            numeric("p", "previewChars", text("settings.previewChars")),
+          ]),
+          h("label", { key: "ex", className: "dshg-field" }, [
+            h("span", { key: "l", className: "dshg-hint" }, text("settings.exclusions")),
+            h("input", { key: "i", className: "dshg-input", "aria-label": text("settings.exclusions"), value: listOf(guard.exclusions).join(", "), onChange: (event) => props.actions.stageGuard("exclusions", event.target.value.split(",").map((item) => item.trim()).filter((item) => item.length > 0)) }),
+          ]),
+          button("saveGuard", text("save"), () => props.actions.saveGuard(), { primary: true, disabled: props.draft.guardrailDirty !== true }),
+          h("div", { key: "catalog", className: "dshg-col dshg-section" }, [
+            h("div", { key: "title", className: "dshg-subTitle" }, text("settings.catalogTitle")),
+            hint("hint", text("settings.catalogHint")),
+            catalogMode,
+            h("label", { key: "len", className: "dshg-field" }, [
+              h("span", { key: "l", className: "dshg-hint" }, text("settings.catalogMaxDesc")),
+              h("input", { key: "i", className: "dshg-input", inputMode: "numeric", "aria-label": text("settings.catalogMaxDesc"), value: String(catalog.maxDescriptionLength === undefined ? "" : catalog.maxDescriptionLength), onChange: (event) => props.actions.stageCatalog("maxDescriptionLength", Number(event.target.value)) }),
             ]),
-            alert("cost", text("settings.cacheCost"), "warn"),
-            h("div", { key: "len", className: "dshg-row" }, [
-              hint("l", text("settings.maxDesc")),
-              h("input", { key: "i", className: "dshg-input", inputMode: "numeric", "aria-label": text("settings.maxDesc"), value: String(props.catalog.maxDescriptionLength === undefined ? "" : props.catalog.maxDescriptionLength), onChange: (event) => props.actions.stageCatalog("maxDescriptionLength", Number(event.target.value)) }),
+            h("div", { key: "meta", className: "dshg-row" }, [
+              tag("cache", text("settings.catalogCache") + " " + text("settings.catalogUnknown"), "muted"),
+              tag("resident", text("settings.catalogResident") + " " + text("settings.catalogUnknown"), "muted"),
             ]),
             button("saveCatalog", text("save"), () => props.actions.saveCatalog(), { primary: true, disabled: props.draft.catalogDirty !== true }),
           ]),
-          card("settings:auto", text("settings.autoRefresh"), [
+          h("div", { key: "signature", className: "dshg-col dshg-section" }, [
+            h("div", { key: "title", className: "dshg-subTitle" }, text("settings.signatureTitle")),
+            hint("hint", text("settings.signatureHint")),
             h("div", { key: "row", className: "dshg-row" }, [
-              h("select", { key: "i", className: "dshg-select", "aria-label": text("settings.autoRefresh"), value: String(auto.interval), onChange: (event) => props.actions.setView({ autoInterval: Number(event.target.value) }) }, [
-                h("option", { key: "0", value: "0" }, text("settings.autoOff")),
-                h("option", { key: "15", value: "15" }, text("settings.auto15")),
-                h("option", { key: "30", value: "30" }, text("settings.auto30")),
-                h("option", { key: "60", value: "60" }, text("settings.auto60")),
-              ]),
-              hint("d", decision.run ? decision.reason : text("settings.autoPaused") + "：" + decision.reason),
+              primitives.switchButton({ key: "s", on: signature.enabled !== false, label: text("settings.signatureEnabled"), onToggle: () => props.actions.stageSignature(signature.enabled === false, listOf(signature.tools).join(", ")) }),
+              h("input", { key: "tools", className: "dshg-input", "aria-label": text("settings.signatureTools"), placeholder: text("settings.signatureTools"), value: String(view.signatureTools === undefined ? listOf(signature.tools).join(", ") : view.signatureTools), onChange: (event) => props.actions.stageSignature(signature.enabled !== false, event.target.value) }),
             ]),
-          ]),
-          card("settings:signature", text("settings.signature"), [
-            h("div", { key: "row", className: "dshg-row" }, [
-              primitives.switchButton({ key: "s", on: signature.enabled !== false, label: text("settings.signature"), onToggle: () => props.actions.stageSignature(signature.enabled === false, listOf(signature.tools).join(", ")) }),
-              h("input", { key: "tools", className: "dshg-input", "aria-label": "签名工具名单", placeholder: "工具名，逗号分隔", value: String(props.view.signatureTools === undefined ? listOf(signature.tools).join(", ") : props.view.signatureTools), onChange: (event) => props.actions.stageSignature(signature.enabled !== false, event.target.value) }),
-            ]),
-            button("restore", text("settings.restoreKey"), () => props.actions.restoreSignature(), { disabled: props.draft.signatureDirty !== true }),
+            button("restore", text("settings.signatureRestore"), () => props.actions.restoreSignature(), { disabled: props.draft.signatureDirty !== true }),
             button("save", text("save"), () => props.actions.saveSignature(), { primary: true, disabled: props.draft.signatureDirty !== true }),
           ]),
-          card("settings:undo", "撤销重做", [
-            h("div", { key: "row", className: "dshg-row" }, [
-              button("undo", text("undo"), () => props.actions.undo(), { disabled: !props.canUndo }),
-              button("redo", text("redo"), () => props.actions.redo(), { disabled: !props.canRedo }),
-              hint("depth", "撤销栈 " + String(props.undoDepth) + " / " + String(props.maxUndo)),
-            ]),
-            hint("keys", text("undoHint")),
+        ]);
+        const jsonCard = card("settings:json", text("settings.jsonTitle"), [
+          hint("hint", text("settings.jsonHint")),
+          h("textarea", {
+            key: "editor",
+            className: "dshg-json",
+            spellCheck: false,
+            "aria-label": text("settings.jsonTitle"),
+            value: view.jsonText,
+            onChange: (event) => props.actions.editJson(event.target.value),
+          }),
+          h("div", { key: "meta", className: "dshg-row" }, [
+            hint("size", bytesOf(view.jsonText) + " " + text("settings.jsonBytes") + " · " + String(view.jsonText.length === 0 ? 0 : view.jsonText.split(newline).length) + " " + text("common.count")),
+            props.jsonParsed ? hint("parsed", text("settings.jsonValidated")) : hint("parsed", text("settings.jsonInvalid")),
+          ]),
+          h("div", { key: "actions", className: "dshg-row" }, [
+            button("validate", text("settings.jsonValidate"), () => props.actions.validateJson()),
+            button("format", text("settings.jsonFormat"), () => props.actions.formatJson()),
+            button("default", text("settings.jsonDefault"), () => props.actions.requestJsonRestore(), { danger: true }),
+            button("import", text("settings.jsonImport"), () => props.actions.importJson(), { disabled: String(view.jsonText || "").trim().length === 0 }),
+            button("export", text("settings.jsonExport"), () => props.actions.exportJson()),
+            button("replace", text("settings.jsonReplace"), () => props.actions.requestJsonSave(), { primary: true, disabled: props.summary.blocking === true }),
+          ]),
+          view.jsonNotice ? alert("notice", view.jsonNotice.text, view.jsonNotice.tone) : null,
+          props.jsonDiff ? primitives.diffPreview({ key: "diff", diff: props.jsonDiff, title: text("settings.jsonDiff") }) : null,
+        ]);
+        const counters = props.metrics && isObject(props.metrics.counters) ? props.metrics.counters : null;
+        const metricsCard = card("settings:metrics", text("settings.metricsTitle"), [
+          hint("hint", text("settings.metricsHint")),
+          counters === null
+            ? hint("none", text("settings.metricsNone"))
+            : h("div", { key: "kv", className: "dshg-wraps" }, Object.keys(counters).map((key) => h("span", { key: key, className: "dshg-tag" }, key + " " + String(counters[key])))),
+          h("div", { key: "actions", className: "dshg-row" }, [
+            button("refresh", text("settings.metricsRefresh"), () => props.actions.loadDiagnostics()),
+            hint("auto", text("settings.autoHint")),
           ]),
         ]);
+        return h("div", { key: "settings", className: "dshg-col" }, [purposeNode, sessionCard, guardCard, jsonCard, metricsCard]);
       };
 
       const renderTabPanel = (props) => {
@@ -2825,7 +3049,6 @@ window.__ModuleLoader__.load({
           { value: "caps", node: renderCaps(props) },
           { value: "skills", node: renderSkills(props) },
           { value: "mcp", node: renderMcp(props) },
-          { value: "json", node: renderJson(props) },
           { value: "settings", node: renderSettings(props) },
         ];
         return h("div", { key: "panels", className: "dshg-col" }, panels.map((panel) => h("div", {
@@ -2843,7 +3066,7 @@ window.__ModuleLoader__.load({
         renderCaps: renderCaps,
         renderSkills: renderSkills,
         renderMcp: renderMcp,
-        renderJson: renderJson,
+        renderJson: renderSettings,
         renderSettings: renderSettings,
         renderTabPanel: renderTabPanel,
       });
@@ -2865,19 +3088,19 @@ window.__ModuleLoader__.load({
       const createProjection = env.createProjection;
       const createOrchestrator = env.createOrchestrator;
       const fallbackTemplate = env.fallbackTemplate;
-      const PANEL_VERSION = "0.6.0";
+      const PANEL_VERSION = "0.7.0";
 
       const TABS = Object.freeze([
         { value: "caps", label: text("tab.caps") },
         { value: "skills", label: text("tab.skills") },
         { value: "mcp", label: text("tab.mcp") },
-        { value: "json", label: text("tab.json") },
         { value: "settings", label: text("tab.settings") },
       ]);
 
       const tabOf = (route) => {
         if (route === undefined || route === null || route === "") return "caps";
         const head = String(route).split("/")[0];
+        if (head === "json") return "settings";
         for (let index = 0; index < TABS.length; index += 1) if (TABS[index].value === head) return head;
         return null;
       };
@@ -2908,7 +3131,11 @@ window.__ModuleLoader__.load({
         expanded: {},
         skillQuery: "",
         importDraft: "",
-        mcpDraft: { name: "", transport: "stdio", command: "", args: "", url: "" },
+        mcpDraft: { name: "", transport: "stdio", command: "", args: "", url: "", rawServer: null },
+        mcpAddOpen: false,
+        mcpEditing: "",
+        diagOpen: false,
+        diffOpen: false,
         jsonText: "",
         jsonDirty: false,
         jsonNotice: null,
@@ -2988,6 +3215,9 @@ window.__ModuleLoader__.load({
           selectSession: (agent) => orchestrator.selectSession(agent),
           autoRefreshDecision: (input) => orchestrator.autoRefreshDecision(input),
           detectExternalChange: (input) => orchestrator.detectExternalChange(input),
+          toggleEnabled: (next) => orchestrator.toggleEnabled(next),
+          recoverCorruptPolicy: (template) => orchestrator.recoverCorruptPolicy(template),
+          mcpMutate: (payload) => orchestrator.mcpMutate(payload),
           loadDiagnostics: () => transport.diagnose("/api/dsh-gate/diagnostics", { query: orchestrator.session().agent === null ? undefined : { agent: orchestrator.session().agent } }),
           session: () => orchestrator.session(),
           epoch: () => orchestrator.epoch(),
@@ -3018,6 +3248,8 @@ window.__ModuleLoader__.load({
         const [view, setViewState] = react.useState(initialView(props));
         const [toastItems, setToastItems] = react.useState([]);
         const [confirmState, setConfirmState] = react.useState(null);
+        const confirmRef = react.useRef(null);
+        confirmRef.current = confirmState;
         const [fatalToken, setFatalToken] = react.useState(0);
         const [metrics, setMetrics] = react.useState(null);
         const [sessions, setSessions] = react.useState([]);
@@ -3101,6 +3333,25 @@ window.__ModuleLoader__.load({
           else toast("error", receipt.message || text("common.error"));
           const warnings = Array.isArray(receipt.warnings) ? receipt.warnings : [];
           if (warnings.length > 0) toast("warn", "服务端告警：" + warnings.map(warningText).join("；"), "warnings");
+        };
+
+        const MCP_UI_FIELDS = ["name", "mounted", "status", "error", "tools", "toolCount", "source", "warning", "warnings", "healthy", "id", "target", "state", "owned"];
+        const mcpServerOf = (draft) => {
+          const base = isObject(draft && draft.rawServer) ? clone(draft.rawServer) : {};
+          for (let index = 0; index < MCP_UI_FIELDS.length; index += 1) delete base[MCP_UI_FIELDS[index]];
+          delete base.transport;
+          if (String((draft && draft.transport) || "stdio") === "stdio") {
+            delete base.url;
+            base.transport = "stdio";
+            base.command = String((draft && draft.command) || "").trim();
+            base.args = parseArgs((draft && draft.args) || "").filter((item) => item.indexOf("__UNCLOSED__:") !== 0);
+          } else {
+            delete base.command;
+            delete base.args;
+            base.transport = "streamable-http";
+            base.url = String((draft && draft.url) || "").trim();
+          }
+          return base;
         };
 
         const actions = {
@@ -3201,25 +3452,31 @@ window.__ModuleLoader__.load({
             handleReceipt(receipt);
             if (receipt.state === "applied") await runtime.refresh({ reason: "post-save" });
           }),
-          mcpAction: (action, name) => runAction("mcp", async () => {
-            const receipt = await runtime.write({ path: "/api/dsh-gate/mcp", action: "mcp-" + action, body: { action: action, name: name } });
-            handleReceipt(receipt);
-            if (receipt.state === "applied") await runtime.refresh({ reason: "post-mcp" });
-          }),
-          mcpRemove: (name) => setConfirmState({ gate: { action: "mcp", text: "删除 MCP server「" + name + "」？", consequence: "从 gate 托管配置里移除；宿主配置不受影响", confirmLabel: "确认删除", cancelLabel: text("confirm.cancel"), needsConfirm: true }, run: () => { void runtime.write({ path: "/api/dsh-gate/mcp", action: "mcp-remove", body: { action: "remove", name: name } }).then((receipt) => { handleReceipt(receipt); if (receipt.state === "applied") return runtime.refresh({ reason: "post-mcp" }); return undefined; }); } }),
+          mcpAction: (action, name) => {
+            const body = { action: action, name: name };
+            if (action === "update") body.server = mcpServerOf(view.mcpDraft);
+            runAction("mcp", async () => {
+              const receipt = await runtime.mcpMutate(body);
+              handleReceipt(receipt);
+              if (receipt.state === "applied") await runtime.refresh({ reason: "post-mcp" });
+            });
+          },
+          mcpRemove: (name) => setConfirmState({ gate: { action: "mcp", text: text("mcp.removeTitle") + "（" + name + "）", consequence: text("mcp.removeConsequence"), confirmLabel: "确认删除", cancelLabel: text("confirm.cancel"), needsConfirm: true }, run: () => { void runtime.write({ path: "/api/dsh-gate/mcp", action: "mcp-remove", body: { action: "remove", name: name } }).then((receipt) => { handleReceipt(receipt); if (receipt.state === "applied") return runtime.refresh({ reason: "post-mcp" }); return undefined; }); } }),
           mcpAdd: () => {
             const name = String(view.mcpDraft.name || "").trim();
-            if (name.length === 0) { toast("error", "name 不能为空", "mcp-add"); return; }
-            const server = view.mcpDraft.transport === "http"
-              ? { transport: "streamable-http", url: String(view.mcpDraft.url || "").trim() }
-              : { transport: "stdio", command: String(view.mcpDraft.command || "").trim(), args: parseArgs(view.mcpDraft.args).filter((item) => item.indexOf("__UNCLOSED__:") !== 0) };
+            if (name.length === 0) { toast("error", text("mcp.emptyName"), "mcp-add"); return; }
             runAction("mcp", async () => {
-              const receipt = await runtime.write({ path: "/api/dsh-gate/mcp", action: "mcp-add", body: { action: "add", name: name, server: server } });
+              const receipt = await runtime.mcpMutate({ action: "add", name: name, server: mcpServerOf(view.mcpDraft) });
               handleReceipt(receipt);
-              if (receipt.state === "applied") { applyView({ mcpDraft: { name: "", transport: "stdio", command: "", args: "", url: "" } }); await runtime.refresh({ reason: "post-mcp" }); }
+              if (receipt.state === "applied") {
+                actions.resetMcpDraft();
+                applyView({ mcpAddOpen: false });
+                await runtime.refresh({ reason: "post-mcp" });
+              }
             });
           },
           setMcpDraft: (patch) => applyView({ mcpDraft: Object.assign({}, view.mcpDraft, patch) }),
+          resetMcpDraft: () => applyView({ mcpDraft: { name: "", transport: "stdio", command: "", args: "", url: "", rawServer: null } }),
           editJson: (value) => { draftStore.json.setText(value); draftStore.json.setDirty(true); applyView({ jsonText: value, jsonDirty: true, jsonNotice: null }); },
           validateJson: () => {
             const parsed = parseText(view.jsonText);
@@ -3237,8 +3494,10 @@ window.__ModuleLoader__.load({
           requestJsonSave: () => {
             const parsed = parseText(view.jsonText);
             if (!parsed.ok) { applyView({ jsonNotice: { tone: "error", text: text("json.invalid") + "：" + parsed.message } }); return; }
-            setConfirmState({ gate: { action: "save-policy", text: text("json.confirmTitle"), consequence: "整份替换会丢弃面板里的能力/技能草稿（" + summary.text + "）", detail: "提交带 revision=" + String(snapshot.revision === null ? "—" : snapshot.revision), confirmLabel: text("confirm.ok"), cancelLabel: text("confirm.cancel"), needsConfirm: summary.total > 0 }, run: () => {
-              void runtime.savePolicy(Object.assign({}, parsed.value, { replace: true, revision: snapshot.revision })).then((receipt) => {
+            setConfirmState({ gate: { action: "save-policy", text: text("json.confirmTitle"), consequence: "整份替换会丢弃面板里的能力/技能草稿（" + summary.text + "）", detail: "当前版本 expectedRevision=" + String(snapshot.revision === null ? "—" : snapshot.revision), confirmLabel: text("confirm.ok"), cancelLabel: text("confirm.cancel"), needsConfirm: summary.total > 0 }, run: () => {
+              const jsonBody = Object.assign({}, parsed.value, { replace: true, acknowledge: true });
+              if (snapshot.revision !== null && snapshot.revision !== undefined) jsonBody.expectedRevision = snapshot.revision;
+              void runtime.savePolicy(jsonBody).then((receipt) => {
                 if (receipt.state === "applied" || receipt.state === "no-change") { draftStore.discardAll(); draftStore.json.setDirty(false); applyView({ jsonDirty: false }); }
                 handleReceipt(receipt);
                 if (receipt.state === "applied") return runtime.refresh({ reason: "post-json" });
@@ -3257,7 +3516,7 @@ window.__ModuleLoader__.load({
             } });
           },
           importJson: () => {
-            const parsed = parseText(view.exchangeText);
+            const parsed = parseText(view.jsonText);
             if (!parsed.ok) { applyView({ jsonNotice: { tone: "error", text: "导入失败：" + parsed.message } }); return; }
             const envelope = isObject(parsed.value.policy) ? parsed.value.policy : parsed.value;
             if (!isObject(envelope)) { applyView({ jsonNotice: { tone: "error", text: "导入失败：找不到策略对象" } }); return; }
@@ -3270,8 +3529,17 @@ window.__ModuleLoader__.load({
           },
           exportJson: () => {
             const content = isObject(policyContent) ? policyContent : {};
-            applyView({ exchangeText: JSON.stringify(content, null, 2) });
-            toast("info", "已把当前有效策略写入导出框，可直接复制", "export");
+            const body = JSON.stringify(content, null, 2);
+            applyView({ exchangeText: body });
+            const clipboard = typeof navigator !== "undefined" && navigator && navigator.clipboard && typeof navigator.clipboard.writeText === "function" ? navigator.clipboard : null;
+            if (clipboard === null) { toast("warn", text("settings.jsonCopyFallback"), "export"); return; }
+            try {
+              const pending = clipboard.writeText(body);
+              if (pending && typeof pending.then === "function") pending.then(() => toast("ok", text("settings.jsonExported"), "export"), () => toast("warn", text("settings.jsonCopyFallback"), "export"));
+              else toast("ok", text("settings.jsonExported"), "export");
+            } catch (error) {
+              toast("warn", text("settings.jsonCopyFallback"), "export");
+            }
           },
           listSessions: async () => {
             const result = await runtime.listSessions();
@@ -3282,20 +3550,88 @@ window.__ModuleLoader__.load({
           selectSession: (agent) => { if (runtime.selectSession(agent)) void runtime.refresh({ reason: "session" }); },
           loadDiagnostics: async () => {
             const result = await runtime.loadDiagnostics();
-            if (!result.ok) { setMetrics(null); toast("warn", "运行态读取失败（" + (result.error || "") + "），不冒充零", "metrics"); return; }
+            if (!result.ok) { setMetrics(null); toast("warn", text("settings.metricsFailed") + "（" + (result.error || "") + "）", "metrics"); return; }
             const body = isObject(result.body) ? result.body : {};
             setMetrics(isObject(body.runtime) ? body.runtime : { counters: body });
           },
+          toggleEnabled: () => {
+            const current = snapshot.data.state;
+            const next = !(current === null || current.enabled !== false);
+            runAction("save-policy", async () => {
+              const receipt = await runtime.toggleEnabled(next);
+              handleReceipt(receipt);
+              if (receipt.state === "applied") await runtime.refresh({ reason: "toggle" });
+            });
+          },
+          recoverCorrupt: () => {
+            setConfirmState({
+              gate: {
+                action: "recover-corrupt",
+                text: text("corrupt.confirmTitle"),
+                consequence: text("corrupt.confirmText"),
+                confirmLabel: text("corrupt.rebuild"),
+                cancelLabel: text("confirm.cancel"),
+                needsConfirm: true,
+              },
+              run: () => {
+                void runtime.recoverCorruptPolicy(fallbackTemplate()).then((receipt) => {
+                  if (receipt && (receipt.state === "applied" || receipt.state === "no-change" || receipt.state === "noop")) {
+                    draftStore.discardAll();
+                    draftStore.json.setDirty(false);
+                    applyView({ jsonDirty: false });
+                  }
+                  handleReceipt(receipt);
+                  if (receipt.state === "applied") return runtime.refresh({ reason: "recover" });
+                  return undefined;
+                });
+              },
+            });
+          },
         };
 
-        if (snapshot.loading === false && snapshot.data.state === null && snapshot.lastError !== "") {
-          return h("div", { key: "root", className: "dshg-wrap" }, [
-            h("div", { key: "error", className: "dshg-alert", "data-tone": "error", role: "alert" }, text("loadFailed") + "：" + snapshot.lastError),
-            h("div", { key: "foot", className: "dshg-foot" }, [
-              h("button", { key: "retry", type: "button", className: "dshg-btn", onClick: () => { void runtime.refresh({ reason: "retry" }); } }, text("retry")),
-            ]),
-          ]);
-        }
+        // 幂等样式注入（P0）：挂载即确保 style[data-dsh-gate] 存在
+        react.useEffect(() => {
+          ensureStyle(typeof document === "undefined" ? null : document);
+        }, []);
+
+        // 键盘撤销/重做：输入类控件内不拦截
+        react.useEffect(() => {
+          if (typeof document === "undefined" || typeof document.addEventListener !== "function") return undefined;
+          const handler = (event) => {
+            if (confirmRef.current) return;
+            if (!event || event.isComposing === true) return;
+            const target = event.target;
+            const tag = target && target.tagName ? String(target.tagName).toUpperCase() : "";
+            if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || (target && target.isContentEditable === true)) return;
+            if (event.ctrlKey !== true && event.metaKey !== true) return;
+            const key = String(event.key || "").toLowerCase();
+            if (key === "z") {
+              if (typeof event.preventDefault === "function") event.preventDefault();
+              if (event.shiftKey === true) actions.redo(); else actions.undo();
+              return;
+            }
+            if (key === "y") {
+              if (typeof event.preventDefault === "function") event.preventDefault();
+              actions.redo();
+            }
+          };
+          document.addEventListener("keydown", handler);
+          return () => { if (typeof document.removeEventListener === "function") document.removeEventListener("keydown", handler); };
+        }, []);
+
+        // 提示自动消失：error（lifetime 0）常驻，其余按级别计时
+        react.useEffect(() => {
+          if (typeof setTimeout !== "function") return undefined;
+          const timers = [];
+          for (let index = 0; index < toastItems.length; index += 1) {
+            const item = toastItems[index];
+            if (typeof item.lifetime !== "number" || item.lifetime <= 0) continue;
+            const key = item.key;
+            const expiresAt = typeof item.expiresAt === "number" && item.expiresAt > 0 ? item.expiresAt : (Date.now() + item.lifetime);
+            timers.push(setTimeout(() => { toastRef.current.dismiss(key); setToastItems(toastRef.current.items()); }, Math.max(0, expiresAt - Date.now())));
+          }
+          return () => { for (let index = 0; index < timers.length; index += 1) clearTimeout(timers[index]); };
+        }, [toastItems]);
 
         const viewProps = {
           model: model,
@@ -3327,71 +3663,65 @@ window.__ModuleLoader__.load({
           tab: view.tab,
         };
 
+        const gateState = snapshot.data.state;
+        const gateOn = gateState === null || gateState.enabled !== false;
+        const corrupt = isObject(snapshot.data.policy) && snapshot.data.policy.corrupt === true;
+        const loadError = snapshot.loading === false && snapshot.data.state === null && snapshot.lastError !== "";
+        const diagOpen = view.diagOpen === true;
+        const diffOpen = view.diffOpen === true;
+
         const layout = () => {
-          const statsNodes = model === null
-            ? [statNode("stat:visible", text("common.none"), text("caps.title")), statNode("stat:rows", text("common.none"), text("common.none"))]
-            : [
-                statNode("stat:visible", String(model.stats.visibleTools), "可见工具"),
-                statNode("stat:rows", String(model.stats.rows), text("caps.title")),
-                statNode("stat:resident", String(model.stats.resident), text("tier.resident")),
-                statNode("stat:ondemand", String(model.stats.ondemand), text("tier.ondemand")),
-                statNode("stat:off", String(model.stats.off), text("tier.off")),
-                statNode("stat:sections", String(model.stats.sections), "段落"),
-                statNode("stat:skills", String(model.stats.skills), text("skills.title")),
-                statNode("stat:warnings", String(model.stats.warnings), "告警", model.stats.warnings > 0 ? "warn" : undefined),
-                statNode("stat:dirty", String(summary.total), text("caps.pending"), summary.total > 0 ? "warn" : undefined),
-              ];
-          const toolbarNodes = [
-            primitives.switchButton({ key: "enabled", on: snapshot.data.state === null || snapshot.data.state.enabled !== false, label: snapshot.data.state === null ? "闸门" : (snapshot.data.state.enabled === false ? "闸门已禁用" : "闸门已启用"), disabled: snapshot.writingActive || snapshot.loading, reason: "读写进行中，按钮按统一矩阵禁用", onToggle: () => actions.reload() }),
-            buttonNode("toolbar:reload", snapshot.loading ? text("common.loading") : text("reload"), () => actions.reload(), { disabled: snapshot.writingActive }),
-            buttonNode("toolbar:save", snapshot.writingActive ? text("saving") : text("save"), () => actions.savePolicy(), { primary: true, disabled: summary.total === 0 || summary.blocking === true || snapshot.writingActive, reason: summary.blocking ? text("caps.blocked") : text("noChanges") }),
-            buttonNode("toolbar:undo", text("undo"), () => actions.undo(), { disabled: !draftStore.canUndo() }),
-            buttonNode("toolbar:redo", text("redo"), () => actions.redo(), { disabled: !draftStore.canRedo() }),
-            h("span", { key: "dirty", className: "dshg-hint" }, summary.text),
-            buttonNode("toolbar:discard", text("discard"), () => actions.discard(), { disabled: summary.total === 0, danger: true }),
-          ];
-          const tabsNodes = primitives.tabsBar({
-            key: "tabsbar",
-            tabs: TABS.map((tab) => ({ value: tab.value, label: tab.label, count: tab.value === "caps" ? (model ? model.stats.rows : "") : tab.value === "skills" ? (model ? model.stats.skills : "") : tab.value === "json" ? (view.jsonDirty ? "•" : "") : "" })),
-            active: view.tab,
-            onSelect: (value) => applyView({ tab: value }),
-            onKeyDown: (event) => {
-              const key = event && event.key;
-              if (!key) return;
-              const index = TABS.map((tab) => tab.value).indexOf(view.tab);
-              let next = index;
-              if (key === "ArrowRight") next = (index + 1) % TABS.length;
-              else if (key === "ArrowLeft") next = (index - 1 + TABS.length) % TABS.length;
-              else if (key === "Home") next = 0;
-              else if (key === "End") next = TABS.length - 1;
-              else return;
-              if (typeof event.preventDefault === "function") event.preventDefault();
-              applyView({ tab: TABS[next].value });
-            },
-          });
-          const bodyNode = view.routeMissing
-            ? h("div", { key: "route-missing", className: "dshg-card" }, [
-                h("div", { key: "head", className: "dshg-cardHead" }, text("error.viewMissing")),
-                h("div", { key: "body", className: "dshg-cardBody" }, [
-                  h("div", { key: "hint", className: "dshg-hint" }, text("error.viewMissingHint")),
-                  h("div", { key: "actions", className: "dshg-row" }, [
-                    h("button", { key: "retry", type: "button", className: "dshg-btn", onClick: () => { void runtime.refresh({ reason: "retry" }); } }, text("retry")),
-                    h("button", { key: "caps", type: "button", className: "dshg-btn", onClick: () => applyView({ tab: "caps", routeMissing: false }) }, text("error.backToCaps")),
-                  ]),
-                ]),
-              ])
-            : views.renderTabPanel(viewProps);
+          const chip = (key, label, tone) => h("span", { key: key, className: "dshg-chip", "data-tone": tone }, String(label));
+          const chips = [
+            chip("c:resident", text("tier.resident") + " " + String(model ? model.stats.resident : 0), "ok"),
+            chip("c:ondemand", text("tier.ondemand") + " " + String(model ? model.stats.ondemand : 0), "business"),
+            chip("c:off", text("tier.off") + " " + String(model ? model.stats.off : 0), "muted"),
+            model && model.stats.warnings > 0 ? chip("c:warn", text("top.warnings") + " " + String(model.stats.warnings), "warn") : null,
+            summary.total > 0 ? chip("c:pending", text("top.pending") + " " + String(summary.total), "warn") : null,
+          ].filter(Boolean);
+          const top = h("div", { key: "top", className: "dshg-top" }, [
+            primitives.switchButton({
+              key: "enabled",
+              on: gateOn,
+              label: gateOn ? text("top.enabled") : text("top.disabled"),
+              disabled: snapshot.writingActive === true || snapshot.loading === true,
+              reason: text("top.toggleReason"),
+              onToggle: () => actions.toggleEnabled(),
+            }),
+            h("div", { key: "chips", className: "dshg-chips" }, chips),
+            h("span", { key: "grow", className: "dshg-grow" }, null),
+            buttonNode("top:diag", text("top.diag"), () => applyView({ diagOpen: !diagOpen }), { title: text("diag.hint") }),
+            buttonNode("top:reload", snapshot.loading ? text("common.loading") : text("top.reload"), () => actions.reload(), { disabled: snapshot.writingActive === true }),
+          ]);
+          const diag = h("div", { key: "diag", className: "dshg-col" }, diagOpen ? [
+            primitives.healthBar({ key: "hb", health: viewProps.health, sessionLabel: viewProps.sessionLabel, readAtText: viewProps.readAtText }),
+            h("div", { key: "meta", className: "dshg-row" }, [
+              h("span", { key: "file", className: "dshg-hint" }, text("diag.file") + "：" + String(viewProps.health.file || text("common.none"))),
+              h("span", { key: "read", className: "dshg-hint" }, text("diag.readAt") + "：" + String(viewProps.readAtText)),
+              h("span", { key: "ver", className: "dshg-hint" }, text("title") + " v" + PANEL_VERSION),
+            ]),
+            h("div", { key: "src", className: "dshg-row" }, routes.map((route) => h("span", { key: route.key, className: "dshg-tag", "data-tone": route.status === "error" ? "error" : (route.status === "partial" ? "warn" : "ok") }, text("diag.sources") + " · " + route.key + "：" + String(route.status === undefined || route.status === null ? "?" : route.status)))),
+            h("div", { key: "hint", className: "dshg-hint" }, text("diag.hint")),
+          ] : null);
+          const corruptNode = h("div", { key: "corrupt", className: "dshg-col" }, corrupt === true ? h("div", { key: "card", className: "dshg-card dshg-corrupt" }, [
+            h("div", { key: "head", className: "dshg-cardHead" }, h("span", { key: "t", className: "dshg-cardTitle" }, text("corrupt.title"))),
+            h("div", { key: "body", className: "dshg-cardBody" }, [
+              h("div", { key: "text", className: "dshg-alert", "data-tone": "error", role: "alert" }, text("corrupt.text")),
+              h("div", { key: "actions", className: "dshg-row" }, [buttonNode("rebuild", text("corrupt.rebuild"), () => actions.recoverCorrupt(), { primary: true })]),
+            ]),
+          ]) : null);
+          const toasts = h("div", { key: "toasts", className: "dshg-col" }, primitives.toastHost({ key: "toasthost", items: toastItems, onDismiss: dismissToast }));
           const dialog = confirmState === null ? null : (confirmState.conflict
             ? primitives.confirmBar({
                 key: "dialog:conflict",
                 id: "dshg-conflict",
-                title: "revision 冲突：请三选一",
+                title: text("confirm.ok"),
                 text: confirmState.conflict.message,
                 detail: confirmState.conflict.choices.map((choice) => choice.label + " — " + choice.consequence).join("；"),
-                confirmLabel: "覆盖服务端",
+                confirmLabel: text("confirm.ok"),
                 cancelLabel: text("confirm.cancel"),
                 destructive: true,
-                onConfirm: () => { const conflict = confirmState.conflict; setConfirmState(null); void runtime.savePolicy(Object.assign({}, draftStore.toPolicyBody(), { revision: conflict.revision })).then(handleReceipt); },
+                onConfirm: () => { const conflict = confirmState.conflict; setConfirmState(null); void runtime.savePolicy(Object.assign({}, draftStore.toPolicyBody(), { expectedRevision: conflict.revision })).then(handleReceipt); },
                 onCancel: () => setConfirmState(null),
               })
             : primitives.confirmBar({
@@ -3407,31 +3737,102 @@ window.__ModuleLoader__.load({
                 onConfirm: () => { const run = confirmState.run; setConfirmState(null); if (typeof run === "function") void run(); },
                 onCancel: () => setConfirmState(null),
               }));
-          return h("div", { key: "root:" + fatalToken, className: "dshg-wrap" }, [
-            h("div", { key: "head", className: "dshg-head" }, [
-              h("div", { key: "grow", className: "dshg-grow" }, [
-                h("div", { key: "title", className: "dshg-title" }, text("title")),
-                h("div", { key: "sub", className: "dshg-sub" }, text("subtitle") + " · v" + PANEL_VERSION),
+          const tabCount = (value) => {
+            if (value === "caps") return model ? model.stats.rows : "";
+            if (value === "skills") return model ? model.stats.skills : "";
+            if (value === "mcp") return isObject(snapshot.data.mcp) && Array.isArray(snapshot.data.mcp.servers) ? snapshot.data.mcp.servers.length : "";
+            return summary.total > 0 ? "•" : "";
+          };
+          const tabs = h("div", { key: "tabs", className: "dshg-col" }, primitives.tabsBar({
+            key: "tabsbar",
+            tabs: TABS.map((tab) => ({ value: tab.value, label: tab.label, count: tabCount(tab.value) })),
+            active: view.tab,
+            onSelect: (value) => applyView({ tab: value }),
+            onKeyDown: (event) => {
+              const key = event && event.key;
+              if (!key) return;
+              const index = TABS.map((tab) => tab.value).indexOf(view.tab);
+              let next = index;
+              if (key === "ArrowRight") next = (index + 1) % TABS.length;
+              else if (key === "ArrowLeft") next = (index - 1 + TABS.length) % TABS.length;
+              else if (key === "Home") next = 0;
+              else if (key === "End") next = TABS.length - 1;
+              else return;
+              if (typeof event.preventDefault === "function") event.preventDefault();
+              applyView({ tab: TABS[next].value });
+            },
+          }));
+          let bodyNode = null;
+          if (loadError === true) {
+            bodyNode = primitives.errorCard({
+              key: "load",
+              title: text("error.title"),
+              message: text("loadFailed") + "：" + String(snapshot.lastError),
+              onRetry: () => { void runtime.refresh({ reason: "retry" }); },
+            });
+          } else if (view.routeMissing === true) {
+            bodyNode = h("div", { key: "route-missing", className: "dshg-card" }, [
+              h("div", { key: "head", className: "dshg-cardHead" }, h("span", { key: "t", className: "dshg-cardTitle" }, text("error.viewMissing"))),
+              h("div", { key: "body", className: "dshg-cardBody" }, [
+                h("div", { key: "hint", className: "dshg-hint" }, text("error.viewMissingHint")),
+                h("div", { key: "actions", className: "dshg-row" }, [
+                  buttonNode("retry", text("error.retry"), () => { void runtime.refresh({ reason: "retry" }); }),
+                  buttonNode("caps", text("error.backToCaps"), () => applyView({ tab: "caps", routeMissing: false }), { primary: true }),
+                ]),
               ]),
-            ]),
-            h("div", { key: "stats", className: "dshg-stats" }, statsNodes),
-            h("div", { key: "health", className: "dshg-col" }, primitives.healthBar({ key: "healthbar", health: viewProps.health, sessionLabel: viewProps.sessionLabel, readAtText: viewProps.readAtText })),
-            h("div", { key: "toasts", className: "dshg-col" }, primitives.toastHost({ key: "toasthost", items: toastItems, onDismiss: dismissToast })),
-            h("div", { key: "dialog", className: "dshg-col" }, dialog),
-            h("div", { key: "toolbar", className: "dshg-row" }, toolbarNodes),
-            h("div", { key: "tabs", className: "dshg-col" }, tabsNodes),
-            h("div", { key: "body", className: "dshg-col" }, bodyNode),
-            h("div", { key: "foot", className: "dshg-foot" }, [
-              h("span", { key: "file", className: "dshg-note" }, text("health.file") + "：" + (viewProps.health.file || text("common.none"))),
-              h("span", { key: "note", className: "dshg-hint" }, "面板只读写本机 /api/dsh-gate/*；请求八到十五秒内必有结果"),
-            ]),
+            ]);
+          } else {
+            bodyNode = views.renderTabPanel(viewProps);
+          }
+          const body = h("div", { key: "body", className: "dshg-col" }, bodyNode);
+          const saveNodes = summary.total > 0
+            ? [
+              h("div", { key: "bar", className: "dshg-saveBar" }, [
+                h("div", { key: "info", className: "dshg-grow" }, [
+                  h("div", { key: "t", className: "dshg-saveTitle" }, text("save.title") + "（" + String(summary.total) + "）"),
+                  h("div", { key: "s", className: "dshg-hint" }, summary.text),
+                ]),
+                buttonNode("save:details", diffOpen ? text("save.hideDetails") : text("save.details"), () => applyView({ diffOpen: !diffOpen })),
+                buttonNode("save:undo", text("save.undo"), () => actions.undo(), { disabled: !draftStore.canUndo() }),
+                buttonNode("save:redo", text("save.redo"), () => actions.redo(), { disabled: !draftStore.canRedo() }),
+                buttonNode("save:discard", text("save.discard"), () => actions.discard(), { danger: true }),
+                buttonNode("save:commit", snapshot.writingActive ? text("save.saving") : text("save.save"), () => actions.savePolicy(), {
+                  primary: true,
+                  disabled: summary.blocking === true || snapshot.writingActive === true,
+                  reason: summary.blocking === true ? text("caps.blocked") : text("top.toggleReason"),
+                }),
+              ]),
+              diffOpen === true && viewProps.diff ? primitives.diffPreview({ key: "diff", diff: viewProps.diff, title: text("save.details") }) : null,
+            ]
+            : [
+              h("div", { key: "bar", className: "dshg-saveBar dshg-saveClean" }, [
+                h("span", { key: "t", className: "dshg-hint" }, text("save.noChanges")),
+                buttonNode("save:undo", text("save.undo"), () => actions.undo(), { disabled: !draftStore.canUndo() }),
+                buttonNode("save:redo", text("save.redo"), () => actions.redo(), { disabled: !draftStore.canRedo() }),
+              ]),
+            ];
+          const save = h("div", { key: "save", className: "dshg-col" }, saveNodes.filter(Boolean));
+          const foot = h("div", { key: "foot", className: "dshg-foot" }, [
+            h("span", { key: "file", className: "dshg-note" }, text("health.file") + "：" + String(viewProps.health.file || text("common.none"))),
+            h("span", { key: "note", className: "dshg-hint" }, text("summary")),
+            h("span", { key: "ver", className: "dshg-hint" }, "v" + PANEL_VERSION),
           ]);
+          const dialogSlot = h("div", { key: "dialog", className: "dshg-col" }, dialog);
+          return h("div", { key: "root:" + fatalToken, className: "dshg-wrap" }, [top, diag, corruptNode, toasts, dialogSlot, tabs, body, save, foot]);
         };
 
-        const statNode = (key, value, label, tone) => h("div", { key: key, className: "dshg-stat", "data-tone": tone }, [h("b", { key: "v" }, String(value)), h("span", { key: "l" }, String(label))]);
         const buttonNode = (key, label, onClick, options) => {
           const opts = options || {};
-          return h("button", { key: key, type: "button", className: "dshg-btn", "data-primary": opts.primary === true ? "true" : undefined, "data-danger": opts.danger === true ? "true" : undefined, disabled: opts.disabled === true, title: opts.disabled === true ? (opts.reason || "") : "", onClick: opts.disabled === true ? undefined : onClick }, String(label));
+          return h("button", {
+            key: key,
+            type: "button",
+            className: "dshg-btn",
+            "data-primary": opts.primary === true ? "true" : undefined,
+            "data-danger": opts.danger === true ? "true" : undefined,
+            disabled: opts.disabled === true,
+            title: opts.disabled === true ? (opts.reason || "") : (opts.title || ""),
+            onClick: opts.disabled === true ? undefined : onClick,
+          }, String(label));
         };
 
         try {
@@ -3516,7 +3917,7 @@ window.__ModuleLoader__.load({
      * 生产态该键不存在，exports 仍严格是 ['inject','apply']（I-6 / ADR A-5）。 */
     const testHook = typeof window === "undefined" ? undefined : window.__DSH_GATE_TEST_HOOK__;
     if (testHook !== undefined && testHook !== null && typeof testHook === "object") {
-      testHook.version = "0.6.0";
+      testHook.version = "0.7.0";
       testHook.template = () => fallbackTemplate();
       testHook.text = TEXT;
       testHook.textKeys = Object.keys(TEXT);
@@ -3530,7 +3931,7 @@ window.__ModuleLoader__.load({
         MAX_UNDO: 50,
         MAX_TOASTS: 5,
         TOAST_LIFETIME: { ok: 4000, info: 6000, warn: 8000, error: 0 },
-        PANEL_VERSION: "0.6.0",
+        PANEL_VERSION: "0.7.0",
       };
       testHook.helpers = {
         parseArgs: shell.parseArgs,

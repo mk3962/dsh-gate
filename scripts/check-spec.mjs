@@ -25,6 +25,9 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_ROOT = path.resolve(HERE, "..");
 
+/** G91.3 守的是 0.6.0 历史收口段：版本号升到 0.7.0 后，这个历史锚点仍必须存在。 */
+const HISTORICAL_ANCHOR = /^## \[0\.6\.0\]/m;
+
 function parseArgs(argv) {
   const out = { root: DEFAULT_ROOT, json: undefined, verbose: false, pendingOk: false };
   for (let i = 0; i < argv.length; i += 1) {
@@ -109,7 +112,7 @@ async function checkVersion() {
   if (pkg.name !== "dsh-gate") return { status: "FAIL", detail: "name 必须是 dsh-gate" };
   if (pkg.type !== "module") return { status: "FAIL", detail: "type 必须是 module" };
   if (pkg.engines === undefined || pkg.engines.node === undefined) return { status: "FAIL", detail: "缺少 engines.node" };
-  return { status: "PASS", detail: "0.6.0 / type=module / engines.node=" + pkg.engines.node };
+  return { status: "PASS", detail: pkg.version + " / type=module / engines.node=" + pkg.engines.node };
 }
 
 function checkBomAndEol() {
@@ -215,8 +218,8 @@ function checkChangelogVersion() {
   const body = text.slice(match.index);
   const next = body.slice(match[0].length).search(/^##\s*\[/m);
   const section = next < 0 ? body : body.slice(0, match[0].length + next);
-  if (!/—\s*20\d\d-\d\d-\d\d/.test(section.split("\n")[0])) return { status: "FAIL", detail: "0.6.0 标题缺日期（格式：## [0.6.0] — YYYY-MM-DD）" };
-  if (section.trim().split("\n").length < 30) return { status: "FAIL", detail: "0.6.0 段落过短（<30 行），收口文档未写" };
+  if (!/—\s*20\d\d-\d\d-\d\d/.test(section.split("\n")[0])) return { status: "FAIL", detail: pkg.version + " 标题缺日期（格式：## [" + pkg.version + "] — YYYY-MM-DD）" };
+  if (section.trim().split("\n").length < 30) return { status: "FAIL", detail: pkg.version + " 段落过短（<30 行），收口文档未写" };
   return { status: "PASS", detail: "CHANGELOG 顶部 " + pkg.version + " 与 package.json 一致" };
 }
 
@@ -487,8 +490,8 @@ async function checkChangelogCompleteness() {
   }
   if (registry.DEFECT_COUNT !== registry.defects.length) return { status: "FAIL", detail: "DEFECT_COUNT " + registry.DEFECT_COUNT + " ≠ defects.length " + registry.defects.length };
   const text = readText("CHANGELOG.md");
-  const start = text.indexOf("## [0.6.0]");
-  if (start < 0) return { status: "FAIL", detail: "CHANGELOG.md 没有 0.6.0 段" };
+  const start = text.search(HISTORICAL_ANCHOR);
+  if (start < 0) return { status: "FAIL", detail: "CHANGELOG.md 没有 0.6.0 历史收口段" };
   const rest = text.slice(start + 1);
   const next = rest.search(/^##\s*\[/m);
   const section = next < 0 ? text.slice(start) : text.slice(start, start + 1 + next);
@@ -567,7 +570,8 @@ async function main() {
     console.error("不是仓库根（缺少 package.json）: " + ROOT);
     process.exit(1);
   }
-  console.log("dsh-gate 0.6.0 · 工程门禁（check-spec）");
+  const pkg = JSON.parse(readText("package.json"));
+  console.log("dsh-gate " + pkg.version + " · 工程门禁（check-spec）");
   console.log("仓库: " + ROOT + (args.pendingOk ? "  [pending-ok]" : ""));
   console.log("");
 
@@ -584,7 +588,7 @@ async function main() {
   await run("G90.11", "仓库根无 .tgz / undefined / 运行期策略文件", checkRootHygiene);
   await run("G91.1", "文档术语统一（禁「档位」「等级」「三层」）", checkDocTerminology);
   await run("G91.2", "架构文档六模块 + I-10–I-16 + 层 0/1/2", checkDocsCompleteness);
-  await run("G91.3", "CHANGELOG 0.6.0 收口完整（17 + X-1 + D-1 + L143 + P0–P3）", checkChangelogCompleteness);
+  await run("G91.3", "CHANGELOG 0.6.0 历史段完整（17 + X-1 + D-1 + L143 + P0–P3）", checkChangelogCompleteness);
   await run("G92.1", "有效性自检注册表（HF-1–6 / I-10–16 锚点唯一）", checkEffectivenessRegistry);
   await run("G92.2", "CI 双平台 + S5 分平台 + release 资产", checkCiWorkflows);
   await run("G92.3", "面板文案新旧术语（WARN 级）", checkClientWording);
@@ -605,7 +609,7 @@ async function main() {
   }
 
   if (args.json !== undefined) {
-    writeFileSync(args.json, JSON.stringify({ schema: 1, root: ROOT, version: "0.6.0", results, summary: { total: results.length, failed: failed.length, warned: warned.length } }, null, 2) + "\n", "utf8");
+    writeFileSync(args.json, JSON.stringify({ schema: 1, root: ROOT, version: pkg.version, results, summary: { total: results.length, failed: failed.length, warned: warned.length } }, null, 2) + "\n", "utf8");
     console.log("JSON 报告: " + args.json);
   }
 

@@ -20,8 +20,8 @@ import { fileURLToPath } from "node:url";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, "..");
 
-/** 0.6.0 的版本基线：package.json / CHANGELOG / 注册表三处必须一致。 */
-export const BASELINE_VERSION = "0.6.0";
+/** 0.7.0 的版本基线：package.json / CHANGELOG / 注册表三处必须一致。 */
+export const BASELINE_VERSION = "0.7.0";
 
 /** 整轮预算（毫秒）。CI 与本机默认一致，超了直接红。 */
 export const TOTAL_BUDGET_MS = 12000;

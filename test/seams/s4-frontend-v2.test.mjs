@@ -169,7 +169,7 @@ test("#07 · 单文件外壳内 L1-L7 七个命名空间齐备且可求值", () 
   for (const name of ["L1", "L2", "L3", "L4"]) assert.equal(typeof hook[name].create, "function", name + " 必须通过门控钩子暴露工厂");
   assert.equal(typeof hook.primitives.createToastQueue, "function");
   assert.equal(typeof hook.shell.parseArgs, "function");
-  assert.equal(hook.constants.PANEL_VERSION, "0.6.0");
+  assert.equal(hook.constants.PANEL_VERSION, "0.7.0");
 });
 
 test("#07 · 生产态导出仍严格是 ['apply','inject']，门控钩子只在预置时出现", () => {
@@ -649,23 +649,63 @@ test("#07 · L4 revision 冲突给三选一，不静默覆盖（H98/I112）", as
   assert.ok(receipt.choices.every((choice) => typeof choice.consequence === "string" && choice.consequence.length > 0));
 });
 
-test("#07 · L4 五入口统一脏集合确认 + 外部改动二选一（H93/I112）", () => {
+test("#07 · preflight 只对丢弃类动作确认，保存类有草稿也直接生效（H93/I112）", async () => {
   const { hook } = loadHook();
+  const scripted = scriptedTransport([]);
   const draft = hook.L2.create({});
   draft.setBaseline(emptyBaseline());
-  const orchestrator = hook.L4.create({ transport: createManualTransport().transport, draft: draft, projection: hook.L3.create({}), hardCeilingMs: 3000 });
-  assert.equal(orchestrator.preflight("reload").needsConfirm, false, "干净时不得弹确认");
-  draft.stage(draft.keys.cap("native:read"), 2);
-  draft.stage(draft.keys.skill("s"), 0);
-  draft.json.setDirty(true);
-  for (const action of ["reload", "save-policy", "save-skills", "save-signature", "mcp"]) {
-    const gate = orchestrator.preflight(action);
-    assert.equal(gate.needsConfirm, true, action + " 必须走同一确认");
-    assert.ok(gate.summaryText.indexOf("能力") >= 0, action + " 的文案必须列出能力");
-    assert.ok(gate.summaryText.indexOf("技能") >= 0, action + " 的文案必须列出技能");
-    assert.ok(gate.summaryText.indexOf("JSON") >= 0, action + " 的文案必须列出 JSON");
-    assert.ok(gate.consequence.indexOf("丢弃") >= 0);
+  const orchestrator = hook.L4.create({ transport: scripted.transport, draft: draft, projection: hook.L3.create({}), hardCeilingMs: 3000 });
+
+  // 保存类动作产出的改动即刻落盘，草稿本身就是提交体，不存在"丢弃"语义。
+  const SAVE_ACTIONS = ["save-policy", "save-skills", "save-signature", "mcp", "toggle-enabled"];
+  // 丢弃类动作会清空草稿或换掉整份策略，必须先确认。
+  const DISCARD_ACTIONS = ["reload", "switch-session", "replace-json"];
+
+  for (const action of SAVE_ACTIONS.concat(DISCARD_ACTIONS)) {
+    const clean = orchestrator.preflight(action);
+    assert.equal(clean.known, true, action + " 必须是登记过的写动作");
+    assert.equal(clean.needsConfirm, false, "无草稿时 " + action + " 不得弹丢弃确认");
+    assert.equal(clean.dirtyTotal, 0);
+    assert.equal(clean.consequence, "", "无草稿时 " + action + " 不得给丢弃后果");
   }
+
+  await orchestrator.loadRound({}).promise;
+
+  draft.stage(draft.keys.cap("native:read"), 2);
+  draft.stage(draft.keys.skill("s1"), 0);
+  draft.json.setDirty(true);
+  const summary = draft.dirtySummary();
+  assert.equal(summary.total, 3, "脏总量是保存类与丢弃类共用的唯一判据");
+  const dirtyText = summary.text;
+  assert.ok(dirtyText.indexOf("能力") >= 0, dirtyText);
+  assert.ok(dirtyText.indexOf("技能") >= 0, dirtyText);
+  assert.ok(dirtyText.indexOf("JSON") >= 0, dirtyText);
+
+  for (const action of SAVE_ACTIONS) {
+    const gate = orchestrator.preflight(action);
+    assert.equal(gate.needsConfirm, false, action + " 是保存类动作：有草稿也直接生效，不丢草稿");
+    assert.equal(gate.dirtyTotal, 3);
+    assert.equal(gate.summaryText, dirtyText, action + " 仍要展示同一份脏摘要");
+    assert.equal(gate.consequence, "", action + " 不丢草稿就不得给丢弃后果");
+  }
+
+  for (const action of DISCARD_ACTIONS) {
+    const gate = orchestrator.preflight(action);
+    assert.equal(gate.needsConfirm, true, action + " 是丢弃类动作：有草稿必须先确认");
+    assert.equal(gate.dirtyTotal, 3);
+    assert.equal(gate.summaryText, dirtyText, action + " 的确认文案必须列出同一份脏集合");
+    assert.ok(gate.consequence.indexOf("丢弃") >= 0, action + " 的后果必须写明丢弃");
+    assert.ok(gate.confirmLabel.length > 0 && gate.cancelLabel.length > 0, action + " 的确认条必须给两个按钮文案");
+  }
+
+  // 外部改动二选一：有草稿时不得自动载入，必须让用户在载入与保留之间选。
+  const conflict = orchestrator.detectExternalChange({ revision: 99 });
+  assert.equal(conflict.changed, true);
+  assert.equal(conflict.automatic, false, "有草稿时禁止自动载入外部改动");
+  assert.equal(conflict.choices.length, 2);
+  assert.deepEqual(plain(conflict.choices.map((choice) => choice.value)), ["load", "keep"]);
+  assert.ok(conflict.choices.every((choice) => typeof choice.consequence === "string" && choice.consequence.length > 0));
+  assert.ok(conflict.message.indexOf("3 项") >= 0, "冲突文案必须点名脏草稿数量：" + conflict.message);
 });
 
 test("#07 · L4 自动刷新可关可调，脏/写在途/不可见时暂停（K132）", () => {
@@ -817,10 +857,12 @@ test("#07 · J116 固定槽位：载入态与就绪态根键完全相同，提�
   assert.ok(loadingKeys.indexOf("div:toasts") >= 0, "提示槽必须永久占位");
 });
 
-test("#07 · L135 tablist 键盘与 roving tabindex、aria-controls 齐备", async () => {
+test("#07 · L135 四页签 tablist 键盘与 roving tabindex、aria-controls 齐备", async () => {
   const mounted = await mount();
   const tabs = findAll(mounted.mounted.tree, (node) => node.props && node.props.role === "tab");
-  assert.equal(tabs.length, 5, "五个页签：能力/技能/MCP/策略 JSON/设置");
+  assert.equal(tabs.length, 4, "四个页签：能力/技能/MCP/高级");
+  const values = tabs.map((tab) => String(tab.props["aria-controls"]).slice("dshg-panel-".length));
+  assert.deepEqual(values, ["caps", "skills", "mcp", "settings"], "原「策略 JSON」页签已并入「高级」，不得再单列");
   const selected = tabs.filter((tab) => tab.props["aria-selected"] === true);
   assert.equal(selected.length, 1);
   assert.equal(selected[0].props.tabIndex, 0, "roving tabindex 只让当前页签可 Tab");
@@ -834,6 +876,16 @@ test("#07 · L135 tablist 键盘与 roving tabindex、aria-controls 齐备", asy
   const groupHeads = findAll(mounted.mounted.tree, (node) => node.props && node.props.className === "dshg-groupHead");
   assert.ok(groupHeads.length > 0);
   for (const head of groupHeads) assert.equal(typeof head.props["aria-expanded"], "boolean");
+
+  // 旧路由兼容：历史上 json 是独立页签，深链 /json 必须落到「高级」而不是未知视图。
+  const { hook } = loadHook();
+  assert.equal(hook.helpers.tabOf("json"), "settings", "旧 /json 路由必须映射到 settings");
+  assert.equal(hook.helpers.tabOf("json/draft"), "settings", "旧 /json 子路由一并映射");
+  assert.equal(hook.helpers.tabOf(""), "caps", "空路由回到首屏");
+  assert.equal(hook.helpers.tabOf("settings"), "settings");
+  const legacy = await mount({ slotProps: { route: "json" } });
+  assert.equal(legacy.mounted.text.indexOf("这个视图暂不可用"), -1, "旧 /json 路由不得降级成未知视图");
+  assert.ok(legacy.mounted.text.indexOf("高级") >= 0, "旧 /json 路由必须渲染「高级」页签内容");
 });
 
 test("#07 · I110 宿主注入会话：五次读取全部带 ?agent=，健康条标注来源", async () => {
