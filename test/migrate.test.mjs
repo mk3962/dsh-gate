@@ -16,6 +16,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   POLICY_VERSION,
+  backupV2PolicyFile,
   isV3Policy,
   migrateV2ToV3,
   normalizeV3Policy,
@@ -236,6 +237,36 @@ const readJson = (file) => JSON.parse(fs.readFileSync(file, "utf8"));
   assert.equal(fs.readFileSync(file, "utf8").includes("\r\n"), false, "按字节写，不引入 CRLF");
   await gate.release(host.agent);
   ok("首次保存写 v3：旧 UI 的 v2 提交被翻译成能力 + 例外，原有 legacy 保留");
+}
+
+
+// ── 6. A13：v2 备份的目标目录不存在时也能创建；独占创建、失败不覆盖、保留上限可配 ──
+{
+  const dir = tmpDir();
+  const nested = path.join(dir, "profiles", "deep", "gate.json");
+  const text = JSON.stringify(V2, null, 2);
+  assert.equal(fs.existsSync(path.dirname(nested)), false, "前置：目标目录确实不存在");
+  const created = backupV2PolicyFile(nested, text, { stamp: "2026-11-21T00-00-00-000Z" });
+  assert.ok(typeof created === "string", "目标目录不存在时也必须能创建备份");
+  assert.equal(fs.readFileSync(created, "utf8"), text, "备份内容必须逐字节等于原文");
+  const bytes = fs.readFileSync(created);
+  assert.equal(bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf, false, "备份不许带 BOM");
+
+  // 独占创建 + 失败不覆盖：同名同 stamp 已存在时直接返回 undefined，绝不改写已有备份。
+  const second = backupV2PolicyFile(nested, "{\"different\":true}", { stamp: "2026-11-21T00-00-00-000Z" });
+  assert.equal(second, undefined, "同名备份已存在时不得覆盖");
+  assert.equal(fs.readFileSync(created, "utf8"), text, "已有备份必须原样保留");
+
+  // 保留上限可配：同一前缀下只留最新 N 份。
+  for (const stamp of ["2026-11-22T00-00-00-000Z", "2026-11-23T00-00-00-000Z"]) {
+    backupV2PolicyFile(nested, text + "\n// " + stamp, { stamp });
+  }
+  const before = fs.readdirSync(path.dirname(nested)).filter((name) => name.startsWith("gate.json.v2.bak-"));
+  assert.equal(before.length, 3);
+  backupV2PolicyFile(nested, text + "\n// prune", { stamp: "2026-11-24T00-00-00-000Z", retention: 2 });
+  const after = fs.readdirSync(path.dirname(nested)).filter((name) => name.startsWith("gate.json.v2.bak-"));
+  assert.deepEqual(after.sort(), ["gate.json.v2.bak-2026-11-23T00-00-00-000Z", "gate.json.v2.bak-2026-11-24T00-00-00-000Z"], "retention=2 只留最新两份");
+  ok("A13：v2 备份先建目录、独占创建、失败不覆盖已有备份，保留上限可配（默认 20）");
 }
 
 console.log("\n全部通过 (" + passed + ")");

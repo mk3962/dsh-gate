@@ -234,16 +234,31 @@ await check("每个跑 test/*.mjs 的 npm script 都带 --import ./test/stub-loa
 });
 
 // ---- 6) 策略示例 ----
-await check("gate.example.json 是合法策略文件（无 BOM 且字段齐）", () => {
+await check("gate.example.json 是合法策略文件（无 BOM 且字段齐、与字段表同源）", async () => {
   const file = abs("gate.example.json");
   assert(exists(file), "缺少 gate.example.json");
   assert(!hasBom(file), "gate.example.json 带 BOM");
   const policy = JSON.parse(read(file));
-  // v3（0.2.0）：能力 + 例外 + defaults；v2 的 tools / sections 不再是独立真源。
-  // 0.3.0：skills 回到顶层，但装的是技能接管配置（takeover / off / imports），不是 v2 的 { tier }。
-  for (const key of ["version", "enabled", "freezePtcToolset", "defaults", "capabilities", "sources", "legacy", "catalog", "narrowPassThrough", "protected", "skills", "mcp"]) {
-    assert(key in policy, "gate.example.json 缺少 " + key);
+  // 0.6.0 · ADR A-2 / be:D1：示例不再手抄键表 —— 与字段表/空模板同一份真源，
+  // 新增字段只改 lib/policy-schema.js 一处；示例漏字段由下面这组断言直接判红。
+  const { emptyPolicyTemplate } = await import(pathToFileURL(abs("lib", "policy-schema.js")).href);
+  const template = emptyPolicyTemplate();
+  const diffKeys = (actual, expected) => ({
+    missing: Object.keys(expected).filter((key) => !(key in actual)),
+    extra: Object.keys(actual).filter((key) => !(key in expected)),
+  });
+  const keysOf = (value) => (value && typeof value === "object" && !Array.isArray(value) ? Object.keys(value) : []);
+  const top = diffKeys(policy, template);
+  assert(top.missing.length === 0, "gate.example.json 缺少字段表里的键: " + top.missing.join(", "));
+  assert(top.extra.length === 0, "gate.example.json 出现字段表里没有的键: " + top.extra.join(", "));
+  for (const group of ["defaults", "catalog", "skills", "mcp", "repeatGuard"]) {
+    const diff = diffKeys(keysOf(policy[group]), keysOf(template[group]));
+    assert(diff.missing.length === 0, "gate.example.json 的 " + group + " 缺少子键: " + diff.missing.join(", "));
+    assert(diff.extra.length === 0, "gate.example.json 的 " + group + " 出现未知子键: " + diff.extra.join(", "));
   }
+  const summaryDiff = diffKeys(keysOf(policy.catalog.signatureSummary), keysOf(template.catalog.signatureSummary));
+  assert(summaryDiff.missing.length === 0 && summaryDiff.extra.length === 0, "catalog.signatureSummary 的键集必须与字段表一致");
+  assert(policy.repeatGuard && policy.repeatGuard.windowSize === template.repeatGuard.windowSize, "repeatGuard 默认值必须与字段表一致");
   assert(policy.version === 3, "gate.example.json 必须是 v3（version=3），实际 " + policy.version);
   assert(!("tools" in policy) && !("sections" in policy), "gate.example.json 不许再带 v2 的 tools / sections");
   const skills = policy.skills;

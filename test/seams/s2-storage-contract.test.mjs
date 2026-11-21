@@ -15,8 +15,10 @@ import {
   POLICY_FILE,
   TEMP_FILE,
   createDiskStorageAdapter,
+  createFilePolicyStore,
   createMemoryStorageAdapter,
   createPolicyStore,
+  pruneBackups,
   stripBom,
 } from "../../lib/storage-seam.js";
 import { expectRed, loadMutated, cleanupMutations } from "./mutation.mjs";
@@ -227,6 +229,86 @@ await check("磁盘适配器 · 注入 BOM 故障也能被读侧剥掉", async (
   }
 });
 
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 进程级写链与 revision（#02：两个页签并发保存不丢更新）
+// ─────────────────────────────────────────────────────────────────────────────
+
+await check("进程级写链：两个独立 store 实例共用同一条队列，revision 严格递增", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "gate-lock-"));
+  try {
+    const file = path.join(root, "gate.json");
+    const first = createFilePolicyStore({ file });
+    const second = createFilePolicyStore({ file });
+    const [left, right] = await Promise.all([
+      first.write({ version: 3, marker: "left" }),
+      second.write({ version: 3, marker: "right" }),
+    ]);
+    // 实例级锁会让两个 store 各自读到 seq 0 再各写一个 1 号 revision（互相覆盖）。
+    const leftSeq = Number(left.revision.split("-")[0]);
+    const rightSeq = Number(right.revision.split("-")[0]);
+    assert.deepEqual([leftSeq, rightSeq].sort((a, b) => a - b), [1, 2], "两个实例必须排同一条队，序号不能撞车");
+    assert.equal(JSON.parse(fs.readFileSync(file, "utf8")).marker, "right", "后写者必须赢且看到前写者（串行，不是竞态）");
+    assert.equal(right.previousRevision, left.revision, "后写者的 previousRevision 必须是前写者的 revision");
+    assert.equal(fs.existsSync(path.join(root, TEMP_FILE)), false, "唯一临时文件不许残留");
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+await check("进程级写链：内存适配器上两个 store 也互斥（同一适配器 = 同一资源）", async () => {
+  const adapter = createMemoryStorageAdapter({ faults: { writeDelayMs: 5 } });
+  const first = createPolicyStore({ adapter, uniqueTemp: true });
+  const second = createPolicyStore({ adapter, uniqueTemp: true });
+  const [left, right] = await Promise.all([first.write({ n: 1 }), second.write({ n: 2 })]);
+  assert.equal(Number(right.revision.split("-")[0]), Number(left.revision.split("-")[0]) + 1, "同一适配器的写必须串行推进 revision");
+  assert.equal(JSON.parse(adapter.text(POLICY_FILE)).n, 2);
+});
+
+await check("revision 冲突回执带 changedKeys 差异（A17）", async () => {
+  const adapter = createMemoryStorageAdapter();
+  const store = createPolicyStore({ adapter });
+  await store.write({ version: 3, a: 1 });
+  const stale = store.revision();
+  await store.write({ version: 3, a: 2 });
+  const red = await expectRed("conflict-diff", () => store.write({ version: 3, a: 3 }, {
+    expectedRevision: stale,
+    changedKeys: ["a", "b"],
+  }));
+  assert.equal(red.red, true);
+  assert.equal(red.error.code, "REVISION_CONFLICT");
+  assert.deepEqual(red.error.detail.changedKeys, ["a", "b"], "409 必须带这次想改的键（面板据此提示差异）");
+  assert.equal(adapter.text(POLICY_FILE).includes('"a": 2'), true, "冲突写入不得落盘");
+});
+
+await check("脏输入不产生新 revision：语法/形状损坏读多次 revision 不变", async () => {
+  for (const text of ["{broken", "[1,2,3]", "null", "42"]) {
+    const adapter = createMemoryStorageAdapter({ files: { [POLICY_FILE]: text } });
+    const store = createPolicyStore({ adapter });
+    const before = store.readSync();
+    const revision = before.revision;
+    for (let index = 0; index < 3; index += 1) {
+      const again = store.readSync();
+      assert.equal(again.revision, revision, "重复读损坏文件不得推进 revision: " + text);
+    }
+    const red = await expectRed("dirty-write", () => store.write({ version: 3 }));
+    assert.equal(red.red, true, "可读但不可写的文档必须拒绝写: " + text);
+    assert.equal(store.readSync().revision, revision, "拒绝写之后 revision 仍不得变: " + text);
+  }
+});
+
+await check("备份保留上限可配：pruneBackups 只留最新 N 份", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "gate-prune-"));
+  try {
+    const prefix = "gate.json.v2.bak-";
+    for (const stamp of ["2026-01-01", "2026-01-02", "2026-01-03", "2026-01-04"]) {
+      fs.writeFileSync(path.join(root, prefix + stamp), stamp);
+    }
+    const removed = pruneBackups(root, prefix, 2);
+    assert.equal(removed.length, 2);
+    assert.deepEqual(fs.readdirSync(root).sort(), [prefix + "2026-01-03", prefix + "2026-01-04"], "只留最新两份");
+    assert.deepEqual(pruneBackups(root, "no-such-prefix", 0), [], "没有匹配文件时安全返回空");
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 删分支必须红（P0-1 / P0-2 / 原子性 / 备份）
 // ─────────────────────────────────────────────────────────────────────────────
@@ -285,7 +367,7 @@ for (const entry of mutations) {
 
 await check("擦除临时变异副本", () => {
   cleanupMutations();
-  assert.equal(fs.existsSync(path.join(process.cwd(), "test", "seams", ".mut")), false);
+  assert.equal(fs.existsSync(path.join(process.cwd(), "test", "seams", ".mut", String(process.pid))), false);
 });
 
 const failed = results.filter((entry) => !entry.ok);

@@ -21,6 +21,7 @@ import {
   emptyPolicyTemplate,
   mergePolicyFile,
   resolvePolicy,
+  savePolicy,
   tierForTool,
   TIER_OFF,
   TIER_ONDEMAND,
@@ -346,6 +347,256 @@ const tmpDir = () => fs.mkdtempSync(path.join(os.tmpdir(), "gate-policy-"));
   assert.equal(resolved.narrowPassThrough, 4, "P0-1：BOM 文件的其余顶层键也必须读进来");
   assert.deepEqual(fs.readFileSync(file), bytesBefore, "P0-1：读侧剥 BOM 不得顺手改写原文件（字节必须完全不变）");
   ok("P0-1（先红后绿）：带 UTF-8 BOM 的策略文件仍被完整解析，工具面不静默放大、原文件不被改写");
+}
+
+
+// ── 11. 读取五级诊断：absent / bom / syntax / shape 可分支，坏文件不放宽工具面 ──
+{
+  const dir = tmpDir();
+  // absent：内置模板，仅内存，绝不落盘。
+  const absent = resolvePolicy({}, { dshHome: dir });
+  assert.equal(absent.readDiagnostic.status, "absent");
+  assert.equal(absent.readDiagnostic.ok, true);
+  assert.equal(fs.existsSync(path.join(dir, "gate.json")), false, "absent 不是写一份空模板的理由");
+  assert.deepEqual(fs.readdirSync(dir), [], "absent 连影子副本都不许生成（策略文件不存在 ≠ 有上一次成功策略）");
+
+  // bom：正常解析 + 一次性告警。
+  const file = path.join(dir, "gate.json");
+  fs.writeFileSync(file, "\uFEFF" + JSON.stringify({ version: 3, enabled: false, defaults: { capability: 2, section: 1, skillpack: 2 } }, null, 2));
+  const bom = resolvePolicy({}, { dshHome: dir });
+  assert.equal(bom.readDiagnostic.status, "bom");
+  assert.equal(bom.readDiagnostic.hadBom, true);
+  assert.ok(bom.warnings.some((row) => row.code === "policy-bom-stripped"), "BOM 必须留一次性告警");
+
+  // syntax：拒绝采用，沿用上次成功策略/或降级；工具面绝不放宽。
+  fs.writeFileSync(file, "{\"version\": 3, \"enabled\": ");
+  const syntax = resolvePolicy({}, { dshHome: dir });
+  assert.equal(syntax.degraded, true, "坏文件必须标降级");
+  assert.equal(syntax.readDiagnostic.status, "syntax", "读取诊断必须精确到 syntax");
+  assert.equal(syntax.readDiagnostic.ok, false);
+
+  // shape：根不是对象同样是损坏态，按 shape 报。
+  fs.writeFileSync(file, "[1,2,3]");
+  const shape = resolvePolicy({}, { dshHome: dir });
+  assert.equal(shape.degraded, true);
+  assert.equal(shape.readDiagnostic.status, "shape");
+  assert.equal(shape.enabled, false, "冷启动形状损坏：启用状态视为假（不施加限制）");
+  assert.equal(tierForTool(shape, "univer_sheet"), TIER_ONDEMAND, "损坏时沿用上一次成功策略（按需），解析失败不得把工具面静默放大");
+  ok("读取五级诊断：absent 不落盘、bom 可解析并告警、syntax/shape 结构化降级且错误码可分支");
+}
+
+// ── 12. 影子副本：规范化后的上次成功策略；恢复显式、绝不自动写回 ──────────────
+{
+  const dir = tmpDir();
+  const file = path.join(dir, "gate.json");
+  const good = {
+    version: 3,
+    enabled: true,
+    defaults: { capability: 0, section: 2, skillpack: 2 },
+    capabilities: { "native:read": { tier: 1 } },
+    narrowPassThrough: 4,
+  };
+  fs.writeFileSync(file, JSON.stringify(good, null, 2) + "\n");
+  const first = resolvePolicy({}, { dshHome: dir });
+  assert.equal(first.degraded, false);
+  const shadowFile = path.join(dir, "gate.json.last-good.json");
+  assert.equal(fs.existsSync(shadowFile), true, "成功读取后必须留影子副本");
+  const shadow = JSON.parse(fs.readFileSync(shadowFile, "utf8"));
+  assert.equal(shadow.policy.version, 3, "影子副本存的是规范化后的 v3 结果");
+  assert.deepEqual(shadow.policy.defaults, first.defaults, "影子副本的值必须与运行时解析一致");
+
+  // 把主文件改坏：下一次读取沿用影子副本（工具面不变），且绝不写回主文件。
+  fs.writeFileSync(file, "{broken");
+  const corruptBytes = fs.readFileSync(file);
+  const recovered = resolvePolicy({}, { dshHome: dir });
+  assert.equal(recovered.degraded, true);
+  assert.equal(recovered.enabled, true, "有影子副本时沿用上一次成功策略（enabled 不变）");
+  assert.equal(recovered.defaults.capability, TIER_OFF, "影子副本里的工具面必须生效");
+  assert.equal(recovered.recovery.shadow, true, "必须给出「影子副本可恢复」的显式入口");
+  assert.deepEqual(fs.readFileSync(file), corruptBytes, "恢复必须是用户显式触发，读路径不许自动写回主文件");
+  ok("影子副本 = 规范化后的最后可用策略；坏文件沿用影子策略，恢复入口显式且不自动写回");
+}
+
+// ── 13. 冷启动损坏：不施加限制 + 控制面可用 + 降级标记 + 显式恢复 ─────────────
+{
+  const dir = tmpDir();
+  const file = path.join(dir, "gate.json");
+  fs.writeFileSync(file, "{ definitely not json");
+  const policy = resolvePolicy({}, { dshHome: dir });
+  assert.equal(policy.enabled, false, "冷启动不可解析：启用状态视为假");
+  assert.equal(policy.degraded, true);
+  assert.deepEqual(policy.defaults, { capability: TIER_RESIDENT, section: TIER_RESIDENT, skillpack: TIER_RESIDENT }, "不施加限制 = 全部常驻");
+  assert.equal(policy.recovery.explicit, true, "必须给显式恢复入口");
+  assert.ok(policy.warnings.some((row) => row.code === "policy-file-invalid" || String(row.code).startsWith("policy-file-")), "降级必须留可见告警");
+  assert.deepEqual(fs.readdirSync(dir).sort(), ["gate.json"], "冷启动损坏绝不许生成空模板/影子/备份等写回物");
+  ok("冷启动损坏：全常驻 + 降级标记 + 显式恢复入口；读路径零写盘");
+}
+
+// ── 14. P0-2：坏文件默认拒绝保存；显式整份替换先备份原文 ──────────────────────
+await (async () => {
+  const dir = tmpDir();
+  const file = path.join(dir, "gate.json");
+  const corrupt = "{\"version\":3,";
+  fs.writeFileSync(file, corrupt);
+  await assert.rejects(
+    () => savePolicy(file, { enabled: true }),
+    (error) => {
+      assert.equal(error.code, "POLICY_UNREADABLE", "坏文件必须 POLICY_UNREADABLE，不能静默覆盖");
+      return true;
+    },
+  );
+  assert.equal(fs.readFileSync(file, "utf8"), corrupt, "拒绝写时原文件一个字节都不许变");
+  assert.deepEqual(fs.readdirSync(dir), ["gate.json"], "拒绝写时不许留下 .bak / .tmp / 影子");
+
+  // 显式整份替换（带风险确认）：先备份原文，再原子写入。
+  const receipt = await savePolicy(file, { version: 3, enabled: true, narrowPassThrough: 3 }, { replaceCorrupt: true });
+  assert.equal(receipt.changed, true);
+  assert.equal(JSON.parse(fs.readFileSync(file, "utf8")).narrowPassThrough, 3);
+  const backup = fs.readFileSync(path.join(dir, "gate.json.bak"), "utf8");
+  assert.equal(backup, corrupt, "整份替换前必须把原文逐字节备份下来");
+  ok("P0-2：坏文件默认拒绝保存（字节不变、无副产物）；显式整份替换先备份原文再原子落地");
+})();
+
+// ── 15. 保存回执：revision / changed / changedKeys / warnings / ignored ────────
+await (async () => {
+  const dir = tmpDir();
+  const file = path.join(dir, "gate.json");
+  const first = await savePolicy(file, { enabled: false, defaults: { capability: 1 }, narrowPassThrough: 3 });
+  assert.match(first.revision, /^\d+-[0-9a-f]{16}$/, "revision = 单调序号 + 内容指纹");
+  assert.equal(first.changed, true);
+  assert.deepEqual(first.changedKeys.sort(), ["defaults", "enabled", "narrowPassThrough"], "回执必须列出变更键");
+  const beforeBytes = fs.readFileSync(file);
+  const second = await savePolicy(file, { enabled: false, defaults: { capability: 1 }, narrowPassThrough: 3 });
+  assert.equal(second.changed, false, "无变化时 changed=false");
+  assert.equal(second.revision, first.revision, "无变化不产生新 revision");
+  assert.deepEqual(fs.readFileSync(file), beforeBytes, "无变化不写盘（字节不变）");
+
+  // 非法值只告警、不落盘；ignored 点名被忽略路径。
+  const invalid = await savePolicy(file, { enabled: "yes", narrowPassThrough: 9999, protected: [] });
+  assert.equal(JSON.parse(fs.readFileSync(file, "utf8")).enabled, false, "非法布尔值不许写进去");
+  assert.equal(JSON.parse(fs.readFileSync(file, "utf8")).narrowPassThrough, 3, "越界数值不许写进去");
+  assert.ok(invalid.warnings.some((row) => row.code === "out-of-range" && row.path === "narrowPassThrough"));
+  assert.ok(invalid.ignored.includes("narrowPassThrough"), "诊断要列出被忽略项（不是只说有告警）");
+
+  // 保护名单只增不减：提交里删掉的成员必须保留并告警，ignored 点名缺失名字。
+  await savePolicy(file, { protected: ["alpha", "beta"] });
+  const subtract = await savePolicy(file, { protected: ["alpha"] });
+  assert.deepEqual(JSON.parse(fs.readFileSync(file, "utf8")).protected, ["alpha", "beta"], "保护名单删不掉");
+  assert.ok(subtract.warnings.some((row) => row.code === "protected-subtract-ignored"));
+  assert.ok(subtract.ignored.includes("beta"), "被忽略的保护名单名字必须出现在诊断里");
+  ok("保存回执含 revision/changed/changedKeys/warnings/ignored；无变化不写盘；非法值与保护名单删减只告警不落盘");
+})();
+
+// ── 16. revision 乐观并发：ifRevision 不匹配 409 并附变更键差异 ────────────────
+await (async () => {
+  const dir = tmpDir();
+  const file = path.join(dir, "gate.json");
+  const first = await savePolicy(file, { narrowPassThrough: 5 });
+  const second = await savePolicy(file, { narrowPassThrough: 6 });
+  assert.notEqual(second.revision, first.revision);
+  const before = fs.readFileSync(file);
+  await assert.rejects(
+    () => savePolicy(file, { narrowPassThrough: 7 }, { ifRevision: first.revision }),
+    (error) => {
+      assert.equal(error.code, "REVISION_CONFLICT", "过期 revision 必须 409 REVISION_CONFLICT");
+      assert.equal(error.detail.expectedRevision, first.revision);
+      assert.equal(error.detail.currentRevision, second.revision);
+      assert.deepEqual(error.detail.changedKeys, ["narrowPassThrough"], "冲突回执要带这次想改的键");
+      return true;
+    },
+  );
+  assert.deepEqual(fs.readFileSync(file), before, "冲突必须拒绝写，后写者不能污染文件");
+  ok("revision 单调 + 指纹；ifRevision 不匹配抛 REVISION_CONFLICT 并附 expected/current/变更键");
+})();
+
+// ── 17. 两页签并发保存：读-改-写串行，后写者看得见前者（A10/A15） ─────────────
+await (async () => {
+  const dir = tmpDir();
+  const file = path.join(dir, "gate.json");
+  await savePolicy(file, { enabled: true, narrowPassThrough: 1 });
+  // 关键：两个独立的 savePolicy 调用各自新建 store，锁必须是进程级/路径级共享的。
+  const [left, right] = await Promise.all([
+    savePolicy(file, { enabled: false }),
+    savePolicy(file, { narrowPassThrough: 3 }),
+  ]);
+  const saved = JSON.parse(fs.readFileSync(file, "utf8"));
+  assert.equal(saved.enabled, false, "先写者的 enabled:false 不许被后写者用旧 base 盖回去（丢更新）");
+  assert.equal(saved.narrowPassThrough, 3, "后写者的改动必须落地");
+  assert.ok(Number(right.revision.split("-")[0]) > Number(left.revision.split("-")[0]), "两个事务的 revision 必须严格递增而非各自从同一序号起编");
+  assert.equal(right.previousRevision, left.revision, "后写者必须看见前写者落盘的 revision");
+  ok("S2 并发用例：两个页签同时保存不丢更新，写严格串行且后写者看得见前者（A10/A15）");
+})();
+
+// ── 18. 深度合并：只提交部分子键不抹同级；null 删除、缺省保持 ─────────────────
+await (async () => {
+  const dir = tmpDir();
+  const file = path.join(dir, "gate.json");
+  fs.writeFileSync(file, JSON.stringify({
+    version: 3,
+    enabled: true,
+    capabilities: { "mcp:a": { tier: 0, toolExceptions: { "mcp__a__x": 1 }, sectionExceptions: { "mcp:a": 2 } } },
+    catalog: { groupByPlugin: true, signatureSummary: { enabled: true, tools: ["read", "grep"] } },
+  }, null, 2) + "\n");
+  await savePolicy(file, { capabilities: { "mcp:a": { toolExceptions: { "mcp__a__y": 2 } } } });
+  let saved = JSON.parse(fs.readFileSync(file, "utf8"));
+  assert.deepEqual(saved.capabilities["mcp:a"].toolExceptions, { "mcp__a__x": 1, "mcp__a__y": 2 }, "深对象只提交部分子键不抹同级");
+  assert.equal(saved.capabilities["mcp:a"].tier, 0, "未提交的字段必须保持");
+  assert.deepEqual(saved.capabilities["mcp:a"].sectionExceptions, { "mcp:a": 2 }, "兄弟映射不许被抹掉");
+
+  await savePolicy(file, { capabilities: { "mcp:a": { toolExceptions: { "mcp__a__x": null } } }, catalog: { signatureSummary: { enabled: false } } });
+  saved = JSON.parse(fs.readFileSync(file, "utf8"));
+  assert.equal("mcp__a__x" in saved.capabilities["mcp:a"].toolExceptions, false, "null 删除必须表现为键不存在");
+  assert.equal(saved.catalog.signatureSummary.enabled, false);
+  assert.deepEqual(saved.catalog.signatureSummary.tools, ["read", "grep"], "partial 提交不许抹掉同级 tools");
+  assert.equal(JSON.stringify(saved).includes("null"), false, "落盘文件里不许残留 null 删除标记");
+  ok("深对象逐子键合并、null 删除、缺省保持：保存路径与字段表同一套语义");
+})();
+
+// ── 19. 手工编辑下一轮生效；自写不触发二次写 ─────────────────────────────────
+await (async () => {
+  const dir = tmpDir();
+  const file = path.join(dir, "gate.json");
+  await savePolicy(file, { narrowPassThrough: 3 });
+  const edited = JSON.parse(fs.readFileSync(file, "utf8"));
+  edited.narrowPassThrough = 9;
+  edited.enabled = false;
+  fs.writeFileSync(file, JSON.stringify(edited, null, 2) + "\n");
+  const reread = resolvePolicy({}, { dshHome: dir });
+  assert.equal(reread.narrowPassThrough, 9, "手工编辑策略文件后下一轮读取必须自动生效（不缓存）");
+  assert.equal(reread.enabled, false);
+  const selfWrite = await savePolicy(file, { narrowPassThrough: 9, enabled: false });
+  assert.equal(selfWrite.changed, false, "写方自己引起的无变化保存不得二次落盘/自激");
+  ok("手工编辑下一轮自动生效；自写（内容相同）不触发二次写盘");
+})();
+
+// ── 20. A15：关闭闸门后控制面仍可把它重新启用 ────────────────────────────────
+await (async () => {
+  const dir = tmpDir();
+  const file = path.join(dir, "gate.json");
+  await savePolicy(file, { enabled: false });
+  assert.equal(resolvePolicy({}, { dshHome: dir }).enabled, false, "关闭后解析为禁用");
+  const reopened = await savePolicy(file, { enabled: true });
+  assert.equal(reopened.changed, true);
+  assert.equal(resolvePolicy({}, { dshHome: dir }).enabled, true, "控制面能在禁用态把 enabled 写回 true");
+  ok("A15：关闭闸门后控制面仍可写回 enabled:true（禁用不是终点）");
+})();
+
+// ── 21. 字段规格表唯一真源：示例 / 迁移 / 门禁全部派生 ─────────────────────────
+{
+  const schema = JSON.parse(fs.readFileSync(path.join(repo, "gate.example.json"), "utf8"));
+  assert.deepEqual(Object.keys(schema).sort(), POLICY_KEYS.map((row) => row.key).sort(), "示例顶层键集必须等于字段表");
+  const template = emptyPolicyTemplate();
+  for (const group of ["defaults", "catalog", "skills", "mcp", "repeatGuard"]) {
+    assert.deepEqual(Object.keys(schema[group]).sort(), Object.keys(template[group]).sort(), "示例 " + group + " 的子键集必须与字段表同源");
+  }
+  assert.deepEqual(Object.keys(schema.catalog.signatureSummary).sort(), Object.keys(template.catalog.signatureSummary).sort());
+  const migrateSource = read("lib/migrate.js");
+  assert.ok(migrateSource.includes("POLICY_KEY_NAMES"), "v2 迁移的 v3 透传键集必须从字段表派生");
+  const checkSpecSource = read("scripts/check-spec.mjs");
+  assert.ok(checkSpecSource.includes("emptyPolicyTemplate"), "门禁的示例校验必须取自空模板（不再手抄键表）");
+  const policySource = read("lib/policy.js");
+  assert.ok(policySource.includes("policyKeyRows()"), "POLICY_KEYS 必须是字段表的投影，而不是第二份数组");
+  ok("A18 / 单一真源：示例、v2 透传、门禁断言、POLICY_KEYS 全部派生自 lib/policy-schema.js 一张表");
 }
 
 console.log("\n全部通过 (" + passed + ")");

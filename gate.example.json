@@ -8,31 +8,31 @@
     "skillpack": 2
   },
   "capabilities": {
-    "native:edit": {
+    "native:read": {
       "tier": 1
     },
-    "native:glob": {
+    "native:write": {
+      "tier": 1
+    },
+    "native:edit": {
       "tier": 1
     },
     "native:grep": {
       "tier": 1
     },
+    "native:glob": {
+      "tier": 1
+    },
     "native:pwsh": {
-      "tier": 1
-    },
-    "native:read": {
-      "tier": 1
-    },
-    "native:skill": {
-      "tier": 1
-    },
-    "native:web_fetch": {
       "tier": 1
     },
     "native:web_search": {
       "tier": 1
     },
-    "native:write": {
+    "native:web_fetch": {
+      "tier": 1
+    },
+    "native:skill": {
       "tier": 1
     }
   },
@@ -42,16 +42,37 @@
   },
   "catalog": {
     "groupByPlugin": true,
-    "maxDescriptionLength": 64
+    "maxDescriptionLength": 64,
+    "skillGroups": false,
+    "signatureSummary": {
+      "enabled": true,
+      "tools": []
+    }
   },
-  "narrowPassThrough": 12,
   "protected": [],
+  "narrowPassThrough": 12,
   "skills": {
     "takeover": true,
+    "activationRelay": true,
+    "activationPromote": true,
     "off": [],
     "imports": []
   },
   "mcp": {
     "servers": {}
+  },
+  "repeatGuard": {
+    "enabled": false,
+    "windowSize": 20,
+    "windowThreshold": 3,
+    "maxRemindersPerEpisode": 2,
+    "exclude": [
+      "wait_agent",
+      "todo_write",
+      "list_agents",
+      "job_list",
+      "team_task_list"
+    ],
+    "argumentsPreviewChars": 500
   }
 }

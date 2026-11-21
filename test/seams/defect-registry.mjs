@@ -47,9 +47,15 @@ export const defects = [
     invariant: "I-10",
     title: "策略文件带 BOM 时静默失守，全部工具被当作常驻",
     symptom: "readPolicyFile 用 JSON.parse 的宽容/失败路径吞掉 BOM，解析失败退化成空策略，归层全落常驻，读路径无任何报错。",
-    replay: { file: "test/seams/s2-storage-contract.test.mjs", case: "P0-1 BOM 不得静默" },
+    replay: { file: "test/seams/s2-policy-store.test.mjs", case: "P0-1 BOM 不得静默失守" },
     deleteBranch: "adapter.readPolicyDocument 里的 stripBom 分支被删 ⇒ BOM 夹具必然抛错或给出错误形状 ⇒ 断言红。",
-    state: "registered",
+    state: "verified",
+    verifiedBy: {
+      file: "test/seams/s2-policy-store.test.mjs",
+      case: "P0-1 BOM 不得静默失守：带 BOM 的 gate.json 必须正常生效且文件不被改写",
+      also: "test/policy.test.mjs · P0-1（先红后绿）",
+      commit: "先红提交 f5f225a（0.5.7 基线上稳定红）",
+    },
   },
   {
     id: "P0-2",
@@ -60,9 +66,14 @@ export const defects = [
     invariant: "I-10",
     title: "坏文件被空模板覆盖落盘（交叉裁定升 P0）",
     symptom: "解析失败后仍按空策略继续写，原文件（含用户手改内容）被空模板覆盖，且无 v2 备份可比对。",
-    replay: { file: "test/seams/s2-storage-contract.test.mjs", case: "P0-2 不可读时拒绝写" },
+    replay: { file: "test/seams/s2-policy-store.test.mjs", case: "P0-2 不可读时拒绝写" },
     deleteBranch: "writePolicyDocument 的『读不出就拒绝写』前置分支被删 ⇒ 坏文件被覆盖 ⇒ 字节快照断言红。",
-    state: "registered",
+    state: "verified",
+    verifiedBy: {
+      file: "test/seams/s2-policy-store.test.mjs",
+      case: "P0-2 不可读时拒绝写：控制面 409 且磁盘字节不变、不产生备份/临时",
+      also: "test/policy.test.mjs · 14. P0-2；test/seams/s2-storage-contract.test.mjs · P0-2 显式整份替换必须备份原文",
+    },
   },
   {
     id: "P1-1",
@@ -86,9 +97,14 @@ export const defects = [
     invariant: "I-4",
     title: "enabled:true 覆盖不掉显式 false",
     symptom: "归层时 enabled:true 的默认值把用户显式写的 false 覆盖掉，关闭能力仍常驻。",
-    replay: { file: "test/seams/s2-storage-contract.test.mjs", case: "P1-2 显式 false 必须优先" },
+    replay: { file: "test/seams/s2-policy-store.test.mjs", case: "P1-2 显式 false 必须优先" },
     deleteBranch: "合并方向（显式值优先）被改成默认值优先 ⇒ 夹具红。",
-    state: "registered",
+    state: "verified",
+    verifiedBy: {
+      file: "test/seams/s2-policy-store.test.mjs",
+      case: "P1-2 显式 false 必须优先：文件 false 压过行 true，文件 true 也压过行 false",
+      also: "test/policy-schema.test.mjs · 标量布尔双向覆盖",
+    },
   },
   {
     id: "P1-3",
@@ -99,9 +115,14 @@ export const defects = [
     invariant: "I-4",
     title: "v2→v3 迁移丢 repeatGuard 段落",
     symptom: "迁移只搬工具轴，段落轴的 repeatGuard 配置整段丢失，重复劳动护栏静默失效。",
-    replay: { file: "test/seams/s2-storage-contract.test.mjs", case: "P1-3 迁移保真" },
+    replay: { file: "test/seams/s2-policy-store.test.mjs", case: "P1-3 迁移保真" },
     deleteBranch: "迁移函数里『段落轴逐键搬运』那一步被删 ⇒ 迁移后快照缺键 ⇒ 断言红。",
-    state: "registered",
+    state: "verified",
+    verifiedBy: {
+      file: "test/seams/s2-policy-store.test.mjs",
+      case: "P1-3 迁移保真：v2 的 repeatGuard 原样保留，备份独占且重启不重复堆备份",
+      also: "test/migrate.test.mjs · 4. 幂等 / 6. A13 备份",
+    },
   },
   {
     id: "P1-4",
@@ -456,6 +477,10 @@ export function validateRegistry() {
     if (!REPLAY_STATES.includes(d.state)) problems.push(d.id + " state 非法");
     if (!d.replay || !d.replay.file || !d.replay.case) problems.push(d.id + " 缺回放入口");
     if (!d.deleteBranch) problems.push(d.id + " 缺删分支靶点");
+    // 只有「用例已写且修复后为绿」才允许 verified；必须能定位到具体测试（#08 只认这个）。
+    if (d.state === "verified" && (!d.verifiedBy || !d.verifiedBy.file || !d.verifiedBy.case)) {
+      problems.push(d.id + " 标 verified 但缺 verifiedBy {file, case}");
+    }
   }
   const severityCount = { P0: 0, P1: 0, P2: 0 };
   for (const d of counted) severityCount[d.severity] += 1;

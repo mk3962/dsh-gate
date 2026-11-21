@@ -399,7 +399,11 @@ await check("缺陷回放登记表：17 条 counted，分级 P0×2 + P1×10 + P2
   for (const row of defects) {
     assert.match(row.replay.file, /^test\/seams\/(s[1-5])-.*\.test\.mjs$/);
     assert.ok(row.deleteBranch, row.id + " 必须写明删分支靶点");
-    assert.equal(row.state, "registered", row.id + " 票 01 阶段只登记，回放由 02–08 激活");
+    // #02 起逐票激活：state 只能是 registered（票 01 只登记）或 verified（本票已收口，必须带 verifiedBy）。
+    assert.ok(row.state === "registered" || row.state === "verified", row.id + " state 非法");
+    if (row.state === "verified") {
+      assert.ok(row.verifiedBy && row.verifiedBy.file && row.verifiedBy.case, row.id + " verified 缺 verifiedBy");
+    }
   }
 });
 
@@ -547,7 +551,7 @@ await check("删分支必红 · 宿主消息标识确定性（FG-5）", async ()
 await check("擦除临时变异副本", async () => {
   cleanupMutations();
   const fs = await import("node:fs");
-  assert.equal(fs.existsSync(path.join(HERE, ".mut")), false, ".mut 必须清干净");
+  assert.equal(fs.existsSync(path.join(HERE, ".mut", String(process.pid))), false, "本进程的 .mut 桶必须清干净");
 });
 
 const failed = results.filter((entry) => !entry.ok);
