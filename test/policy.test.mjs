@@ -326,4 +326,26 @@ const tmpDir = () => fs.mkdtempSync(path.join(os.tmpdir(), "gate-policy-"));
   ok("所有顶层键的优先级一致：文件 > 插件行 config > 内置默认");
 }
 
+
+// ── 10. P0-1：带 BOM 的策略文件不得静默失守（0.5.7 上稳定红，修复后绿） ─────────
+{
+  const dir = tmpDir();
+  const file = path.join(dir, "gate.json");
+  const document = {
+    version: 3,
+    enabled: true,
+    defaults: { capability: 0, section: 0, skillpack: 1 },
+    capabilities: { "native:read": { tier: 1 } },
+    narrowPassThrough: 4,
+  };
+  fs.writeFileSync(file, "\uFEFF" + JSON.stringify(document, null, 2) + "\n", "utf8");
+  const bytesBefore = fs.readFileSync(file);
+  const resolved = resolvePolicy({}, { dshHome: dir });
+  assert.equal(resolved.enabled, true, "P0-1：BOM 不得让整份策略失效（enabled 必须读成文件里的 true）");
+  assert.equal(resolved.defaults.capability, TIER_OFF, "P0-1：BOM 文件里的 defaults 必须生效，不能退回内置默认");
+  assert.equal(resolved.narrowPassThrough, 4, "P0-1：BOM 文件的其余顶层键也必须读进来");
+  assert.deepEqual(fs.readFileSync(file), bytesBefore, "P0-1：读侧剥 BOM 不得顺手改写原文件（字节必须完全不变）");
+  ok("P0-1（先红后绿）：带 UTF-8 BOM 的策略文件仍被完整解析，工具面不静默放大、原文件不被改写");
+}
+
 console.log("\n全部通过 (" + passed + ")");
