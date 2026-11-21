@@ -2,6 +2,43 @@
 
 本项目遵循语义化版本；0.6.0 是「全量缺陷整改 + 架构深化」的收口版本。
 
+## [0.7.1] — 2026-11-22
+
+0.7.1 是 0.7.0 的**交互缺陷收口补丁**：只动 `client/index.js` 的视图层与动作层，不改 `gate.json` v3 策略语义、不新增控制面路由、不改后端模块；另把两处 P1 缺陷固化为 S4 渲染级回归门禁（S4G-11 / S4G-12），回退即红。
+
+### 一、P1 修复 · 技能页导入目录渲染 `[object Object]` 且删除失效
+
+- **现象**：技能页「自定义目录」卡片在草稿态每行显示 `[object Object]`；点「移除」界面无变化，却每次弹出「已从草稿移除，不会动原目录文件」。
+- **根因**：`skills.imports` 元素为 `{ path, id, key }` 对象，0.7.0 视图直接 `String(item)` 渲染并传入 `removeImport`，导致 `draftStore.removeImport` 精确匹配 `path` 返回 `false`，动作层未判断返回值仍弹成功提示。
+- **修复**：`renderSkills` 统一归一化提取非空 `.path` 字符串用于列表 `key` / `title` / 展示文本与 `removeImport(path)`；`actions.removeImport` 仅在返回 `true` 时弹成功提示，否则弹 warn「导入目录不在当前草稿里」。
+
+### 二、P1 修复 · MCP 编辑表单未等回执就关闭，失败丢输入
+
+- **现象**：MCP 页编辑已有服务器，点「保存更改」后表单立即清空并折叠；写接口返回 500 或网络异常时用户输入直接丢失。
+- **根因**：0.7.0 保存按钮同步连续执行 `mcpAction("update", editing)`、`resetMcpDraft()` 与关闭表单，未等待 `POST /api/dsh-gate/mcp` 回执。
+- **修复**：保存按钮只调用 `props.actions.mcpAction("update", editing)`；`actions.mcpAction` 仅在 `receipt.state === "applied"` 时执行 `resetMcpDraft()` 与关闭编辑表单并刷新，非 `applied` 分支原样保留用户输入以便重试。
+
+### 三、同类审计顺手收口（1 P1 + 2 P2）
+
+- **冲突强制覆盖刷新（P1）**：冲突弹窗确认「用面板改动覆盖」保存成功后补 `draftStore.commitKeys(draftStore.dirtyKeys())` 与 `runtime.refresh({ reason: "post-save" })`，消除草稿与旧 `expectedRevision` 残留导致的连续 409。
+- **旧关闭清单草稿同步（P2）**：技能页旧关闭清单改读 `draft.offList`，暂存移除或清空即时反映在界面。
+- **放弃改动同步 JSON 编辑器（P2）**：`actions.discard` 同步复位 `jsonDirty`、`jsonText` 与 `jsonNotice`。
+
+### 四、S4 渲染级回归门禁（S4G-11 / S4G-12）
+
+- `test/seams/s4-frontend-gate.test.mjs` 新增两条真实挂载渲染用例（共 12 条）：
+  - **S4G-11**：输入导入目录并加入草稿后断言显示真实路径、零 `[object Object]`，点移除后视图与 `draftStore` 快照均清空且未命中返回 warn。
+  - **S4G-12**：MCP 编辑态 `POST /api/dsh-gate/mcp` 返 500 时断言表单保持打开且用户输入保留；返 200 `applied` 后断言表单关闭且草稿重置。
+- 反证校验：对 `v0.7.0`（`7373f42`）客户端运行新门禁实测 **10 pass / 2 fail**（精准拦截 S4G-11 与 S4G-12）。
+
+### 五、行为变化与回滚对照
+
+| 场景 | 0.7.0 行为 | 0.7.1 行为 | 兼容性 |
+|---|---|---|---|
+| 导入目录列表 | 渲染 `[object Object]` | 显示真实路径，命中才提示成功 | `gate.json` 形状不变 |
+| MCP 编辑保存 | 不等回执立即清空折叠 | `applied` 才清空折叠，失败保留输入 | 请求与回执字段不变 |
+| 冲突强制覆盖 | 成功后草稿与旧版本残留 | 成功后提交草稿并刷新基线 | 无结构变化，双向兼容 |
+
 ## [0.7.0] — 2026-11-22
 
 0.7.0 是**纯前端版本**：不改 `gate.json` v3 策略语义、不新增后端路由、不改控制面接口签名；改的是 `client/index.js` 的视图层与样式层，以及守住这层契约的 S4 门禁。宿主升级后立刻可见的差别是——面板变成宽松卡片风、在任何主题下都真实生效、每个控件自己说清「它是干什么的、为什么需要它」，并且所有策略类改动只有一个保存出口。
