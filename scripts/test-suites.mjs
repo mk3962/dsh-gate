@@ -20,8 +20,8 @@ import { fileURLToPath } from "node:url";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, "..");
 
-/** 0.7.1 的版本基线：package.json / CHANGELOG / 注册表三处必须一致。 */
-export const BASELINE_VERSION = "0.7.1";
+/** 0.7.2 的版本基线：package.json / CHANGELOG / 注册表三处必须一致。 */
+export const BASELINE_VERSION = "0.7.2";
 
 /** 整轮预算（毫秒）。CI 与本机默认一致，超了直接红。 */
 export const TOTAL_BUDGET_MS = 12000;
@@ -56,6 +56,15 @@ export const OVERRIDES = new Map([
   ["test/seams/s3-http-contract.test.mjs", { id: "seam-s3-http", budgetMs: 4000 }],
   ["test/seams/s4-frontend-contract.test.mjs", { id: "seam-s4-frontend", budgetMs: 4000 }],
   ["test/seams/s4-frontend-v2.test.mjs", { id: "seam-s4-frontend-v2", budgetMs: 7000 }],
+  [
+    "test/seams/s4-frontend-gate.test.mjs",
+    {
+      id: "seam-s4-frontend-gate",
+      // 25 条真实挂载渲染用例：实测 node --test 自报 3.5s、进程墙钟约 4.0s（三次连测 3.49–3.56s），
+      // 默认 2s 必被误杀；与 s4-frontend-v2 同源渲染夹具，给同一档 7s 裕度吸收 CI 并发抖动。
+      budgetMs: 7000,
+    },
+  ],
   [
     "test/seams/s5-deploy-contract.test.mjs",
     {

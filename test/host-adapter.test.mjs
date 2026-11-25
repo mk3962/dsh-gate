@@ -11,10 +11,13 @@ import {
 } from "../lib/host-adapter.js";
 
 const results = [];
+const pending = [];
 const check = (label, fn) => {
   try { fn(); results.push({ ok: true, label }); }
   catch (error) { results.push({ ok: false, label, error }); }
 };
+/** 异步用例：收集到 pending，最后统一 await（瀑布派发本来就是 async）。 */
+const acheck = (label, fn) => { pending.push({ label, fn }); };
 
 function logger() {
   const lines = [];
@@ -127,6 +130,153 @@ check("隔离派发兜底：没有 per-listener 通道时退回 ctx.emit，两�
   assert.deepEqual(none, { mode: "none", listeners: 0, delivered: 0, failed: [] });
 });
 
+acheck("瀑布派发：末参 next 注入，最内层返回 acceptValue 默认 {kind:'accept'}", async () => {
+  const seen = [];
+  const ctx = fakeCtx({
+    events: {
+      dispatch: (channel, args) => {
+        assert.equal(channel, "waterfall", "瀑布必须走 waterfall 通道，不能借 emit");
+        // 不带载体时 args = [event, ...payload, inner]
+        assert.equal(args[0], "tools/post-execute");
+        const [exec, result] = [args[1], args[2]];
+        return [
+          // 排在前面的一家用 await next() 拿决策（懒加载插件的激活门就是这样写的）
+          async (e, r, next) => {
+            seen.push("outer:" + e.name);
+            const decision = await next();
+            seen.push("outer-decision:" + JSON.stringify(decision));
+            return decision;
+          },
+          (e, r, next) => {
+            seen.push("inner:" + e.name + ":" + r.ok);
+            return next();
+          },
+        ];
+      },
+    },
+  });
+  const info = await createHostAdapter(ctx).dispatchWaterfallIsolated("tools/post-execute", [{ name: "skill" }, { ok: true }]);
+  assert.equal(info.mode, "isolated");
+  assert.equal(info.listeners, 2);
+  assert.equal(info.delivered, 2, "两位监听者都算送达（外层也真的跑完了）");
+  assert.deepEqual(info.failed, []);
+  assert.deepEqual(seen, [
+    "outer:skill",
+    "inner:skill:true",
+    "outer-decision:{\"kind\":\"accept\"}",
+  ], "洋葱顺序：外层先拿到内层的决策，且默认决策是 accept");
+});
+
+acheck("瀑布派发：自定义 acceptValue 作为最内层默认决策；空监听者数组不伪造送达", async () => {
+  const decisions = [];
+  const ctx = fakeCtx({
+    events: {
+      dispatch: () => [
+        async (next_or_exec, maybeResult, maybeNext) => {
+          const next = typeof maybeNext === "function" ? maybeNext : next_or_exec;
+          decisions.push(await next());
+        },
+      ],
+    },
+  });
+  const info = await createHostAdapter(ctx).dispatchWaterfallIsolated("tools/post-execute", [], {
+    acceptValue: { kind: "reject", reason: "试一下" },
+  });
+  assert.deepEqual(decisions, [{ kind: "reject", reason: "试一下" }]);
+  assert.equal(info.delivered, 1);
+
+  const empty = await createHostAdapter(fakeCtx({
+    events: { dispatch: () => [] },
+  })).dispatchWaterfallIsolated("tools/post-execute", []);
+  assert.equal(empty.mode, "isolated");
+  assert.equal(empty.listeners, 0, "零监听者不伪造成 1");
+  assert.equal(empty.delivered, 0);
+});
+
+acheck("瀑布派发：监听者抛错只进 failed，后面的监听者照常收到（不饿死）", async () => {
+  const seen = [];
+  const ctx = fakeCtx({
+    events: {
+      dispatch: () => [
+        (exec) => { seen.push("a:" + exec.name); throw new Error("第一位炸了"); },
+        (exec, result, next) => { seen.push("b:" + exec.name); return next(); },
+      ],
+    },
+  });
+  const info = await createHostAdapter(ctx).dispatchWaterfallIsolated("tools/post-execute", [{ name: "skill" }, { ok: true }]);
+  assert.deepEqual(seen, ["a:skill", "b:skill"], "抛错的那位不能吃掉后面那家的信号");
+  assert.equal(info.delivered, 1);
+  assert.deepEqual(info.failed, ["第一位炸了"]);
+});
+
+acheck("瀑布派发：重复调用 next 当场抛错（比宿主严：不让下游跑两遍），只算该监听者失败", async () => {
+  const ctx = fakeCtx({
+    events: {
+      dispatch: () => [
+        async (exec, result, next) => {
+          await next();
+          return next();
+        },
+        (exec, result, next) => next(),
+      ],
+    },
+  });
+  const info = await createHostAdapter(ctx).dispatchWaterfallIsolated("tools/post-execute", [{ name: "skill" }, {}]);
+  assert.equal(info.failed.length, 1, "重复 next 的那位失败");
+  assert.match(info.failed[0], /next\(\) called multiple times/);
+  assert.equal(info.delivered, 1, "后一位仍然送达");
+});
+
+acheck("瀑布派发：已委派的监听者抛错时回传下游决策，不把整条链当失败", async () => {
+  let inner = 0;
+  const ctx = fakeCtx({
+    events: {
+      dispatch: () => [
+        async (exec, result, next) => {
+          const decision = await next();
+          throw new Error("我委派完才炸");
+        },
+        (exec, result, next) => { inner += 1; return { kind: "reject", reason: "内层说了算" }; },
+      ],
+    },
+  });
+  const info = await createHostAdapter(ctx).dispatchWaterfallIsolated("tools/post-execute", [{ name: "skill" }, {}]);
+  assert.equal(inner, 1);
+  assert.deepEqual(info.failed, ["我委派完才炸"], "外层自己的异常照记");
+  assert.equal(info.delivered, 1, "内层确实送达");
+});
+
+acheck("瀑布派发兜底：没有 per-listener 通道就在 ctx.waterfall 上整链跑一次；两条都没有就 none", async () => {
+  const calls = [];
+  const viaWaterfall = createHostAdapter(fakeCtx({
+    waterfall: async (...args) => { calls.push(args); return { kind: "accept" }; },
+  }));
+  const info = await viaWaterfall.dispatchWaterfallIsolated("tools/post-execute", [{ name: "skill" }, {}]);
+  assert.equal(info.mode, "waterfall", "整链只有一次调用机会");
+  assert.equal(info.listeners, 1, "枚举不出个体：整链算一个投递单位");
+  assert.equal(info.delivered, 1);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0][0], "tools/post-execute");
+  assert.equal(typeof calls[0][calls[0].length - 1], "function", "末参必须是 next");
+
+  const none = await createHostAdapter(fakeCtx({})).dispatchWaterfallIsolated("tools/post-execute", []);
+  assert.deepEqual(none, { mode: "none", listeners: 0, delivered: 0, failed: [] });
+});
+
+acheck("瀑布派发：scope 载体一旦给了就必须进实参首位（宿主靠它过滤可见监听者）", async () => {
+  const carrier = { Carrier: true };
+  let channelArgs;
+  const ctx = fakeCtx({
+    events: {
+      dispatch: (channel, args) => { channelArgs = args; return []; },
+    },
+  });
+  await createHostAdapter(ctx).dispatchWaterfallIsolated("tools/post-execute", [{ name: "skill" }], { carrier });
+  assert.equal(channelArgs[0], carrier, "载体会被宿主当成 thisArg");
+  assert.equal(channelArgs[1], "tools/post-execute");
+  assert.equal(typeof channelArgs[channelArgs.length - 1], "function", "末参依旧是 next");
+});
+
 check("确定性用户消息与子代理判定", () => {
   const adapter = createHostAdapter(fakeCtx({}));
   const first = adapter.userMessage("请确认", "gate");
@@ -156,6 +306,11 @@ check("loader 条目：生成器/数组都认，缺服务当空表；preset 租�
   }));
   assert.equal(await withPreset.acquirePresetScope("default"), scope);
 });
+
+for (const item of pending) {
+  try { await item.fn(); results.push({ ok: true, label: item.label }); }
+  catch (error) { results.push({ ok: false, label: item.label, error }); }
+}
 
 console.log("");
 for (const row of results) {

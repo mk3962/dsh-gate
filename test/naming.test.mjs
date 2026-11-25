@@ -21,6 +21,11 @@ import {
   pluginOfToolName,
   prefixOf,
   skillSourceLabel,
+  SKILL_TOOL_PREFIXES,
+  TOOL_PREFIX_RE,
+  isToolPrefix,
+  skillsForToolPrefix,
+  toolPrefixesForSkill,
 } from "../lib/naming.js";
 
 const results = [];
@@ -108,6 +113,53 @@ check("单条组并入其他（最小 2 条）：保持原行顺序，其他组�
   const other = merged.find((item) => item.group === "其他");
   assert.deepEqual(other.rows, ["o1", "r1"], "单条组追加到其他组尾部");
   assert.deepEqual(rows.map((item) => item.row), ["u1", "r1", "u2", "o1"], "不改输入");
+});
+
+check("工具前缀判据：标识符形状（字母开头、只含字母数字）", () => {
+  assert.equal(isToolPrefix("bsk"), true);
+  assert.equal(isToolPrefix("univer"), true);
+  assert.equal(isToolPrefix("Bsk2"), true, "大小写不敏感（前缀本身区分大小写由调用方决定）");
+  assert.equal(isToolPrefix("9lives"), false, "数字开头不是标识符");
+  assert.equal(isToolPrefix("bsk-x"), false, "连字符不是前缀");
+  assert.equal(isToolPrefix(""), false);
+  assert.equal(isToolPrefix(undefined), false);
+  assert.equal(isToolPrefix(42), false);
+  assert.ok(TOOL_PREFIX_RE.test("bsk"));
+});
+
+check("技能 → 工具前缀（skill→prefix 方向）：显式别名精确优先，未命中回退首段", () => {
+  // 显式表是唯一事实源：browser-skill 的插件工具全叫 bsk_*，首段 browser 一个都不存在。
+  assert.deepEqual(toolPrefixesForSkill("browser-skill"), ["bsk"]);
+  assert.deepEqual(toolPrefixesForSkill("skill:browser-skill"), ["bsk"], "允许带 skill: 前缀（调用方未必剥过）");
+  assert.deepEqual(toolPrefixesForSkill("  browser-skill  "), ["bsk"], "前后空白不算名字的一部分");
+  assert.deepEqual(SKILL_TOOL_PREFIXES["browser-skill"], ["bsk"], "表本身也要可读（面板/排障读它）");
+  // 未命中显式表 ⇒ 与 0.5.4 起逐字节一致的首段切法。
+  assert.deepEqual(toolPrefixesForSkill("univer-sheet"), ["univer"]);
+  assert.deepEqual(toolPrefixesForSkill("office-docx"), ["office"]);
+  assert.deepEqual(toolPrefixesForSkill("univer"), ["univer"]);
+  // 切不出标识符形状 ⇒ 空数组（宁可不放，也不误放）。
+  assert.deepEqual(toolPrefixesForSkill(""), []);
+  assert.deepEqual(toolPrefixesForSkill("-leading"), [], "第一段为空");
+  assert.deepEqual(toolPrefixesForSkill("9lives"), []);
+  assert.deepEqual(toolPrefixesForSkill("中文技能"), []);
+  assert.deepEqual(toolPrefixesForSkill(undefined), []);
+  assert.deepEqual(toolPrefixesForSkill(null), []);
+});
+
+check("工具前缀 → 技能（prefix→skill 反向）：只反映显式表，绝不按首段反推", () => {
+  assert.deepEqual(skillsForToolPrefix("bsk"), ["browser-skill"]);
+  assert.deepEqual(skillsForToolPrefix("BSK"), ["browser-skill"], "大小写不敏感：与 TOOL_PREFIX_RE / toolPrefixesForSkill 同口径");
+  assert.deepEqual(skillsForToolPrefix("browser"), [], "首段推断不是映射，反查不给答案");
+  assert.deepEqual(skillsForToolPrefix("univer"), [], "同名族不在显式表里");
+  assert.deepEqual(skillsForToolPrefix("9lives"), [], "非法前缀");
+  assert.deepEqual(skillsForToolPrefix(undefined), []);
+  // 双向一致性：表里每个技能的正向结果都能反查回自己。
+  for (const [skill, prefixes] of Object.entries(SKILL_TOOL_PREFIXES)) {
+    for (const prefix of prefixes) {
+      assert.ok(skillsForToolPrefix(prefix).includes(skill), skill + " → " + prefix + " 的逆向对不上");
+    }
+    assert.deepEqual(toolPrefixesForSkill(skill), prefixes.slice(), skill + " 正向必须等于表里的前缀集");
+  }
 });
 
 check("模式决胜：具体度降序，同分按字典序", () => {

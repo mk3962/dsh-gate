@@ -25,6 +25,7 @@ import {
   loadClient,
   createFakeTransport,
   panelRoutes,
+  panelFixtures,
   createSlotHost,
 } from "./s4-frontend-harness.mjs";
 
@@ -152,6 +153,9 @@ async function mountPanel(options = {}) {
   const captured = [];
   const buttons = [];
   const inputs = [];
+  const selects = [];
+  const textareas = [];
+  const dialogs = [];
   if (options.captureSwitches === true) {
     const original = react.createElement;
     react.createElement = function patchedCreateElement(type, props, ...rest) {
@@ -165,6 +169,9 @@ async function mountPanel(options = {}) {
     react.createElement = function patchedControlElement(type, props, ...rest) {
       if (type === "button") buttons.push({ props: props || {}, label: rest.map((child) => String(child)).join("") });
       else if (type === "input") inputs.push({ props: props || {} });
+      else if (type === "select") selects.push({ props: props || {} });
+      else if (type === "textarea") textareas.push({ props: props || {} });
+      else if (type === "div" && props && props.role === "alertdialog") dialogs.push({ props: props || {}, label: rest.map((child) => (child && child.props && child.props.children === undefined ? "" : "")).join("") });
       return inner.call(this, type, props, ...rest);
     };
   }
@@ -178,7 +185,7 @@ async function mountPanel(options = {}) {
   const renderer = createRenderer();
   const mounted = renderer.mount(host.component({}));
   await mounted.settle();
-  return { loaded, hook: loaded.hook.value, host, transport, renderer, mounted, doc, react, captured, buttons, inputs };
+  return { loaded, hook: loaded.hook.value, host, transport, renderer, mounted, doc, react, captured, buttons, inputs, selects, textareas, dialogs };
 }
 
 /* ── 交互探针：捕获数组 + 当前渲染树 ──────────────────────────────────── */
@@ -230,6 +237,22 @@ function latestInput(ctx, ariaLabel) {
   for (let index = ctx.inputs.length - 1; index >= 0; index -= 1) {
     const props = ctx.inputs[index].props;
     if (props["aria-label"] === ariaLabel) return ctx.inputs[index];
+  }
+  return null;
+}
+
+function latestSelect(ctx, ariaLabel) {
+  for (let index = ctx.selects.length - 1; index >= 0; index -= 1) {
+    const props = ctx.selects[index].props;
+    if (props["aria-label"] === ariaLabel) return ctx.selects[index];
+  }
+  return null;
+}
+
+function latestTextarea(ctx, ariaLabel) {
+  for (let index = ctx.textareas.length - 1; index >= 0; index -= 1) {
+    const props = ctx.textareas[index].props;
+    if (props["aria-label"] === ariaLabel) return ctx.textareas[index];
   }
   return null;
 }
@@ -828,4 +851,608 @@ test("S4G-12 MCP 编辑保存按回执守卫：失败保留表单，applied 才�
   assert.equal(ctx.mounted.text.indexOf("展开表单") >= 0, true, "applied 后表单必须收起（显示「展开表单」）");
 
   ctx.mounted.unmount();
+});
+
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * S4G-13 · 草稿仓响应式单一事实源（P0-1）
+ *
+ * 回归的缺陷：保存栏 / 页签徽章读渲染期快照，stage 之后 rendersDelta=0，
+ * 按钮长时间缺失；技能 relay/promote 误写进 policy.catalog。
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+test("S4G-13 草稿仓 subscribe/version 覆盖全部写路径，技能配置落 policy.skills", () => {
+  const { hook } = loadWithHook();
+  const draft = hook.L2.create({});
+  draft.setBaseline(policyContent({ skills: { takeover: true, off: [], imports: [], activationRelay: false, activationPromote: false } }), { revision: 3 });
+
+  let seen = 0;
+  const versions = [];
+  const off = draft.subscribe((value) => { seen += 1; versions.push(value); });
+  assert.equal(typeof off, "function", "subscribe 必须返回退订函数");
+  assert.equal(typeof draft.version(), "number", "L2 必须暴露 version()");
+  const startVersion = draft.version();
+
+  assert.equal(draft.stage(draft.keys.cap("native:read"), 2, "能力"), true);
+  assert.equal(seen, 1, "stage 必须 notify 一次");
+  assert.equal(draft.version(), startVersion + 1, "version 必须随修改递增");
+  assert.equal(versions[0], draft.version(), "notify 必须携带版本号");
+
+  assert.equal(draft.stage(draft.keys.skills("activationRelay"), true, "技能开关"), true);
+  assert.equal(seen, 2, "keys.skills 暂存也必须 notify");
+  assert.equal(draft.dirtySummary().byKind.skills, 1, "skcfg 脏键必须计入技能类");
+
+  assert.ok(draft.undo(), "undo 必须返回被撤销动作");
+  assert.equal(seen, 3, "undo 必须 notify");
+  assert.ok(draft.redo(), "redo 必须返回动作");
+  assert.equal(seen, 4, "redo 必须 notify");
+
+  assert.equal(draft.discardAll(), true);
+  assert.equal(seen, 5, "discardAll 必须 notify");
+  assert.equal(draft.dirtySummary().total, 0, "discardAll 后不得留脏项");
+
+  draft.stage(draft.keys.skills("activationPromote"), true, "技能开关2");
+  assert.equal(seen, 6, "再次 stage 必须 notify");
+  off();
+  draft.stage(draft.keys.skills("activationRelay"), true, "退订后");
+  assert.equal(seen, 6, "退订后不得再收到通知");
+
+  const policy = draft.toPolicy();
+  assert.equal(policy.skills.activationRelay, true, "技能开关必须写入 policy.skills.activationRelay");
+  assert.equal(policy.skills.activationPromote, true, "技能开关必须写入 policy.skills.activationPromote");
+  assert.equal(Object.prototype.hasOwnProperty.call(policy.catalog || {}, "activationRelay"), false, "技能开关不得再写进 policy.catalog");
+  assert.equal(Object.prototype.hasOwnProperty.call(policy.catalog || {}, "activationPromote"), false, "技能开关不得再写进 policy.catalog");
+});
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * S4G-14 · 提交后撤销栈剪枝（P2）
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+test("S4G-14 commitKeys 剪掉已提交键的撤销/重做历史，保存后不留空撤销", () => {
+  const { hook } = loadWithHook();
+  const capKey = hook.L2.create({}).keys.cap("native:read");
+  const draft = hook.L2.create({});
+  draft.setBaseline(policyContent(), { revision: 4 });
+  const otherKey = draft.keys.cap("native:write");
+
+  draft.stage(capKey, 2, "能力 read");
+  assert.ok(draft.undo(), "撤销后已提交键的动作进入重做栈");
+  draft.stage(otherKey, 2, "能力 write");
+  assert.equal(draft.commitKeys([capKey]), 1, "commitKeys 必须报告清理的键数");
+  assert.equal(draft.dirtyKeys().indexOf(capKey), -1, "已提交键必须从脏集合移除");
+  assert.equal(draft.dirtySummary().byKind.caps, 1, "未提交键必须仍在草稿里");
+  assert.equal(draft.redo(), null, "重做栈里引用已提交键的动作必须被剪掉");
+
+  const undone = draft.undo();
+  assert.ok(undone, "未提交键的撤销必须保留");
+  assert.equal(undone.ops.every((op) => op.key === otherKey), true, "撤销栈不得再出现已提交键：" + JSON.stringify(undone.ops.map((op) => op.key)));
+  assert.equal(draft.dirtySummary().total, 0, "撤销未提交键后草稿必须归零");
+  assert.equal(draft.undo(), null, "引用已提交键的动作必须被剪掉，不得留下空撤销项");
+
+  const twice = hook.L2.create({});
+  twice.setBaseline(policyContent(), {});
+  twice.stage(twice.keys.cap("native:read"), 2, "改一次");
+  twice.stage(twice.keys.cap("native:read"), 1, "改两次");
+  twice.commitKeys([twice.keys.cap("native:read")]);
+  assert.equal(twice.undo(), null, "同一键两次暂存后提交，撤销栈不得残留空项");
+});
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * S4G-15 · 统一回执：409 currentRevision + 二级业务失败（P0-3 / P1-3）
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+test("S4G-15 回执统一识别 409 currentRevision 与 HTTP 200 里的二级业务失败", () => {
+  const { hook } = loadWithHook();
+  const orchestrator = makeOrchestrator(hook);
+
+  const conflict = orchestrator.receiptOf({ action: "mcp" }, {
+    ok: false,
+    status: 409,
+    code: "REVISION_CONFLICT",
+    body: { code: "REVISION_CONFLICT", message: "revision 冲突", currentRevision: 12 },
+    error: "revision 冲突",
+  });
+  assert.equal(conflict.state, "conflict", "409 必须给冲突回执");
+  assert.equal(conflict.currentRevision, 12, "409 回执必须透传 body.currentRevision");
+  assert.equal(conflict.choices.length, 3, "冲突回执必须带三选一动作");
+
+  const fakeGreen = orchestrator.receiptOf({ action: "mcp" }, {
+    ok: true,
+    status: 200,
+    body: { changed: true, result: { ok: false, message: "MCP 挂载失败", reason: "spawn ENOENT" } },
+  });
+  assert.equal(fakeGreen.state, "failed", "HTTP 200 + result.ok:false 必须判失败，不得假绿");
+  assert.equal(fakeGreen.ok, false);
+  assert.equal(fakeGreen.degraded, true, "二级业务失败必须标 degraded");
+  assert.match(fakeGreen.message, /MCP 挂载失败/);
+  assert.equal(fakeGreen.failed.length, 1, "业务失败必须进入 failed 明细");
+  assert.equal(fakeGreen.failed[0].reason, "MCP 挂载失败");
+
+  const green = orchestrator.receiptOf({ action: "mcp" }, { ok: true, status: 200, body: { changed: true, result: { ok: true }, revision: 5 } });
+  assert.equal(green.state, "applied", "result.ok:true 仍是成功");
+  assert.equal(green.currentRevision, null, "没有 currentRevision 时回执给 null");
+});
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * S4G-16 · MCP 视图：宿主托管只读 / 404 不可用 / 陈旧数据 / 未闭合引号
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+test("S4G-16 MCP 宿主托管只读、404 不可用态与未闭合引号阻断", async () => {
+  const fixtures = panelFixtures();
+  fixtures.mcp = { servers: [
+    { name: "fs", transport: "stdio", enabled: true, state: "external", tools: ["mcp__fs__read"] },
+    { name: "own", transport: "stdio", enabled: true, state: "owned", tools: ["mcp__own__read"] },
+  ] };
+  const ctx = await mountPanel({ captureControls: true, routes: panelRoutes(fixtures) });
+  const T = ctx.hook.text;
+
+  assert.equal(treeButtons(ctx.mounted.tree).filter((entry) => entry.label === T["mcp.edit"]).length, 2, "两台服务器都必须渲染「编辑」按钮");
+  /* 捕获数组跨渲染累积，只取最后一轮渲染的两台服务器按钮（顺序与 servers 一致）。 */
+  const finalEdits = ctx.buttons.filter((entry) => entry.label === T["mcp.edit"]).slice(-2);
+  assert.equal(finalEdits.length, 2, "最后一轮渲染必须有两台服务器的「编辑」按钮");
+  const enabledEdits = finalEdits.filter((entry) => entry.props.disabled !== true);
+  assert.equal(enabledEdits.length, 1, "external 行的「编辑」必须禁用，只剩 owned 行可点");
+  assert.equal(finalEdits[0].props.title, T["mcp.hostManaged"], "禁用原因必须说明宿主托管");
+
+  enabledEdits[0].props.onClick();
+  await ctx.mounted.settle();
+  assert.equal(ctx.mounted.text.indexOf(T["mcp.editTitle"]) >= 0, true, "编辑 owned 行必须进入编辑态");
+  const argsInput = latestInput(ctx, T["mcp.args"]);
+  assert.ok(argsInput && typeof argsInput.props.onChange === "function", "编辑态必须能改参数");
+  argsInput.props.onChange({ target: { value: 'node "unclosed' } });
+  await ctx.mounted.settle();
+  assert.equal(ctx.mounted.text.indexOf(T["mcp.argsUnclosed"]) >= 0, true, "未闭合引号必须显式提示");
+  assert.equal(ctx.mounted.text.indexOf("__UNCLOSED__"), -1, "内部哨兵不得渲染到 UI");
+  const saveEdit = latestButton(ctx, T["mcp.saveEdit"]);
+  assert.ok(saveEdit, "编辑态必须有保存修改按钮");
+  assert.equal(saveEdit.props.disabled, true, "未闭合引号必须阻断保存");
+  ctx.mounted.unmount();
+
+  const missingRoutes = panelRoutes();
+  missingRoutes["/api/dsh-gate/mcp"] = { status: 404, body: { message: "not found" } };
+  const missing = await mountPanel({ captureControls: true, routes: missingRoutes });
+  const MT = missing.hook.text;
+  assert.equal(missing.mounted.text.indexOf(MT["mcp.missing"]) >= 0, true, "404 必须渲染不可用文案，实际：" + missing.mounted.text.slice(0, 300));
+  assert.equal(missing.mounted.text.indexOf(MT["mcp.addTitle"]), -1, "404 时不得再渲染新增表单");
+  missing.mounted.unmount();
+
+  /* 陈旧数据：刷新失败但保留旧数据时，MCP 页顶部必须出现告警条。 */
+  const staleCtx = await mountPanel({ captureControls: true });
+  staleCtx.transport.route("/api/dsh-gate/mcp", { status: 500, body: { message: "boom" } });
+  latestButton(staleCtx, staleCtx.hook.text["top.reload"]).props.onClick();
+  await staleCtx.mounted.settle();
+  assert.equal(staleCtx.mounted.text.indexOf(staleCtx.hook.text["mcp.stale"]) >= 0, true, "刷新失败但保留旧数据时必须渲染陈旧数据告警条，实际：" + staleCtx.mounted.text.slice(0, 400));
+  staleCtx.mounted.unmount();
+});
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * S4G-17 · 高级页输入态（P0-1 / P1 输入态）
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+test("S4G-17 高级页数值/名单输入用字符串草稿态：清空不回填 0、非法不出 NaN", async () => {
+  const ctx = await mountPanel({ captureControls: true });
+  const T = ctx.hook.text;
+  assert.equal(ctx.mounted.text.indexOf(T["save.noChanges"]) >= 0, true, "初始保存栏应是「没有改动」");
+
+  const windowInput = latestInput(ctx, T["settings.window"]);
+  assert.ok(windowInput, "高级页必须有窗口输入框");
+  assert.equal(windowInput.props.value, "10", "初值必须来自服务端 repeatGuard.windowSize");
+  windowInput.props.onChange({ target: { value: "" } });
+  await ctx.mounted.settle();
+  assert.equal(latestInput(ctx, T["settings.window"]).props.value, "", "清空后不得回填 0");
+  assert.equal(ctx.mounted.text.indexOf(T["save.noChanges"]) >= 0, true, "清空不得产生脏项");
+
+  latestInput(ctx, T["settings.window"]).props.onChange({ target: { value: "abc" } });
+  await ctx.mounted.settle();
+  assert.equal(latestInput(ctx, T["settings.window"]).props.value, "abc", "非法字符必须原样留在输入态");
+  assert.equal(ctx.mounted.text.indexOf("NaN"), -1, "非法输入不得产生 NaN");
+  assert.equal(ctx.mounted.text.indexOf(T["save.noChanges"]) >= 0, true, "非法输入不得暂存脏值");
+
+  latestInput(ctx, T["settings.window"]).props.onChange({ target: { value: "25" } });
+  await ctx.mounted.settle();
+  assert.equal(latestInput(ctx, T["settings.window"]).props.value, "25");
+  assert.equal(ctx.mounted.text.indexOf(T["save.title"]) >= 0, true, "合法数值必须产生待保存改动");
+  assert.equal(ctx.mounted.text.indexOf("护栏 1 项") >= 0, true, "保存栏摘要必须按草稿实时计算");
+
+  const toolsInput = latestInput(ctx, T["settings.signatureTools"]);
+  const baselineTools = toolsInput.props.value;
+  toolsInput.props.onChange({ target: { value: "alpha, beta, " } });
+  await ctx.mounted.settle();
+  assert.equal(latestInput(ctx, T["settings.signatureTools"]).props.value, "alpha, beta, ", "输入态必须保留用户原始逗号与空格");
+  latestButton(ctx, T["settings.signatureRestore"]).props.onClick();
+  await ctx.mounted.settle();
+  assert.equal(latestInput(ctx, T["settings.signatureTools"]).props.value, baselineTools, "单键还原必须回到服务端名单");
+
+  const exInput = latestInput(ctx, T["settings.exclusions"]);
+  exInput.props.onChange({ target: { value: "a, , b" } });
+  await ctx.mounted.settle();
+  assert.equal(latestInput(ctx, T["settings.exclusions"]).props.value, "a, , b", "排除名单输入态必须保留原始文本");
+  ctx.mounted.unmount();
+});
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * S4G-18 · 能力页：行级例外回显、纯例外待保存、搜索强制展开
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+test("S4G-18 能力例外合并回显与纯例外待保存过滤，搜索强制展开", () => {
+  const { hook } = loadWithHook();
+  const projection = hook.L3.create({});
+  const view = { capabilities: [{ id: "mcp:fs", tools: [{ name: "read" }, { name: "write" }] }] };
+
+  const savedOnly = projection.build({
+    dataKey: "ex-saved",
+    view: view,
+    policy: { content: { capabilities: { "mcp:fs": { toolExceptions: { read: 2 } } } } },
+    draft: {},
+  });
+  const savedRead = savedOnly.rowsById["mcp:fs"].members.tools.filter((member) => member.name === "read")[0];
+  assert.equal(savedRead.exception && savedRead.exception.tier, 2, "服务端行级 toolExceptions 必须回显到成员：" + JSON.stringify(savedRead.exception));
+
+  const draftOnly = projection.build({
+    dataKey: "ex-draft",
+    view: view,
+    policy: { content: {} },
+    draft: { revision: 2, exceptions: { "mcp:fs": { tool: { read: 1 } } } },
+    statusFilter: "pending",
+  });
+  assert.equal(draftOnly.filtered.some((row) => row.id === "mcp:fs"), true, "只有例外草稿的行也必须出现在「待保存」筛选");
+  const draftRead = draftOnly.rowsById["mcp:fs"].members.tools.filter((member) => member.name === "read")[0];
+  assert.equal(draftRead.exception && draftRead.exception.tier, 1, "草稿例外必须覆盖服务端例外");
+
+  assert.equal(hook.helpers.isGroupExpanded({}, "g", true), true, "搜索时必须强制展开");
+  assert.equal(hook.helpers.isGroupExpanded({}, "g", false), false, "非搜索时必须按用户展开状态");
+  assert.equal(hook.helpers.isGroupExpanded({ g: true }, "g", false), true, "用户点开过就得保持打开");
+});
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * S4G-19 · 技能页：徽章真实行数、描述摘要、导入去重与目录状态、冷启动文案
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+test("S4G-19 技能页徽章用真实行数，导入去重/状态标签与冷启动专属文案", async () => {
+  const fixtures = panelFixtures();
+  fixtures.skills = {
+    skills: [
+      { name: "alpha-skill", provider: "host", tier: 2, off: false, description: "唯一的描述-ABC" },
+      { name: "beta-skill", provider: "host", tier: 1, off: false, description: "第二条" },
+    ],
+    skillpacks: [],
+    imports: [{ path: "/tmp/missing-dir", exists: false, hasSkills: false }],
+    prescan: { active: true },
+  };
+  const ctx = await mountPanel({ captureControls: true, routes: panelRoutes(fixtures) });
+  const T = ctx.hook.text;
+
+  assert.equal(ctx.mounted.text.indexOf(T["tab.skills"] + "2") >= 0, true, "技能页签徽章必须用 /skills 真实行数，实际：" + ctx.mounted.text.slice(0, 200));
+  latestInput(ctx, T["skills.search"]).props.onChange({ target: { value: "alpha" } });
+  await ctx.mounted.settle();
+  assert.equal(ctx.mounted.text.indexOf("唯一的描述-ABC") >= 0, true, "技能行必须渲染 description 摘要");
+  assert.equal(ctx.mounted.text.indexOf(T["skills.importMissing"]) >= 0, true, "目录不存在必须给出状态标签");
+  assert.equal(ctx.mounted.text.indexOf(T["skills.importNoSkills"]) >= 0, true, "目录里没有技能必须给出状态标签");
+  assert.equal(ctx.mounted.text.indexOf(T["skills.prescanHint"]) >= 0, true, "冷启动预扫描必须用专属文案");
+
+  latestInput(ctx, T["skills.importPlaceholder"]).props.onChange({ target: { value: "/tmp/missing-dir" } });
+  await ctx.mounted.settle();
+  latestButton(ctx, T["skills.importAdd"]).props.onClick();
+  await ctx.mounted.settle();
+  assert.equal(ctx.mounted.text.indexOf("这个目录已经在待导入清单里") >= 0, true, "重复目录必须 warn 拦截");
+
+  latestInput(ctx, T["skills.importPlaceholder"]).props.onChange({ target: { value: "/tmp/../etc" } });
+  await ctx.mounted.settle();
+  latestButton(ctx, T["skills.importAdd"]).props.onClick();
+  await ctx.mounted.settle();
+  assert.equal(ctx.mounted.text.indexOf("目录不能包含 ..") >= 0, true, "含 .. 的目录必须 warn 拦截");
+  assert.equal(ctx.mounted.text.indexOf(T["save.noChanges"]) >= 0, true, "被拦截的导入不得产生任何草稿");
+  ctx.mounted.unmount();
+});
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * S4G-20 · 面板订阅草稿仓（P0-1 端到端）
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+test("S4G-20 面板订阅草稿仓：开关改动立即反映到保存栏与摘要", async () => {
+  const ctx = await mountPanel({ captureSwitches: true });
+  const T = ctx.hook.text;
+  assert.equal(ctx.mounted.text.indexOf(T["save.noChanges"]) >= 0, true, "初始不得有待保存改动");
+
+  const guardSwitch = ctx.captured.filter((props) => props["aria-label"] === T["settings.guardEnabled"])[0];
+  assert.ok(guardSwitch && typeof guardSwitch.onClick === "function", "高级页必须有启用护栏开关");
+  guardSwitch.onClick();
+  await ctx.mounted.settle();
+
+  assert.equal(ctx.mounted.text.indexOf(T["save.title"]) >= 0, true, "开关后保存栏必须立即出现（不得等下一轮刷新）");
+  assert.equal(ctx.mounted.text.indexOf("护栏 1 项") >= 0, true, "保存栏摘要必须按草稿实时计算，实际：" + ctx.mounted.text.slice(-400));
+  assert.equal(ctx.mounted.text.indexOf(T["save.noChanges"]), -1, "出现草稿后不得再显示「没有改动」");
+  ctx.mounted.unmount();
+});
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * S4G-21 · 409 冲突弹窗三键闭环（P0-3 / P2）
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+test("S4G-21 409 冲突弹窗：Escape 关闭、先看差异、覆盖服务端带 currentRevision", async () => {
+  const fixtures = panelFixtures();
+  let policyMode = "ok";
+  let transportRef = null;
+  const routes = Object.assign(panelRoutes(fixtures), {
+    "/api/dsh-gate/policy": () => {
+      const calls = transportRef === null ? [] : transportRef.calls;
+      const last = calls.length === 0 ? null : calls[calls.length - 1];
+      const isWrite = last && last.options && String(last.options.method || "").toUpperCase() === "POST";
+      if (isWrite && policyMode === "conflict") {
+        return { status: 409, body: { ok: false, code: "REVISION_CONFLICT", message: "revision 冲突", currentRevision: 9 } };
+      }
+      if (isWrite) return { body: { ok: true, changed: true, revision: 10 } };
+      return { body: fixtures.policy };
+    },
+  });
+  const ctx = await mountPanel({ captureSwitches: true, captureControls: true, routes: routes });
+  transportRef = ctx.transport;
+  const T = ctx.hook.text;
+
+  const guardSwitch = ctx.captured.filter((props) => props["aria-label"] === T["settings.guardEnabled"])[0];
+  assert.ok(guardSwitch && typeof guardSwitch.onClick === "function");
+  guardSwitch.onClick();
+  await ctx.mounted.settle();
+
+  policyMode = "conflict";
+  const firstBefore = countPosts(ctx.transport, "/api/dsh-gate/policy");
+  latestButton(ctx, T["save.save"]).props.onClick();
+  await waitFor(() => countPosts(ctx.transport, "/api/dsh-gate/policy") > firstBefore);
+  await ctx.mounted.settle();
+  assert.equal(ctx.mounted.text.indexOf(T["conflict.title"]) >= 0, true, "409 必须打开冲突弹窗");
+  assert.equal(ctx.mounted.text.indexOf(T["conflict.loadLatest"]) >= 0, true, "冲突弹窗必须有「载入最新并丢弃我的」");
+  assert.equal(ctx.mounted.text.indexOf(T["conflict.overwrite"]) >= 0, true, "冲突弹窗必须有「覆盖服务端」");
+  assert.equal(ctx.mounted.text.indexOf(T["conflict.diff"]) >= 0, true, "冲突弹窗必须有「先看差异」");
+
+  const dialogProps = ctx.dialogs.length === 0 ? null : ctx.dialogs[ctx.dialogs.length - 1].props;
+  assert.ok(dialogProps && typeof dialogProps.onKeyDown === "function", "冲突弹窗必须能用键盘关闭");
+  dialogProps.onKeyDown({ key: "Escape" });
+  await ctx.mounted.settle();
+  assert.equal(ctx.mounted.text.indexOf(T["conflict.title"]), -1, "Escape 必须关闭冲突弹窗");
+
+  const diffBefore = countPosts(ctx.transport, "/api/dsh-gate/policy");
+  latestButton(ctx, T["save.save"]).props.onClick();
+  await waitFor(() => countPosts(ctx.transport, "/api/dsh-gate/policy") > diffBefore);
+  await ctx.mounted.settle();
+  assert.equal(ctx.mounted.text.indexOf(T["conflict.diff"]) >= 0, true, "409 必须再次打开冲突弹窗");
+  latestButton(ctx, T["conflict.diff"]).props.onClick();
+  await ctx.mounted.settle();
+  assert.equal(ctx.mounted.text.indexOf(T["conflict.title"]), -1, "「先看差异」必须关闭弹窗");
+  assert.equal(ctx.mounted.text.indexOf(T["save.details"]) >= 0, true, "「先看差异」必须打开差异预览");
+
+  const overwriteBefore = countPosts(ctx.transport, "/api/dsh-gate/policy");
+  latestButton(ctx, T["save.save"]).props.onClick();
+  await waitFor(() => countPosts(ctx.transport, "/api/dsh-gate/policy") > overwriteBefore);
+  await ctx.mounted.settle();
+  assert.equal(ctx.mounted.text.indexOf(T["conflict.overwrite"]) >= 0, true, "409 必须打开冲突弹窗以触发覆盖");
+  policyMode = "ok";
+  const beforePosts = countPosts(ctx.transport, "/api/dsh-gate/policy");
+  latestButton(ctx, T["conflict.overwrite"]).props.onClick();
+  const overWritten = await waitFor(() => countPosts(ctx.transport, "/api/dsh-gate/policy") > beforePosts);
+  assert.equal(overWritten, true, "覆盖服务端必须发出 POST /api/dsh-gate/policy");
+  await ctx.mounted.settle();
+  const posts = ctx.transport.calls.filter((entry) => entry.path === "/api/dsh-gate/policy" &&
+    entry.options && String(entry.options.method || "").toUpperCase() === "POST");
+  const overwriteBody = JSON.parse(posts[posts.length - 1].options.body);
+  assert.equal(overwriteBody.expectedRevision, 9, "覆盖服务端必须用 conflict.currentRevision 强写，实际：" + posts[posts.length - 1].options.body);
+  assert.equal(ctx.mounted.text.indexOf(T["save.noChanges"]) >= 0, true, "覆盖成功后已提交草稿必须清空");
+  assert.equal(ctx.mounted.text.indexOf(T["saved"]) >= 0, true, "覆盖成功必须弹「已保存」");
+  ctx.mounted.unmount();
+});
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * S4G-22 · 高级页输入草稿态复位（undo / redo / discard / reload）
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+test("S4G-22 高级页输入后 undo / redo / discard 文本框正确复位", async () => {
+  const ctx = await mountPanel({ captureControls: true });
+  const T = ctx.hook.text;
+
+  const baselineWindow = latestInput(ctx, T["settings.window"]).props.value;
+  const baselineDesc = latestInput(ctx, T["settings.catalogMaxDesc"]).props.value;
+  const baselineEx = latestInput(ctx, T["settings.exclusions"]).props.value;
+  const baselineSig = latestInput(ctx, T["settings.signatureTools"]).props.value;
+
+  latestInput(ctx, T["settings.window"]).props.onChange({ target: { value: "25" } });
+  await ctx.mounted.settle();
+  latestInput(ctx, T["settings.catalogMaxDesc"]).props.onChange({ target: { value: "128" } });
+  await ctx.mounted.settle();
+  latestInput(ctx, T["settings.exclusions"]).props.onChange({ target: { value: "read, grep" } });
+  await ctx.mounted.settle();
+  latestInput(ctx, T["settings.signatureTools"]).props.onChange({ target: { value: "bash, edit" } });
+  await ctx.mounted.settle();
+
+  assert.equal(latestInput(ctx, T["settings.window"]).props.value, "25");
+  assert.equal(latestInput(ctx, T["settings.catalogMaxDesc"]).props.value, "128");
+  assert.equal(latestInput(ctx, T["settings.exclusions"]).props.value, "read, grep");
+  assert.equal(latestInput(ctx, T["settings.signatureTools"]).props.value, "bash, edit");
+
+  latestButton(ctx, T["save.undo"]).props.onClick();
+  await ctx.mounted.settle();
+  assert.equal(latestInput(ctx, T["settings.signatureTools"]).props.value, baselineSig, "undo 后 signatureTools 输入框必须复位回基线");
+
+  latestButton(ctx, T["save.redo"]).props.onClick();
+  await ctx.mounted.settle();
+  assert.equal(latestInput(ctx, T["settings.signatureTools"]).props.value, "bash, edit", "redo 后 signatureTools 输入框必须同步为重做值");
+
+  latestInput(ctx, T["settings.window"]).props.onChange({ target: { value: "bad-num" } });
+  await ctx.mounted.settle();
+  assert.equal(latestInput(ctx, T["settings.window"]).props.value, "bad-num");
+
+  latestButton(ctx, T["save.discard"]).props.onClick();
+  await ctx.mounted.settle();
+  assert.equal(latestInput(ctx, T["settings.window"]).props.value, baselineWindow, "discard 后 guardText（含未入库非法文本）必须复位回基线");
+  assert.equal(latestInput(ctx, T["settings.catalogMaxDesc"]).props.value, baselineDesc, "discard 后 catalogText 必须复位回基线");
+  assert.equal(latestInput(ctx, T["settings.exclusions"]).props.value, baselineEx, "discard 后 exclusionText 必须复位回基线");
+  assert.equal(latestInput(ctx, T["settings.signatureTools"]).props.value, baselineSig, "discard 后 signatureTools 必须复位回基线");
+  ctx.mounted.unmount();
+});
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * S4G-23 · 脏草稿切换会话丢弃保护（取消不切 / 确认丢弃并切）
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+test("S4G-23 脏草稿切会话触发确认条：取消不切、确认丢弃并复位高级页输入态后切换", async () => {
+  const fixtures = panelFixtures();
+  const routes = {
+    "/api/dsh-gate/state*": { body: fixtures.state },
+    "/api/dsh-gate/capabilities*": { body: fixtures.view },
+    "/api/dsh-gate/policy*": { body: fixtures.policy },
+    "/api/dsh-gate/skills*": { body: fixtures.skills },
+    "/api/dsh-gate/mcp*": { body: fixtures.mcp },
+  };
+  const ctx = await mountPanel({ captureControls: true, routes: routes });
+  const T = ctx.hook.text;
+
+  const baselineWindow = latestInput(ctx, T["settings.window"]).props.value;
+  latestInput(ctx, T["settings.window"]).props.onChange({ target: { value: "42" } });
+  await ctx.mounted.settle();
+  assert.equal(ctx.mounted.text.indexOf(T["save.title"]) >= 0, true);
+
+  const callsBeforeSwitch = ctx.transport.calls.length;
+  latestSelect(ctx, T["health.session"]).props.onChange({ target: { value: "agent-b" } });
+  await ctx.mounted.settle();
+  assert.equal(ctx.mounted.text.indexOf("确认丢弃并继续") >= 0, true, "有脏草稿切会话必须弹出丢弃确认条");
+  assert.equal(ctx.transport.calls.length, callsBeforeSwitch, "确认前不得发出带新会话的刷新请求");
+  assert.equal(latestSelect(ctx, T["health.session"]).props.value, "", "确认前内部 session 不得切换");
+
+  latestButton(ctx, T["confirm.cancel"]).props.onClick();
+  await ctx.mounted.settle();
+  assert.equal(ctx.mounted.text.indexOf("确认丢弃并继续"), -1, "取消后确认条必须关闭");
+  assert.equal(ctx.transport.calls.length, callsBeforeSwitch, "取消后不得发出刷新请求");
+  assert.equal(latestSelect(ctx, T["health.session"]).props.value, "", "取消后内部 session 仍为原值");
+  assert.equal(latestInput(ctx, T["settings.window"]).props.value, "42", "取消后草稿与输入态必须保留");
+
+  latestSelect(ctx, T["health.session"]).props.onChange({ target: { value: "agent-b" } });
+  await ctx.mounted.settle();
+  latestButton(ctx, "确认丢弃并继续").props.onClick();
+  const switched = await waitFor(() => ctx.transport.calls.some((entry) => entry.path.indexOf("agent=agent-b") >= 0));
+  assert.equal(switched, true, "确认丢弃后必须切换会话并发起 ?agent=agent-b 刷新");
+  await ctx.mounted.settle();
+  assert.equal(ctx.mounted.text.indexOf(T["save.noChanges"]) >= 0, true, "确认切会话后脏草稿必须清空");
+  assert.equal(latestInput(ctx, T["settings.window"]).props.value, baselineWindow, "确认切会话后高级页输入草稿态必须复位");
+  assert.equal(latestSelect(ctx, T["health.session"]).props.value, "agent-b", "确认后 select 值必须更新为新会话");
+  ctx.mounted.unmount();
+});
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * S4G-24 · 409 覆盖保留原载荷 + requestJsonSave 统一确认门控
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+test("S4G-24 JSON 整份替换与单卡保存遇 409 覆盖服务端保留原提交载荷并清理对应状态", async () => {
+  const fixtures = panelFixtures();
+  let policyMode = "ok";
+  let transportRef = null;
+  const routes = Object.assign(panelRoutes(fixtures), {
+    "/api/dsh-gate/policy": () => {
+      const calls = transportRef === null ? [] : transportRef.calls;
+      const last = calls.length === 0 ? null : calls[calls.length - 1];
+      const isWrite = last && last.options && String(last.options.method || "").toUpperCase() === "POST";
+      if (isWrite && policyMode === "conflict") {
+        return { status: 409, body: { ok: false, code: "REVISION_CONFLICT", message: "revision 冲突", currentRevision: 15 } };
+      }
+      if (isWrite) return { body: { ok: true, changed: true, revision: 16 } };
+      return { body: fixtures.policy };
+    },
+  });
+  const ctx = await mountPanel({ captureControls: true, routes: routes });
+  transportRef = ctx.transport;
+  const T = ctx.hook.text;
+
+  // 1) 干净态点击整份替换：走 runAction("replace-json") 免弹窗直写
+  const cleanBefore = countPosts(ctx.transport, "/api/dsh-gate/policy");
+  latestButton(ctx, T["settings.jsonReplace"]).props.onClick();
+  const cleanSent = await waitFor(() => countPosts(ctx.transport, "/api/dsh-gate/policy") > cleanBefore);
+  assert.equal(cleanSent, true, "无草稿时点击整份替换不得弹出多余确认条，应直接发写请求");
+  await ctx.mounted.settle();
+
+  // 2) 编辑 JSON 遇 409，点「覆盖服务端」必须重发 replace:true 原载荷并清掉 jsonDirty
+  const editedPolicy = Object.assign({}, fixtures.policy.content, { narrowPassThrough: 19 });
+  latestTextarea(ctx, T["settings.jsonTitle"]).props.onChange({ target: { value: JSON.stringify(editedPolicy, null, 2) } });
+  await ctx.mounted.settle();
+  policyMode = "conflict";
+  latestButton(ctx, T["settings.jsonReplace"]).props.onClick();
+  await ctx.mounted.settle();
+  assert.equal(ctx.mounted.text.indexOf(T["json.confirmTitle"]) >= 0, true, "有 JSON 草稿时点击整份替换必须走确认门控");
+  const jsonBefore = countPosts(ctx.transport, "/api/dsh-gate/policy");
+  latestButton(ctx, T["confirm.ok"]).props.onClick();
+  await waitFor(() => countPosts(ctx.transport, "/api/dsh-gate/policy") > jsonBefore);
+  await ctx.mounted.settle();
+  assert.equal(ctx.mounted.text.indexOf(T["conflict.overwrite"]) >= 0, true, "JSON 替换遇 409 必须弹出冲突弹窗");
+
+  policyMode = "ok";
+  const jsonRetryBefore = countPosts(ctx.transport, "/api/dsh-gate/policy");
+  latestButton(ctx, T["conflict.overwrite"]).props.onClick();
+  await waitFor(() => countPosts(ctx.transport, "/api/dsh-gate/policy") > jsonRetryBefore);
+  await ctx.mounted.settle();
+  const postsAfterJson = ctx.transport.calls.filter((entry) => entry.path === "/api/dsh-gate/policy" &&
+    entry.options && String(entry.options.method || "").toUpperCase() === "POST");
+  const jsonOverwriteBody = JSON.parse(postsAfterJson[postsAfterJson.length - 1].options.body);
+  assert.equal(jsonOverwriteBody.replace, true, "JSON 409 覆盖必须保留 replace:true 载荷");
+  assert.equal(jsonOverwriteBody.narrowPassThrough, 19, "JSON 409 覆盖必须重发原 JSON 编辑载荷");
+  assert.equal(jsonOverwriteBody.expectedRevision, 15, "JSON 409 覆盖必须携带 currentRevision");
+  assert.equal(ctx.mounted.text.indexOf(T["save.noChanges"]) >= 0, true, "JSON 409 覆盖成功后必须清掉 jsonDirty");
+
+  // 3) 单卡 saveGuard 遇 409，点「覆盖服务端」必须重发仅含 repeatGuard 的原载荷并提交 guard 键
+  latestInput(ctx, T["settings.window"]).props.onChange({ target: { value: "33" } });
+  await ctx.mounted.settle();
+  policyMode = "conflict";
+  const guardBefore = countPosts(ctx.transport, "/api/dsh-gate/policy");
+  const saveButtons = ctx.buttons.filter((entry) => entry.label === T["save"]).slice(-3);
+  saveButtons[0].props.onClick();
+  await waitFor(() => countPosts(ctx.transport, "/api/dsh-gate/policy") > guardBefore);
+  await ctx.mounted.settle();
+  assert.equal(ctx.mounted.text.indexOf(T["conflict.overwrite"]) >= 0, true, "saveGuard 遇 409 必须弹出冲突弹窗");
+
+  policyMode = "ok";
+  const guardRetryBefore = countPosts(ctx.transport, "/api/dsh-gate/policy");
+  latestButton(ctx, T["conflict.overwrite"]).props.onClick();
+  await waitFor(() => countPosts(ctx.transport, "/api/dsh-gate/policy") > guardRetryBefore);
+  await ctx.mounted.settle();
+  const postsAfterGuard = ctx.transport.calls.filter((entry) => entry.path === "/api/dsh-gate/policy" &&
+    entry.options && String(entry.options.method || "").toUpperCase() === "POST");
+  const guardOverwriteBody = JSON.parse(postsAfterGuard[postsAfterGuard.length - 1].options.body);
+  assert.equal(guardOverwriteBody.replace, undefined, "单卡 saveGuard 409 覆盖不得退化成整份 replace");
+  assert.deepEqual(guardOverwriteBody.repeatGuard, { windowSize: 33 }, "单卡 saveGuard 409 覆盖必须重发原始 repeatGuard 载荷");
+  assert.equal(guardOverwriteBody.expectedRevision, 15);
+  assert.equal(ctx.mounted.text.indexOf(T["save.noChanges"]) >= 0, true, "saveGuard 409 覆盖成功后必须提交 guard 脏键");
+  ctx.mounted.unmount();
+});
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * S4G-25 · /skills 缺字段默认开启 + exceptionCount 合并去重计数
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+test("S4G-25 /skills 缺省 relay/promote 默认开启且 exceptionCount 按合并后非空成员例外统计", async () => {
+  const fixtures = panelFixtures();
+  // fixtures.skills 与 policy.skills 均不提供 activationRelay / activationPromote
+  const ctx = await mountPanel({ captureSwitches: true, routes: panelRoutes(fixtures) });
+  const T = ctx.hook.text;
+  const relaySwitch = ctx.captured.filter((props) => props["aria-label"] === T["skills.relay"]).pop();
+  const promoteSwitch = ctx.captured.filter((props) => props["aria-label"] === T["skills.promote"]).pop();
+  assert.ok(relaySwitch && promoteSwitch, "技能页必须渲染 activationRelay 与 activationPromote 开关");
+  assert.equal(relaySwitch["aria-checked"], true, "/skills 缺失时 activationRelay 默认必须为 true");
+  assert.equal(promoteSwitch["aria-checked"], true, "/skills 缺失时 activationPromote 默认必须为 true");
+  ctx.mounted.unmount();
+
+  const { hook } = loadWithHook();
+  const projection = hook.L3.create({});
+  const view = { capabilities: [{ id: "mcp:fs", tools: [{ name: "read" }, { name: "write" }] }] };
+  const basePolicy = { content: { capabilities: { "mcp:fs": { toolExceptions: { read: 2 } } } } };
+
+  const modified = projection.build({
+    dataKey: "exc-mod",
+    view: view,
+    policy: basePolicy,
+    draft: { revision: 1, exceptions: { "mcp:fs": { tool: { read: 1 } } } },
+  });
+  assert.equal(modified.rowsById["mcp:fs"].exceptionCount, 1, "草稿修改同一成员例外不得重复计数");
+
+  const cleared = projection.build({
+    dataKey: "exc-clear",
+    view: view,
+    policy: basePolicy,
+    draft: { revision: 2, exceptions: { "mcp:fs": { tool: { read: null } } } },
+  });
+  assert.equal(cleared.rowsById["mcp:fs"].exceptionCount, 0, "草稿清除成员例外后 exceptionCount 必须归 0");
 });

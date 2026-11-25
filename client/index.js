@@ -147,6 +147,9 @@ window.__ModuleLoader__.load({
       "skills.shadowed": "被同名技能遮挡",
       "skills.providers": "来源",
       "skills.searchEmpty": "搜索词为空时列出全部",
+      "skills.importMissing": "目录不存在",
+      "skills.importNoSkills": "目录里没有技能",
+      "skills.prescanHint": "冷启动预扫描中：技能清单可能还没齐，稍等或重新读取",
       "mcp.title": "MCP 服务器",
       "mcp.liveHint": "这一页即时生效：启用、禁用、编辑、删除都立刻写盘并重载连接",
       "mcp.empty": "还没有托管任何 MCP 服务器，展开下面的表单添加第一个",
@@ -171,6 +174,11 @@ window.__ModuleLoader__.load({
       "mcp.state": "状态",
       "mcp.writable": "只读：宿主没有给写入口，这一页只能看",
       "mcp.emptyName": "名称不能为空",
+      "mcp.hostManaged": "宿主托管：要在宿主配置里改",
+      "mcp.missing": "闸门 MCP 接口不可用（404）：这一页暂时读不到服务器列表",
+      "mcp.stale": "正在显示上次读到的数据，最近一次刷新失败",
+      "mcp.staleHint": "刷新失败",
+      "mcp.argsUnclosed": "参数里有未闭合的引号：先补全引号再保存（不会静默丢参）",
       "mcp.count": "台",
       "mcp.noTools": "尚未统计",
       "settings.sessionTitle": "会话切换与诊断",
@@ -256,6 +264,12 @@ window.__ModuleLoader__.load({
       "confirm.title": "请确认",
       "confirm.ok": "确认",
       "confirm.cancel": "取消",
+      "conflict.title": "服务端已被修改",
+      "conflict.loadLatest": "载入最新并丢弃我的",
+      "conflict.overwrite": "覆盖服务端",
+      "conflict.diff": "先看差异",
+      "conflict.loaded": "已载入服务端最新数据",
+      "conflict.reloadFailed": "载入最新失败，请稍后重试",
       "health.session": "会话",
       "health.file": "文件",
       "health.readAt": "读取于",
@@ -535,7 +549,7 @@ window.__ModuleLoader__.load({
     function createL2DraftStore(deps) {
       const env = deps || {};
       const MAX_UNDO = 50;
-      const PREFIX = Object.freeze({ cap: "cap:", exc: "exc:", skill: "skill:", section: "section:", imp: "imp:", close: "close:", guard: "guard:", cat: "cat:", sig: "sig:", def: "default:" });
+      const PREFIX = Object.freeze({ cap: "cap:", exc: "exc:", skill: "skill:", section: "section:", imp: "imp:", close: "close:", guard: "guard:", cat: "cat:", sig: "sig:", def: "default:", skcfg: "skcfg:" });
 
       const keys = {
         cap: (id) => PREFIX.cap + String(id),
@@ -548,12 +562,13 @@ window.__ModuleLoader__.load({
         catalog: (field) => PREFIX.cat + String(field),
         signature: (field) => PREFIX.sig + String(field),
         defaults: (field) => PREFIX.def + String(field),
+        skills: (field) => PREFIX.skcfg + String(field),
       };
 
       const kindOfKey = (key) => {
         const text = String(key);
         if (text.indexOf(PREFIX.exc) === 0) return "exceptions";
-        if (text.indexOf(PREFIX.skill) === 0 || text.indexOf(PREFIX.close) === 0) return "skills";
+        if (text.indexOf(PREFIX.skill) === 0 || text.indexOf(PREFIX.close) === 0 || text.indexOf(PREFIX.skcfg) === 0) return "skills";
         if (text.indexOf(PREFIX.imp) === 0) return "imports";
         if (text.indexOf(PREFIX.sig) === 0) return "signature";
         if (text.indexOf(PREFIX.guard) === 0) return "guardrail";
@@ -587,7 +602,32 @@ window.__ModuleLoader__.load({
         jsonRevision: 1,
         jsonDirty: false,
         jsonText: "",
+        version: 0,
       };
+
+      /* 响应式单一事实源：任何修改都 notify 一次，PanelBody 据此重渲染。 */
+      const listeners = [];
+      const notify = () => {
+        state.version += 1;
+        const snapshotVersion = state.version;
+        const list = listeners.slice();
+        for (let index = 0; index < list.length; index += 1) {
+          try {
+            list[index](snapshotVersion);
+          } catch (error) {
+            /* 单个订阅者异常不得阻断其它订阅者与写路径 */
+          }
+        }
+      };
+      const subscribe = (fn) => {
+        if (typeof fn !== "function") return () => {};
+        listeners.push(fn);
+        return () => {
+          const index = listeners.indexOf(fn);
+          if (index >= 0) listeners.splice(index, 1);
+        };
+      };
+      const version = () => state.version;
 
       const same = (left, right) => {
         if (left === undefined || right === undefined) return left === right;
@@ -670,6 +710,11 @@ window.__ModuleLoader__.load({
           if (field === "tools") return listOf(summary.tools).filter((name) => typeof name === "string");
           return undefined;
         }
+        if (text.indexOf(PREFIX.skcfg) === 0) {
+          const skillsBlock = isObject(content.skills) ? content.skills : {};
+          const field = text.slice(PREFIX.skcfg.length);
+          return hasOwn(skillsBlock, field) ? skillsBlock[field] : undefined;
+        }
         if (text.indexOf(PREFIX.def) === 0) {
           const field = text.slice(PREFIX.def.length);
           if (field === "skillpack") {
@@ -730,6 +775,7 @@ window.__ModuleLoader__.load({
         if (same(before, value)) return false;
         applyOps([{ key: key, before: before, after: value, kind: kindOfKey(key), label: label }]);
         pushAction({ label: label || key, ops: [{ key: key, before: before, after: value, kind: kindOfKey(key), label: label }] });
+        notify();
         return true;
       };
 
@@ -745,6 +791,7 @@ window.__ModuleLoader__.load({
         if (ops.length === 0) return false;
         applyOps(ops);
         pushAction({ label: label || "批量暂存", ops: ops });
+        notify();
         return true;
       };
 
@@ -759,6 +806,7 @@ window.__ModuleLoader__.load({
         applyOps(invert(action).ops);
         state.redo.push(action);
         state.revision += 1;
+        notify();
         return action;
       };
 
@@ -768,6 +816,7 @@ window.__ModuleLoader__.load({
         applyOps(action.ops);
         state.undo.push(action);
         state.revision += 1;
+        notify();
         return action;
       };
 
@@ -807,6 +856,7 @@ window.__ModuleLoader__.load({
         }
         state.jsonDirty = false;
         state.jsonRevision += 1;
+        notify();
         return true;
       };
 
@@ -820,15 +870,34 @@ window.__ModuleLoader__.load({
         if (ops.length === 0) return false;
         applyOps(ops);
         pushAction({ label: "丢弃 " + kind, ops: ops });
+        notify();
         return true;
       };
 
       /** 提交成功后只清对应脏切片（不可撤销：服务端已经是新值）。 */
       const commitKeys = (listed) => {
         const keysToClear = Array.isArray(listed) ? listed : dirtyKeys();
-        for (let index = 0; index < keysToClear.length; index += 1) delete state.cells[keysToClear[index]];
+        const committed = {};
+        for (let index = 0; index < keysToClear.length; index += 1) {
+          committed[keysToClear[index]] = true;
+          delete state.cells[keysToClear[index]];
+        }
+        /* 已提交的切片不可再撤销：剪掉引用它们的动作，杜绝保存后出现空撤销/回滚旧值。 */
+        const prune = (actions) => {
+          const out = [];
+          for (let index = 0; index < actions.length; index += 1) {
+            const action = actions[index];
+            const kept = action.ops.filter((op) => committed[op.key] !== true);
+            if (kept.length === 0) continue;
+            out.push(kept.length === action.ops.length ? action : { label: action.label, ops: kept });
+          }
+          return out;
+        };
+        state.undo = prune(state.undo);
+        state.redo = prune(state.redo);
         state.revision += 1;
         recomputeDirty();
+        notify();
         return keysToClear.length;
       };
 
@@ -838,6 +907,7 @@ window.__ModuleLoader__.load({
         for (let index = 0; index < all.length; index += 1) if (keep.indexOf(all[index]) < 0) delete state.cells[all[index]];
         state.revision += 1;
         recomputeDirty();
+        notify();
       };
 
       const setBaseline = (content, meta) => {
@@ -845,6 +915,7 @@ window.__ModuleLoader__.load({
         state.baselineMeta = meta || {};
         recomputeDirty();
         state.revision += 1;
+        notify();
       };
 
       const importsSnapshot = () => {
@@ -889,6 +960,7 @@ window.__ModuleLoader__.load({
         if (value === undefined) {
           delete state.cells[key];
           state.revision += 1;
+          notify();
           return true;
         }
         return stage(key, null, "移除导入 " + path);
@@ -925,6 +997,7 @@ window.__ModuleLoader__.load({
         let enabled;
         const guardrail = {};
         const catalog = {};
+        const skillsConfig = {};
         let signatureEnabled;
         let signatureTools;
         const ids = Object.keys(cells);
@@ -943,6 +1016,7 @@ window.__ModuleLoader__.load({
             map[parsed.name] = cell.value;
           } else if (key.indexOf(PREFIX.guard) === 0) guardrail[key.slice(PREFIX.guard.length)] = cell.value;
           else if (key.indexOf(PREFIX.cat) === 0) catalog[key.slice(PREFIX.cat.length)] = cell.value;
+          else if (key.indexOf(PREFIX.skcfg) === 0) skillsConfig[key.slice(PREFIX.skcfg.length)] = cell.value;
           else if (key === keys.signature("enabled")) signatureEnabled = cell.value === true;
           else if (key === keys.signature("tools")) signatureTools = listOf(cell.value);
           else if (key === keys.defaults("skillpack")) skillpack = cell.value;
@@ -967,6 +1041,7 @@ window.__ModuleLoader__.load({
           signature: { enabled: signatureEnabled, tools: signatureTools },
           guardrail: guardrail,
           catalog: catalog,
+          skillsConfig: skillsConfig,
           diverged: dirtyKeys().length,
         };
       };
@@ -1026,6 +1101,10 @@ window.__ModuleLoader__.load({
         if (snapshot.offRemoved.length > 0) {
           const removed = snapshot.offRemoved;
           content.skills.off = offOf(content).filter((name) => removed.indexOf(name) < 0);
+        }
+        const skillCfgFields = Object.keys(snapshot.skillsConfig);
+        for (let index = 0; index < skillCfgFields.length; index += 1) {
+          content.skills[skillCfgFields[index]] = snapshot.skillsConfig[skillCfgFields[index]];
         }
         const guardFields = Object.keys(snapshot.guardrail);
         for (let index = 0; index < guardFields.length; index += 1) content.repeatGuard[guardFields[index]] = snapshot.guardrail[guardFields[index]];
@@ -1087,6 +1166,7 @@ window.__ModuleLoader__.load({
           if (state.jsonText === next) return false;
           state.jsonText = next;
           state.jsonRevision += 1;
+          notify();
           return true;
         },
         setDirty: (dirty, text) => {
@@ -1096,6 +1176,7 @@ window.__ModuleLoader__.load({
           state.jsonDirty = next;
           if (text !== undefined) state.jsonText = String(text);
           state.jsonRevision += 1;
+          notify();
           return true;
         },
         snapshot: () => ({ dirty: state.jsonDirty === true, text: state.jsonText, revision: state.jsonRevision }),
@@ -1106,6 +1187,9 @@ window.__ModuleLoader__.load({
         PREFIX: PREFIX,
         keys: Object.freeze(keys),
         kindOfKey: kindOfKey,
+        subscribe: subscribe,
+        notify: notify,
+        version: version,
         stage: stage,
         stageMany: stageMany,
         stageImport: stageImport,
@@ -1434,7 +1518,23 @@ window.__ModuleLoader__.load({
           const baseTier = savedParsed.state === "set" ? savedParsed.value : (kind === "skill" || kind === "skillpack" ? defaultSkillpack : (sections.length > 0 && tools.length === 0 ? defaultSection : defaultCapability));
           const effectiveTier = draftParsed && draftParsed.state === "set" ? draftParsed.value : baseTier;
           const rowExceptions = isObject(draftExceptions[id]) ? draftExceptions[id] : {};
-          const exceptionCount = Object.keys(isObject(entry && entry.toolExceptions) ? entry.toolExceptions : {}).length + Object.keys(isObject(entry && entry.sectionExceptions) ? entry.sectionExceptions : {}).length + Object.keys(isObject(rowExceptions.tool) ? rowExceptions.tool : {}).length + Object.keys(isObject(rowExceptions.section) ? rowExceptions.section : {}).length;
+          /* 行级例外表（服务端 toolExceptions/sectionExceptions 与草稿同名表）必须合并进成员行。 */
+          const mergeExceptions = (members, savedMap, draftMap) => {
+            for (let index = 0; index < members.length; index += 1) {
+              const member = members[index];
+              let exception = isObject(member.exception) ? Object.assign({}, member.exception) : null;
+              if (isObject(savedMap) && hasOwn(savedMap, member.name)) exception = Object.assign({}, exception || {}, { tier: savedMap[member.name] });
+              if (isObject(draftMap) && hasOwn(draftMap, member.name)) {
+                const staged = draftMap[member.name];
+                exception = staged === null ? null : Object.assign({}, exception || {}, { tier: staged });
+              }
+              member.exception = exception;
+            }
+          };
+          mergeExceptions(tools, entry && entry.toolExceptions, rowExceptions.tool);
+          mergeExceptions(sections, entry && entry.sectionExceptions, rowExceptions.section);
+          const hasDraftException = Object.keys(isObject(rowExceptions.tool) ? rowExceptions.tool : {}).length + Object.keys(isObject(rowExceptions.section) ? rowExceptions.section : {}).length > 0;
+          const exceptionCount = all.filter((member) => isObject(member.exception)).length;
           const deviations = [];
           const rawDeviations = raw.deviations;
           if (Array.isArray(rawDeviations)) {
@@ -1462,6 +1562,7 @@ window.__ModuleLoader__.load({
             blocking: savedParsed.blocking === true || Boolean(draftParsed && draftParsed.blocking === true),
             invalidReason: savedParsed.state === "invalid" ? savedParsed.reason : (draftParsed && draftParsed.state === "invalid" ? draftParsed.reason : ""),
             members: { tools: tools, sections: sections, all: all },
+            hasDraftException: hasDraftException,
             exceptionCount: exceptionCount,
             deviations: deviations,
             upstreamHidden: listOf(raw.upstreamHidden).filter((name) => typeof name === "string"),
@@ -1549,7 +1650,7 @@ window.__ModuleLoader__.load({
         const filtered = rows.filter((row) => {
           if (sourceFilter !== "all" && row.kind !== sourceFilter) return false;
           if (statusFilter === "exception") { if (row.exceptionCount === 0 && row.deviations.length === 0) return false; }
-          else if (statusFilter === "pending") { if (row.draftTier === null) return false; }
+          else if (statusFilter === "pending") { if (row.draftTier === null && row.hasDraftException !== true) return false; }
           else if (statusFilter !== "all" && String(row.effectiveTier) !== statusFilter) return false;
           if (query.length === 0) return true;
           if (row.id.toLowerCase().indexOf(query) >= 0) return true;
@@ -1914,12 +2015,28 @@ window.__ModuleLoader__.load({
           message: "",
           choices: [],
           degraded: false,
+          currentRevision: body.currentRevision === undefined ? null : body.currentRevision,
         };
+        /* 二级业务结果：HTTP 200 只代表请求到达，result.ok === false 仍是失败
+         * （MCP 挂载/更新常在 200 里返回 { result: { ok: false, message } }）。 */
+        const business = isObject(body.result) ? body.result : null;
+        const businessFailed = business !== null && business.ok === false;
+        const businessMessage = business === null ? "" : String(business.message || business.reason || "");
         if (!result || !result.ok) {
           if (result && result.status === 409 && (result.code === "REVISION_CONFLICT" || body.code === "REVISION_CONFLICT")) {
             return Object.assign(base, { state: "conflict", choices: CONFLICT_CHOICES.slice(), message: "服务端 revision 已变化：" + (result.error || "冲突") });
           }
           return Object.assign(base, { state: "failed", message: result ? (result.error || "提交失败") : "提交失败", failed: [{ index: 0, reason: result ? (result.error || "提交失败") : "提交失败" }] });
+        }
+        if (businessFailed) {
+          const reason = businessMessage || "服务端业务校验未通过";
+          return Object.assign(base, {
+            state: "failed",
+            ok: false,
+            degraded: true,
+            message: reason,
+            failed: [{ index: 0, reason: reason }],
+          });
         }
         if (base.failed.length > 0) return Object.assign(base, { state: "partial", message: "部分失败：" + base.failed.length + " 项，未执行项仍留在草稿里" });
         if (base.changed === false) return Object.assign(base, { state: "no-change", message: "服务端判定没有变化，未写入" });
@@ -2256,9 +2373,22 @@ window.__ModuleLoader__.load({
             h("div", { key: "body", id: id + "-text", className: "dshg-hint" }, value.text || ""),
             value.detail ? h("div", { key: "detail", className: "dshg-hint" }, value.detail) : null,
           ]),
-          h("button", { key: "cancel", type: "button", className: "dshg-btn", autoFocus: true, "data-autofocus": "cancel", onClick: value.onCancel }, value.cancelLabel || text("confirm.cancel")),
-          h("button", { key: "ok", type: "button", className: "dshg-btn", "data-primary": "true", "data-danger": value.destructive === true ? "true" : undefined, onClick: value.onConfirm }, value.confirmLabel || text("confirm.ok")),
-        ]);
+        ].concat(Array.isArray(value.actions) && value.actions.length > 0
+          ? value.actions.map((action, index) => h("button", {
+              key: "choice:" + String(action.value === undefined ? index : action.value),
+              type: "button",
+              className: "dshg-btn",
+              "data-choice": action.value === undefined ? undefined : String(action.value),
+              "data-primary": index === 0 ? "true" : undefined,
+              "data-danger": action.danger === true ? "true" : undefined,
+              autoFocus: index === 0,
+              "data-autofocus": index === 0 ? "choice" : undefined,
+              onClick: action.onClick,
+            }, String(action.label)))
+          : [
+              h("button", { key: "cancel", type: "button", className: "dshg-btn", autoFocus: true, "data-autofocus": "cancel", onClick: value.onCancel }, value.cancelLabel || text("confirm.cancel")),
+              h("button", { key: "ok", type: "button", className: "dshg-btn", "data-primary": "true", "data-danger": value.destructive === true ? "true" : undefined, onClick: value.onConfirm }, value.confirmLabel || text("confirm.ok")),
+            ]));
       };
 
       const switchButton = (props) => {
@@ -2481,7 +2611,7 @@ window.__ModuleLoader__.load({
           "data-primary": opts.primary === true ? "true" : undefined,
           "data-danger": opts.danger === true ? "true" : undefined,
           disabled: opts.disabled === true,
-          title: opts.reason || opts.title || "",
+          title: opts.disabled === true ? (opts.reason || opts.title || "") : (opts.title || ""),
           onClick: opts.disabled === true ? undefined : onClick,
         }, String(label));
       };
@@ -2491,6 +2621,8 @@ window.__ModuleLoader__.load({
         { value: TIER_OFF, tier: TIER_OFF, label: text("tier.off"), title: text("tier.offHint") },
       ];
       const tierLabel = (tier) => (TIER_LABEL[tier] === undefined ? text("common.none") : TIER_LABEL[tier]);
+      /* 搜索时强制全展开；否则只看用户显式点开的组。能力页与技能页共用同一判据。 */
+      const isGroupExpanded = (openGroups, id, searching) => (searching === true ? true : (isObject(openGroups) && openGroups[id] === true));
       const purposeOf = (key, key2) => purpose(key, text(key2));
       const statePanel = (key, purposeNode, stateNode) => h("div", { key: key, className: "dshg-col" }, [purposeNode, stateNode]);
       const tierTag = (key, tier) => tag(key, tierLabel(tier), tier === TIER_RESIDENT ? "ok" : (tier === TIER_ONDEMAND ? "business" : "muted"));
@@ -2579,7 +2711,7 @@ window.__ModuleLoader__.load({
 
       const renderSubgroup = (props, group, sub, searching) => {
         const id = "caps:" + group.kind + ":" + sub.key;
-        const open = props.view.openGroups[id] === undefined ? searching : props.view.openGroups[id] === true;
+        const open = isGroupExpanded(props.view.openGroups, id, searching);
         return h("div", { key: id, className: "dshg-subGroup" }, [
           h("div", { key: "wrap", className: "dshg-groupHeadWrap" }, [
             primitives.groupHead({ key: "head", id: id, label: sub.label, count: sub.rows.length, open: open, onToggle: () => props.actions.toggleGroup(id, searching) }),
@@ -2590,7 +2722,7 @@ window.__ModuleLoader__.load({
 
       const renderGroup = (props, group, searching) => {
         const id = "caps:" + group.kind;
-        const open = props.view.openGroups[id] === undefined ? searching : props.view.openGroups[id] === true;
+        const open = isGroupExpanded(props.view.openGroups, id, searching);
         const ops = h("div", { key: "ops", className: "dshg-groupOps" }, [
           h("select", {
             key: "batch",
@@ -2697,10 +2829,12 @@ window.__ModuleLoader__.load({
         });
         const takeoverBase = !(payload && payload.takeover === false);
         const takeover = draft.takeover === undefined ? takeoverBase : draft.takeover === true;
-        const relayBase = isObject(payload && payload.activationRelay) ? payload.activationRelay.enabled === true : Boolean(payload && payload.activationRelay === true);
-        const relay = draft.catalog.activationRelay === undefined ? relayBase : draft.catalog.activationRelay === true;
-        const promoteBase = isObject(payload && payload.activationPromote) ? payload.activationPromote.enabled === true : Boolean(payload && payload.activationPromote === true);
-        const promote = draft.catalog.activationPromote === undefined ? promoteBase : draft.catalog.activationPromote === true;
+        const policyBlock = isObject(props.snapshot.data.policy) && isObject(props.snapshot.data.policy.content) ? props.snapshot.data.policy.content : {};
+        const policySkills = isObject(policyBlock.skills) ? policyBlock.skills : {};
+        const relayBase = isObject(payload && payload.activationRelay) ? payload.activationRelay.enabled === true : (payload && payload.activationRelay !== undefined ? payload.activationRelay === true : policySkills.activationRelay !== false);
+        const relay = isObject(draft.skillsConfig) && draft.skillsConfig.activationRelay !== undefined ? draft.skillsConfig.activationRelay === true : relayBase;
+        const promoteBase = isObject(payload && payload.activationPromote) ? payload.activationPromote.enabled === true : (payload && payload.activationPromote !== undefined ? payload.activationPromote === true : policySkills.activationPromote !== false);
+        const promote = isObject(draft.skillsConfig) && draft.skillsConfig.activationPromote !== undefined ? draft.skillsConfig.activationPromote === true : promoteBase;
         const buckets = {};
         const providers = [];
         for (let index = 0; index < filtered.length; index += 1) {
@@ -2713,7 +2847,7 @@ window.__ModuleLoader__.load({
         const searching = query.length > 0;
         const groupNodes = providers.map((name) => {
           const id = "skills:" + name;
-          const open = view.openGroups[id] === undefined ? searching : view.openGroups[id] === true;
+          const open = isGroupExpanded(view.openGroups, id, searching);
           return h("div", { key: id, className: "dshg-group" }, [
             h("div", { key: "wrap", className: "dshg-groupHeadWrap" }, [
               primitives.groupHead({ key: "head", id: id, label: name, count: buckets[name].length, open: open, onToggle: () => props.actions.toggleGroup(id, searching) }),
@@ -2727,6 +2861,7 @@ window.__ModuleLoader__.load({
                     h("div", { key: "meta", className: "dshg-rowMeta" }, [
                       hint("prov", String(row.provider || text("common.none"))),
                       typeof row.path === "string" && row.path.length > 0 ? hint("path", row.path) : null,
+                      typeof row.description === "string" && row.description.length > 0 ? hint("desc", row.description.length > 160 ? row.description.slice(0, 160) + "…" : row.description) : null,
                       row.shadowed === true ? tag("shadowed", text("skills.shadowed"), "warn") : null,
                     ]),
                   ]),
@@ -2739,8 +2874,8 @@ window.__ModuleLoader__.load({
         const takeoverCard = card("skills:takeover", text("skills.takeoverTitle"), [
           h("div", { key: "switches", className: "dshg-row" }, [
             primitives.switchButton({ key: "takeover", on: takeover, label: text("skills.takeover"), onToggle: () => props.actions.stageTakeover(!takeover) }),
-            primitives.switchButton({ key: "relay", on: relay, label: text("skills.relay"), disabled: !takeover, reason: text("skills.takeoverHint"), onToggle: () => props.actions.stageCatalog("activationRelay", !relay) }),
-            primitives.switchButton({ key: "promote", on: promote, label: text("skills.promote"), disabled: !relay, reason: text("skills.takeoverHint"), onToggle: () => props.actions.stageCatalog("activationPromote", !promote) }),
+            primitives.switchButton({ key: "relay", on: relay, label: text("skills.relay"), disabled: !takeover, reason: text("skills.takeoverHint"), onToggle: () => props.actions.stageSkillConfig("activationRelay", !relay) }),
+            primitives.switchButton({ key: "promote", on: promote, label: text("skills.promote"), disabled: !relay, reason: text("skills.takeoverHint"), onToggle: () => props.actions.stageSkillConfig("activationPromote", !promote) }),
           ]),
           hint("hint", text("skills.takeoverHint")),
         ]);
@@ -2754,25 +2889,33 @@ window.__ModuleLoader__.load({
             ? primitives.stateContainer({ key: "empty", state: "empty", message: text("skills.empty") })
             : h("div", { key: "groups", className: "dshg-list" }, groupNodes),
         ]);
-        const imports = listOf(draft.imports === null ? (payload && payload.imports) : draft.imports)
-          .map((item) => (typeof item === "string" ? item : (isObject(item) && typeof item.path === "string" ? item.path : "")))
-          .filter((path) => path.length > 0);
+        const payloadImports = listOf(payload && payload.imports);
+        const importStatus = {};
+        for (let index = 0; index < payloadImports.length; index += 1) {
+          const item = payloadImports[index];
+          if (isObject(item) && typeof item.path === "string") importStatus[item.path] = item;
+        }
+        const imports = listOf(draft.imports === null ? payloadImports : draft.imports)
+          .map((item) => {
+            const path = typeof item === "string" ? item : (isObject(item) && typeof item.path === "string" ? item.path : "");
+            if (path.length === 0) return null;
+            const known = isObject(importStatus[path]) ? importStatus[path] : {};
+            return { path: path, exists: known.exists, hasSkills: known.hasSkills };
+          })
+          .filter(Boolean);
         const importsCard = card("skills:imports", text("skills.importsTitle"), [
           h("div", { key: "row", className: "dshg-filters" }, [
             h("input", { key: "p", className: "dshg-input", "aria-label": text("skills.importPlaceholder"), placeholder: text("skills.importPlaceholder"), value: view.importDraft, onChange: (event) => props.actions.setView({ importDraft: event.target.value }) }),
-            button("add", text("skills.importAdd"), () => {
-              const value = String(view.importDraft || "").trim();
-              if (value.length === 0) return;
-              props.actions.addImport(value);
-              props.actions.setView({ importDraft: "" });
-            }, { disabled: String(view.importDraft || "").trim().length === 0 }),
+            button("add", text("skills.importAdd"), () => props.actions.addImport(String(view.importDraft || "")), { disabled: String(view.importDraft || "").trim().length === 0 }),
           ]),
           hint("hint", text("skills.importsHint")),
           imports.length === 0
             ? hint("empty", text("skills.importEmpty"))
-            : h("div", { key: "list", className: "dshg-col" }, imports.map((path, index) => h("div", { key: "imp:" + path + ":" + index, className: "dshg-importRow" }, [
-              h("span", { key: "p", className: "dshg-grow", title: path }, path),
-              button("rm", text("skills.importRemove"), () => props.actions.removeImport(path)),
+            : h("div", { key: "list", className: "dshg-col" }, imports.map((item, index) => h("div", { key: "imp:" + item.path + ":" + index, className: "dshg-importRow" }, [
+              h("span", { key: "p", className: "dshg-grow", title: item.path }, item.path),
+              item.exists === false ? tag("missing", text("skills.importMissing"), "warn") : null,
+              item.hasSkills === false ? tag("noskills", text("skills.importNoSkills"), "warn") : null,
+              button("rm", text("skills.importRemove"), () => props.actions.removeImport(item.path)),
             ]))),
         ]);
         const offList = (Array.isArray(draft.offList) ? draft.offList : listOf(payload && payload.off)).filter((name) => typeof name === "string");
@@ -2788,7 +2931,7 @@ window.__ModuleLoader__.load({
         const warningsCard = warnings.length === 0 ? null : card("skills:warnings", text("caps.warnings") + "（" + String(warnings.length) + "）",
           warnings.slice(0, 8).map((item, index) => alert("w:" + index, String(item), "warn")));
         const prescan = isObject(payload && payload.prescan) ? payload.prescan : null;
-        const prescanNode = prescan && prescan.active === true ? alert("prescan", text("skills.takeoverHint"), "info") : null;
+        const prescanNode = prescan && prescan.active === true ? alert("prescan", text("skills.prescanHint"), "info") : null;
         return h("div", { key: "skills", className: "dshg-col" }, [purposeNode, takeoverCard, prescanNode, searchCard, importsCard, offCard, warningsCard].filter(Boolean));
       };
 
@@ -2800,6 +2943,14 @@ window.__ModuleLoader__.load({
         const purposeNode = purpose("mcp:purpose", text("purpose.mcp"));
         if (status === "loading" && !payload) {
           return statePanel("mcp", purposeNode, primitives.stateContainer({ key: "mcp:loading", state: "loading", rows: 3 }));
+        }
+        if (status === "missing") {
+          return statePanel("mcp", purposeNode, primitives.stateContainer({
+            key: "mcp:missing",
+            state: "error",
+            message: text("mcp.missing"),
+            onRetry: () => props.actions.reload(),
+          }));
         }
         if (status === "error" && !payload) {
           return statePanel("mcp", purposeNode, primitives.stateContainer({
@@ -2815,10 +2966,11 @@ window.__ModuleLoader__.load({
         const writable = !(payload && payload.writable === false);
         const servers = listOf(payload && payload.servers).filter((row) => isObject(row) && typeof row.name === "string");
         const draft = view.mcpDraft;
+        const argsInfo = isObject(props.argsPreview) ? props.argsPreview : { args: [], unclosed: false };
         const editing = String(view.mcpEditing || "");
         const formOpen = view.mcpAddOpen === true || editing.length > 0;
         const serverRows = servers.map((row) => {
-          const stateTone = row.state === "owned" ? "ok" : (row.state === "stopped" ? "warn" : "error");
+          const stateTone = row.state === "owned" ? "ok" : (row.state === "stopped" ? "warn" : "info");
           return h("div", { key: "mcp:" + row.name, className: "dshg-capRow" }, [
             h("div", { key: "main", className: "dshg-capMain" }, [
               h("div", { key: "grow", className: "dshg-grow" }, [
@@ -2854,7 +3006,7 @@ window.__ModuleLoader__.load({
                   rawServer: clone(source),
                 });
                 props.actions.setView({ mcpEditing: row.name, mcpAddOpen: true });
-              }, { disabled: writable !== true, reason: text("mcp.writable") }),
+              }, { disabled: writable !== true || row.state === "external", reason: row.state === "external" ? text("mcp.hostManaged") : text("mcp.writable") }),
               button("rm", text("mcp.remove"), () => props.actions.mcpRemove(row.name), { danger: true, disabled: writable !== true, reason: text("mcp.writable") }),
             ]),
           ]);
@@ -2878,7 +3030,9 @@ window.__ModuleLoader__.load({
         if (String(draft.transport || "stdio") === "stdio") {
           formFields.push(field("command", text("mcp.command"), h("input", { key: "i", className: "dshg-input", "aria-label": text("mcp.command"), value: String(draft.command || ""), onChange: (event) => props.actions.setMcpDraft({ command: event.target.value }) })));
           formFields.push(field("args", text("mcp.args"), h("input", { key: "i", className: "dshg-input", "aria-label": text("mcp.args"), value: String(draft.args || ""), onChange: (event) => props.actions.setMcpDraft({ args: event.target.value }) })));
-          formFields.push(hint("preview", text("mcp.argsPreview") + " " + JSON.stringify(props.argsPreview)));
+          formFields.push(argsInfo.unclosed === true
+            ? alert("args-unclosed", text("mcp.argsUnclosed"), "error")
+            : hint("preview", text("mcp.argsPreview") + " " + JSON.stringify(argsInfo.args)));
         } else {
           formFields.push(field("url", text("mcp.url"), h("input", { key: "i", className: "dshg-input", "aria-label": text("mcp.url"), value: String(draft.url || ""), onChange: (event) => props.actions.setMcpDraft({ url: event.target.value }) })));
         }
@@ -2887,11 +3041,11 @@ window.__ModuleLoader__.load({
             h("div", { key: "fields", className: "dshg-form" }, formFields),
             h("div", { key: "actions", className: "dshg-row" }, [
               editing.length > 0
-                ? button("save", text("mcp.saveEdit"), () => props.actions.mcpAction("update", editing), { primary: true, disabled: writable !== true, reason: text("mcp.writable") })
+                ? button("save", text("mcp.saveEdit"), () => props.actions.mcpAction("update", editing), { primary: true, disabled: writable !== true || argsInfo.unclosed === true, reason: argsInfo.unclosed === true ? text("mcp.argsUnclosed") : text("mcp.writable") })
                 : button("add", text("mcp.addTitle"), () => props.actions.mcpAdd(), {
                   primary: true,
-                  disabled: writable !== true || String(draft.name || "").trim().length === 0,
-                  reason: String(draft.name || "").trim().length === 0 ? text("mcp.emptyName") : text("mcp.writable"),
+                  disabled: writable !== true || argsInfo.unclosed === true || String(draft.name || "").trim().length === 0,
+                  reason: argsInfo.unclosed === true ? text("mcp.argsUnclosed") : (String(draft.name || "").trim().length === 0 ? text("mcp.emptyName") : text("mcp.writable")),
                 }),
               button("cancel", editing.length > 0 ? text("mcp.cancelEdit") : text("mcp.addCollapse"), () => {
                 props.actions.resetMcpDraft();
@@ -2902,6 +3056,7 @@ window.__ModuleLoader__.load({
           : [button("open", text("mcp.addToggle"), () => props.actions.setView({ mcpAddOpen: true }), { disabled: writable !== true, reason: text("mcp.writable") })]);
         return h("div", { key: "mcp", className: "dshg-col" }, [
           purposeNode,
+          status === "partial" ? alert("stale", text("mcp.stale") + "：" + String(snapshot.errors.mcp || text("mcp.staleHint")), "warn") : null,
           alert("live", text("mcp.liveHint"), "info"),
           writable === true ? null : alert("writable", text("mcp.writable"), "warn"),
           serversCard,
@@ -2916,6 +3071,9 @@ window.__ModuleLoader__.load({
         const signature = props.draft.signature;
         const view = props.view;
         const purposeNode = purpose("settings:purpose", text("purpose.settings"));
+        const guardText = isObject(view.guardText) ? view.guardText : {};
+        const catalogText = isObject(view.catalogText) ? view.catalogText : {};
+        const guardTextOf = (field) => (hasOwn(guardText, field) ? guardText[field] : (guard[field] === undefined || guard[field] === null ? "" : String(guard[field])));
         const numeric = (key, field, label) => h("label", { key: key, className: "dshg-field" }, [
           h("span", { key: "l", className: "dshg-hint" }, label),
           h("input", {
@@ -2923,8 +3081,8 @@ window.__ModuleLoader__.load({
             className: "dshg-input",
             inputMode: "numeric",
             "aria-label": label,
-            value: String(guard[field] === undefined || guard[field] === null ? "" : guard[field]),
-            onChange: (event) => props.actions.stageGuard(field, event.target.value === "" ? null : Number(event.target.value)),
+            value: String(guardTextOf(field)),
+            onChange: (event) => props.actions.setNumericText("guard", field, event.target.value),
           }),
         ]);
         const sessionCard = card("settings:session", text("settings.sessionTitle"), [
@@ -2975,7 +3133,7 @@ window.__ModuleLoader__.load({
           ]),
           h("label", { key: "ex", className: "dshg-field" }, [
             h("span", { key: "l", className: "dshg-hint" }, text("settings.exclusions")),
-            h("input", { key: "i", className: "dshg-input", "aria-label": text("settings.exclusions"), value: listOf(guard.exclusions).join(", "), onChange: (event) => props.actions.stageGuard("exclusions", event.target.value.split(",").map((item) => item.trim()).filter((item) => item.length > 0)) }),
+            h("input", { key: "i", className: "dshg-input", "aria-label": text("settings.exclusions"), value: String(view.exclusionText === undefined ? listOf(guard.exclusions).join(", ") : view.exclusionText), onChange: (event) => props.actions.setExclusionsText(event.target.value) }),
           ]),
           button("saveGuard", text("save"), () => props.actions.saveGuard(), { primary: true, disabled: props.draft.guardrailDirty !== true }),
           h("div", { key: "catalog", className: "dshg-col dshg-section" }, [
@@ -2984,7 +3142,7 @@ window.__ModuleLoader__.load({
             catalogMode,
             h("label", { key: "len", className: "dshg-field" }, [
               h("span", { key: "l", className: "dshg-hint" }, text("settings.catalogMaxDesc")),
-              h("input", { key: "i", className: "dshg-input", inputMode: "numeric", "aria-label": text("settings.catalogMaxDesc"), value: String(catalog.maxDescriptionLength === undefined ? "" : catalog.maxDescriptionLength), onChange: (event) => props.actions.stageCatalog("maxDescriptionLength", Number(event.target.value)) }),
+              h("input", { key: "i", className: "dshg-input", inputMode: "numeric", "aria-label": text("settings.catalogMaxDesc"), value: String(hasOwn(catalogText, "maxDescriptionLength") ? catalogText.maxDescriptionLength : (catalog.maxDescriptionLength === undefined || catalog.maxDescriptionLength === null ? "" : catalog.maxDescriptionLength)), onChange: (event) => props.actions.setNumericText("catalog", "maxDescriptionLength", event.target.value) }),
             ]),
             h("div", { key: "meta", className: "dshg-row" }, [
               tag("cache", text("settings.catalogCache") + " " + text("settings.catalogUnknown"), "muted"),
@@ -2997,7 +3155,7 @@ window.__ModuleLoader__.load({
             hint("hint", text("settings.signatureHint")),
             h("div", { key: "row", className: "dshg-row" }, [
               primitives.switchButton({ key: "s", on: signature.enabled !== false, label: text("settings.signatureEnabled"), onToggle: () => props.actions.stageSignature(signature.enabled === false, listOf(signature.tools).join(", ")) }),
-              h("input", { key: "tools", className: "dshg-input", "aria-label": text("settings.signatureTools"), placeholder: text("settings.signatureTools"), value: String(view.signatureTools === undefined ? listOf(signature.tools).join(", ") : view.signatureTools), onChange: (event) => props.actions.stageSignature(signature.enabled !== false, event.target.value) }),
+              h("input", { key: "tools", className: "dshg-input", "aria-label": text("settings.signatureTools"), placeholder: text("settings.signatureTools"), value: String(view.signatureTools === undefined ? listOf(signature.tools).join(", ") : view.signatureTools), onChange: (event) => { props.actions.setView({ signatureTools: event.target.value }); props.actions.stageSignature(signature.enabled !== false, event.target.value); } }),
             ]),
             button("restore", text("settings.signatureRestore"), () => props.actions.restoreSignature(), { disabled: props.draft.signatureDirty !== true }),
             button("save", text("save"), () => props.actions.saveSignature(), { primary: true, disabled: props.draft.signatureDirty !== true }),
@@ -3061,6 +3219,7 @@ window.__ModuleLoader__.load({
       };
 
       return Object.freeze({
+        isGroupExpanded: isGroupExpanded,
         renderCaps: renderCaps,
         renderSkills: renderSkills,
         renderMcp: renderMcp,
@@ -3086,7 +3245,7 @@ window.__ModuleLoader__.load({
       const createProjection = env.createProjection;
       const createOrchestrator = env.createOrchestrator;
       const fallbackTemplate = env.fallbackTemplate;
-      const PANEL_VERSION = "0.7.1";
+      const PANEL_VERSION = "0.7.2";
 
       const TABS = Object.freeze([
         { value: "caps", label: text("tab.caps") },
@@ -3140,27 +3299,31 @@ window.__ModuleLoader__.load({
         exchangeText: "",
         autoInterval: 30,
         signatureTools: undefined,
+        guardText: {},
+        catalogText: {},
+        exclusionText: undefined,
       });
 
+      /* 结构化解析：未闭合引号不是参数，必须由 UI 显式报错并阻断提交。 */
       const parseArgs = (input) => {
         const source = String(input === undefined || input === null ? "" : input);
-        const out = [];
+        const args = [];
         let current = "";
         let quote = "";
         for (let index = 0; index < source.length; index += 1) {
           const char = source[index];
           if (quote !== "") {
+            if (char === "\\" && index + 1 < source.length) { current = current + source[index + 1]; index += 1; continue; }
             if (char === quote) { quote = ""; continue; }
             current = current + char;
             continue;
           }
           if (char === "\"" || char === "'") { quote = char; continue; }
-          if (char === " " || char === "\t") { if (current.length > 0) { out.push(current); current = ""; } continue; }
+          if (char === " " || char === "\t") { if (current.length > 0) { args.push(current); current = ""; } continue; }
           current = current + char;
         }
-        if (quote !== "") out.push("__UNCLOSED__:" + current);
-        if (current.length > 0 && quote === "") out.push(current);
-        return out;
+        if (current.length > 0) args.push(current);
+        return { args: args, unclosed: quote !== "" };
       };
 
       const relativeText = (timestamp, nowMs, labels) => {
@@ -3243,6 +3406,7 @@ window.__ModuleLoader__.load({
         if (runtimeRef.current === null) runtimeRef.current = createRuntime(props);
         const runtime = runtimeRef.current;
         const [snapshot, setSnapshot] = react.useState(runtime.getSnapshot());
+        const [draftVersion, setDraftVersion] = react.useState(0);
         const [view, setViewState] = react.useState(initialView(props));
         const [toastItems, setToastItems] = react.useState([]);
         const [confirmState, setConfirmState] = react.useState(null);
@@ -3257,6 +3421,7 @@ window.__ModuleLoader__.load({
         if (toastRef.current === null) toastRef.current = primitives.createToastQueue();
 
         const applyView = (patch) => setViewState((previous) => Object.assign({}, previous, patch));
+        const resetAdvancedInputDrafts = () => applyView({ guardText: {}, catalogText: {}, exclusionText: undefined, signatureTools: undefined });
         const toast = (tone, message, key) => {
           toastRef.current.push({ tone: tone, text: message, key: key === undefined ? tone + ":" + message : key });
           setToastItems(toastRef.current.items());
@@ -3279,6 +3444,12 @@ window.__ModuleLoader__.load({
 
         const draftStore = runtime.draft;
         const projection = runtime.projection;
+        /* 草稿仓是单一事实源：订阅后任何 stage/undo/commit 都触发重渲染，保存栏不再滞后。 */
+        react.useEffect(() => {
+          const stop = draftStore.subscribe(() => setDraftVersion((value) => value + 1));
+          return stop;
+        }, []);
+        void draftVersion;
         const summaryBase = draftStore.dirtySummary();
         const draftSnapshot = draftStore.snapshot();
         const dirtyKeyList = draftStore.dirtyKeys();
@@ -3317,17 +3488,23 @@ window.__ModuleLoader__.load({
         const blocking = Boolean(model && model.stats.invalid > 0);
         const summary = Object.assign({}, summaryBase, { blocking: blocking });
 
-        const runAction = (action, run) => {
-          const gate = runtime.preflight(action, summary);
-          if (gate.needsConfirm === true) { setConfirmState({ gate: gate, run: run }); return; }
+        const runAction = (action, run, gateOverrides) => {
+          /* 确认文案必须读实时脏集合，不能沿用渲染期闭包里的陈旧 summary。 */
+          const gate = runtime.preflight(action, Object.assign({}, draftStore.dirtySummary(), { blocking: blocking }));
+          if (gate.needsConfirm === true) {
+            const finalGate = gateOverrides ? Object.assign({}, gate, gateOverrides) : gate;
+            const discard = action === "reload" || action === "switch-session";
+            setConfirmState({ gate: finalGate, run: run, discard: discard });
+            return;
+          }
           void run();
         };
-        const handleReceipt = (receipt) => {
+        const handleReceipt = (receipt, retry) => {
           if (!receipt) return;
           if (receipt.state === "applied") toast("ok", text("saved"));
           else if (receipt.state === "no-change") toast("ok", text("noChangeWritten"));
           else if (receipt.state === "partial") toast("warn", receipt.message);
-          else if (receipt.state === "conflict") setConfirmState({ conflict: receipt });
+          else if (receipt.state === "conflict") setConfirmState({ conflict: receipt, retry: typeof retry === "function" ? retry : null });
           else toast("error", receipt.message || text("common.error"));
           const warnings = Array.isArray(receipt.warnings) ? receipt.warnings : [];
           if (warnings.length > 0) toast("warn", "服务端告警：" + warnings.map(warningText).join("；"), "warnings");
@@ -3342,7 +3519,7 @@ window.__ModuleLoader__.load({
             delete base.url;
             base.transport = "stdio";
             base.command = String((draft && draft.command) || "").trim();
-            base.args = parseArgs((draft && draft.args) || "").filter((item) => item.indexOf("__UNCLOSED__:") !== 0);
+            base.args = parseArgs((draft && draft.args) || "").args;
           } else {
             delete base.command;
             delete base.args;
@@ -3377,6 +3554,30 @@ window.__ModuleLoader__.load({
           },
           stageTakeover: (value) => draftStore.stage(draftStore.keys.defaults("takeover"), value, "技能接管"),
           stageCatalog: (field, value) => draftStore.stage(draftStore.keys.catalog(field), value, "目录 " + field),
+          stageSkillConfig: (field, value) => draftStore.stage(draftStore.keys.skills(field), value, "技能 " + field),
+          setNumericText: (scope, field, raw) => {
+            const text = String(raw === undefined || raw === null ? "" : raw);
+            const trimmed = text.trim();
+            if (scope === "catalog") {
+              const nextCatalog = Object.assign({}, isObject(view.catalogText) ? view.catalogText : {});
+              nextCatalog[field] = text;
+              applyView({ catalogText: nextCatalog });
+              if (trimmed.length === 0 || !/^-?\d+$/.test(trimmed)) return;
+              draftStore.stage(draftStore.keys.catalog(field), Number(trimmed), "目录 " + field);
+              return;
+            }
+            const nextGuard = Object.assign({}, isObject(view.guardText) ? view.guardText : {});
+            nextGuard[field] = text;
+            applyView({ guardText: nextGuard });
+            if (trimmed.length === 0 || !/^-?\d+$/.test(trimmed)) return;
+            draftStore.stage(draftStore.keys.guard(field), Number(trimmed), "护栏 " + field);
+          },
+          setExclusionsText: (raw) => {
+            const text = String(raw === undefined || raw === null ? "" : raw);
+            applyView({ exclusionText: text });
+            const list = text.split(",").map((item) => item.trim()).filter((item) => item.length > 0);
+            draftStore.stage(draftStore.keys.guard("exclusions"), list, "护栏 exclusions");
+          },
           stageGuard: (field, value) => draftStore.stage(draftStore.keys.guard(field), value, "护栏 " + field),
           stageSignature: (enabled, toolsText) => {
             draftStore.stage(draftStore.keys.signature("enabled"), enabled, "签名摘要开关");
@@ -3386,9 +3587,22 @@ window.__ModuleLoader__.load({
           restoreSignature: () => {
             draftStore.stage(draftStore.keys.signature("enabled"), undefined, "还原签名开关");
             draftStore.stage(draftStore.keys.signature("tools"), undefined, "还原签名名单");
+            applyView({ signatureTools: undefined });
           },
           addImport: (path) => {
-            const staged = draftStore.stageImport(path);
+            const raw = String(path === undefined || path === null ? "" : path).trim();
+            if (raw.length === 0) { toast("warn", "目录不能为空", "import"); return; }
+            if (raw.indexOf("..") >= 0) { toast("warn", "目录不能包含 ..（不做路径逃逸）", "import"); return; }
+            const normalized = raw.replace(/[\\/]+$/, "");
+            if (normalized.length === 0) { toast("warn", "目录不能是根路径", "import"); return; }
+            const listed = draftStore.imports().map((item) => item.path);
+            const payloadSkills = snapshot.data.skills;
+            listOf(payloadSkills && payloadSkills.imports).forEach((item) => {
+              const value = isObject(item) && typeof item.path === "string" ? item.path : (typeof item === "string" ? item : "");
+              if (value.length > 0 && listed.indexOf(value) < 0) listed.push(value);
+            });
+            if (listed.indexOf(normalized) >= 0) { toast("warn", "这个目录已经在待导入清单里", "import"); return; }
+            const staged = draftStore.stageImport(normalized);
             if (staged) { applyView({ importDraft: "" }); toast("ok", "已加入草稿，保存后才写盘", "import"); }
             else toast("warn", "目录为空或已经在导入清单里", "import");
           },
@@ -3405,11 +3619,35 @@ window.__ModuleLoader__.load({
             draftStore.discardAll();
             draftStore.json.setDirty(false);
             applyView({ jsonDirty: false, jsonText: JSON.stringify(policyContent, null, 2), jsonNotice: null });
+            resetAdvancedInputDrafts();
             toast("ok", "已放弃面板里未保存的改动", "discard");
           },
-          undo: () => { const action = draftStore.undo(); if (action) toast("info", "已撤销：" + action.label, "undo"); },
-          redo: () => { const action = draftStore.redo(); if (action) toast("info", "已重做：" + action.label, "redo"); },
-          reload: () => runAction("reload", async () => { await runtime.refresh({ reason: "manual" }); toast("ok", "已重新读取", "reload"); }),
+          undo: () => {
+            const action = draftStore.undo();
+            if (action) {
+              resetAdvancedInputDrafts();
+              toast("info", "已撤销：" + action.label, "undo");
+            }
+          },
+          redo: () => {
+            const action = draftStore.redo();
+            if (action) {
+              resetAdvancedInputDrafts();
+              toast("info", "已重做：" + action.label, "redo");
+            }
+          },
+          reload: () => runAction("reload", async () => {
+            const result = await runtime.refresh({ reason: "manual" });
+            const failures = result && Array.isArray(result.failed) ? result.failed : [];
+            const failed = !result || result.applied !== true || result.timedOut === true || failures.length > 0;
+            if (failed) {
+              const reason = failures.length > 0 ? String(failures[0].error || failures[0].kind || "") : (result && result.timedOut === true ? "超时" : "");
+              toast("error", "重新读取失败" + (reason.length > 0 ? "：" + reason : ""), "reload");
+              return;
+            }
+            resetAdvancedInputDrafts();
+            toast("ok", "已重新读取", "reload");
+          }),
           requestGroupBatch: (kind, tier) => {
             const rows = model ? model.rows.filter((row) => row.kind === kind) : [];
             const changed = rows.filter((row) => row.effectiveTier !== tier);
@@ -3423,10 +3661,20 @@ window.__ModuleLoader__.load({
             });
           },
           savePolicy: () => runAction("save-policy", async () => {
-            const receipt = await runtime.savePolicy(draftStore.toPolicyBody());
-            if (receipt.state === "applied" || receipt.state === "no-change") draftStore.commitKeys(draftStore.dirtyKeys());
-            handleReceipt(receipt);
-            if (receipt.state === "applied") await runtime.refresh({ reason: "post-save" });
+            const payloadBody = draftStore.toPolicyBody();
+            const keysToCommit = draftStore.dirtyKeys();
+            const submit = async (expectedRevision) => {
+              const body = clone(payloadBody);
+              if (expectedRevision !== undefined && expectedRevision !== null) body.expectedRevision = expectedRevision;
+              const receipt = await runtime.savePolicy(body);
+              if (receipt.state === "applied" || receipt.state === "no-change") {
+                draftStore.commitKeys(keysToCommit);
+                resetAdvancedInputDrafts();
+              }
+              handleReceipt(receipt, submit);
+              if (receipt.state === "applied") await runtime.refresh({ reason: "post-save" });
+            };
+            await submit();
           }),
           saveSkills: () => runAction("save-skills", async () => {
             const operations = draftStore.toSkillOperations();
@@ -3442,26 +3690,60 @@ window.__ModuleLoader__.load({
             handleReceipt(receipt);
           }),
           saveSignature: () => runAction("save-signature", async () => {
-            const receipt = await runtime.saveSignature(draftStore.toSignatureBody());
-            if (receipt.state === "applied" || receipt.state === "no-change") draftStore.commitKeys(draftStore.dirtyKeys().filter((key) => String(key).indexOf("sig:") === 0));
-            handleReceipt(receipt);
-            if (receipt.state === "applied") await runtime.refresh({ reason: "post-save" });
+            const payloadBody = draftStore.toSignatureBody();
+            const keysToCommit = draftStore.dirtyKeys().filter((key) => String(key).indexOf("sig:") === 0);
+            const submit = async (expectedRevision) => {
+              const body = clone(payloadBody);
+              if (expectedRevision !== undefined && expectedRevision !== null) body.expectedRevision = expectedRevision;
+              const receipt = await runtime.saveSignature(body);
+              if (receipt.state === "applied" || receipt.state === "no-change") {
+                draftStore.commitKeys(keysToCommit);
+                applyView({ signatureTools: undefined });
+              }
+              handleReceipt(receipt, submit);
+              if (receipt.state === "applied") await runtime.refresh({ reason: "post-save" });
+            };
+            await submit();
           }),
           saveGuard: () => runAction("save-policy", async () => {
-            const receipt = await runtime.saveGuard(draftStore.toGuardBody());
-            if (receipt.state === "applied" || receipt.state === "no-change") draftStore.commitKeys(draftStore.dirtyKeys().filter((key) => String(key).indexOf("guard:") === 0));
-            handleReceipt(receipt);
-            if (receipt.state === "applied") await runtime.refresh({ reason: "post-save" });
+            const payloadBody = draftStore.toGuardBody();
+            const keysToCommit = draftStore.dirtyKeys().filter((key) => String(key).indexOf("guard:") === 0);
+            const submit = async (expectedRevision) => {
+              const body = clone(payloadBody);
+              if (expectedRevision !== undefined && expectedRevision !== null) body.expectedRevision = expectedRevision;
+              const receipt = await runtime.saveGuard(body);
+              if (receipt.state === "applied" || receipt.state === "no-change") {
+                draftStore.commitKeys(keysToCommit);
+                applyView({ guardText: {}, exclusionText: undefined });
+              }
+              handleReceipt(receipt, submit);
+              if (receipt.state === "applied") await runtime.refresh({ reason: "post-save" });
+            };
+            await submit();
           }),
           saveCatalog: () => runAction("save-policy", async () => {
-            const receipt = await runtime.saveCatalog(draftStore.toCatalogBody());
-            if (receipt.state === "applied" || receipt.state === "no-change") draftStore.commitKeys(draftStore.dirtyKeys().filter((key) => String(key).indexOf("cat:") === 0));
-            handleReceipt(receipt);
-            if (receipt.state === "applied") await runtime.refresh({ reason: "post-save" });
+            const payloadBody = draftStore.toCatalogBody();
+            const keysToCommit = draftStore.dirtyKeys().filter((key) => String(key).indexOf("cat:") === 0);
+            const submit = async (expectedRevision) => {
+              const body = clone(payloadBody);
+              if (expectedRevision !== undefined && expectedRevision !== null) body.expectedRevision = expectedRevision;
+              const receipt = await runtime.saveCatalog(body);
+              if (receipt.state === "applied" || receipt.state === "no-change") {
+                draftStore.commitKeys(keysToCommit);
+                applyView({ catalogText: {} });
+              }
+              handleReceipt(receipt, submit);
+              if (receipt.state === "applied") await runtime.refresh({ reason: "post-save" });
+            };
+            await submit();
           }),
           mcpAction: (action, name) => {
             const body = { action: action, name: name };
-            if (action === "update") body.server = mcpServerOf(view.mcpDraft);
+            if (action === "update") {
+              const parsedArgs = parseArgs(view.mcpDraft.args);
+              if (String(view.mcpDraft.transport || "stdio") === "stdio" && parsedArgs.unclosed === true) { toast("error", text("mcp.argsUnclosed"), "mcp-args"); return; }
+              body.server = mcpServerOf(view.mcpDraft);
+            }
             runAction("mcp", async () => {
               const receipt = await runtime.mcpMutate(body);
               handleReceipt(receipt);
@@ -3473,10 +3755,12 @@ window.__ModuleLoader__.load({
               await runtime.refresh({ reason: "post-mcp" });
             });
           },
-          mcpRemove: (name) => setConfirmState({ gate: { action: "mcp", text: text("mcp.removeTitle") + "（" + name + "）", consequence: text("mcp.removeConsequence"), confirmLabel: "确认删除", cancelLabel: text("confirm.cancel"), needsConfirm: true }, run: () => { void runtime.write({ path: "/api/dsh-gate/mcp", action: "mcp-remove", body: { action: "remove", name: name } }).then((receipt) => { handleReceipt(receipt); if (receipt.state === "applied") return runtime.refresh({ reason: "post-mcp" }); return undefined; }); } }),
+          mcpRemove: (name) => setConfirmState({ gate: { action: "mcp", text: text("mcp.removeTitle") + "（" + name + "）", consequence: text("mcp.removeConsequence"), confirmLabel: "确认删除", cancelLabel: text("confirm.cancel"), needsConfirm: true }, run: () => { void runtime.write({ path: "/api/dsh-gate/mcp", action: "mcp", body: { action: "remove", name: name } }).then((receipt) => { handleReceipt(receipt); if (receipt.state === "applied") return runtime.refresh({ reason: "post-mcp" }); return undefined; }); } }),
           mcpAdd: () => {
             const name = String(view.mcpDraft.name || "").trim();
             if (name.length === 0) { toast("error", text("mcp.emptyName"), "mcp-add"); return; }
+            const parsedArgs = parseArgs(view.mcpDraft.args);
+            if (String(view.mcpDraft.transport || "stdio") === "stdio" && parsedArgs.unclosed === true) { toast("error", text("mcp.argsUnclosed"), "mcp-args"); return; }
             runAction("mcp", async () => {
               const receipt = await runtime.mcpMutate({ action: "add", name: name, server: mcpServerOf(view.mcpDraft) });
               handleReceipt(receipt);
@@ -3506,16 +3790,34 @@ window.__ModuleLoader__.load({
           requestJsonSave: () => {
             const parsed = parseText(view.jsonText);
             if (!parsed.ok) { applyView({ jsonNotice: { tone: "error", text: text("json.invalid") + "：" + parsed.message } }); return; }
-            setConfirmState({ gate: { action: "save-policy", text: text("json.confirmTitle"), consequence: "整份替换会丢弃面板里的能力/技能草稿（" + summary.text + "）", detail: "当前版本 expectedRevision=" + String(snapshot.revision === null ? "—" : snapshot.revision), confirmLabel: text("confirm.ok"), cancelLabel: text("confirm.cancel"), needsConfirm: summary.total > 0 }, run: () => {
-              const jsonBody = Object.assign({}, parsed.value, { replace: true, acknowledge: true });
-              if (snapshot.revision !== null && snapshot.revision !== undefined) jsonBody.expectedRevision = snapshot.revision;
-              void runtime.savePolicy(jsonBody).then((receipt) => {
-                if (receipt.state === "applied" || receipt.state === "no-change") { draftStore.discardAll(); draftStore.json.setDirty(false); applyView({ jsonDirty: false }); }
-                handleReceipt(receipt);
-                if (receipt.state === "applied") return runtime.refresh({ reason: "post-json" });
-                return undefined;
-              });
-            } });
+            const baseBody = Object.assign({}, parsed.value, { replace: true, acknowledge: true });
+            if (snapshot.revision !== null && snapshot.revision !== undefined) baseBody.expectedRevision = snapshot.revision;
+            const panelDirtyCount = draftStore.dirtyKeys().length;
+            const gateOverrides = {
+              text: text("json.confirmTitle"),
+              consequence: panelDirtyCount > 0
+                ? "整份替换会丢弃面板里的能力/技能草稿（" + summary.text + "）"
+                : "整份替换会覆盖服务端完整策略",
+              detail: "当前版本 expectedRevision=" + String(snapshot.revision === null ? "—" : snapshot.revision),
+              confirmLabel: text("confirm.ok"),
+              cancelLabel: text("confirm.cancel"),
+            };
+            runAction("replace-json", async () => {
+              const submit = async (expectedRevision) => {
+                const jsonBody = clone(baseBody);
+                if (expectedRevision !== undefined && expectedRevision !== null) jsonBody.expectedRevision = expectedRevision;
+                const receipt = await runtime.savePolicy(jsonBody);
+                if (receipt.state === "applied" || receipt.state === "no-change") {
+                  draftStore.discardAll();
+                  draftStore.json.setDirty(false);
+                  applyView({ jsonDirty: false, jsonNotice: null });
+                  resetAdvancedInputDrafts();
+                }
+                handleReceipt(receipt, submit);
+                if (receipt.state === "applied") await runtime.refresh({ reason: "post-json" });
+              };
+              await submit();
+            }, gateOverrides);
           },
           requestJsonRestore: () => {
             const resolved = projection.resolveDefaultTemplate({ serverTemplate: isObject(snapshot.data.policy) && isObject(snapshot.data.policy.template) ? snapshot.data.policy.template : null, fallback: fallbackTemplate() });
@@ -3559,7 +3861,17 @@ window.__ModuleLoader__.load({
             setSessions(result.sessions);
             setSessionNotice(result.sessions.length === 0 ? "诊断端点没有列出已装配会话，继续用自动选取" : "已列出 " + result.sessions.length + " 个会话");
           },
-          selectSession: (agent) => { if (runtime.selectSession(agent)) void runtime.refresh({ reason: "session" }); },
+          selectSession: (agent) => {
+            const next = typeof agent === "string" && agent.length > 0 ? agent : null;
+            if (next === runtime.session().agent) return;
+            runAction("switch-session", () => {
+              if (runtime.selectSession(agent)) {
+                resetAdvancedInputDrafts();
+                return runtime.refresh({ reason: "session" });
+              }
+              return undefined;
+            });
+          },
           loadDiagnostics: async () => {
             const result = await runtime.loadDiagnostics();
             if (!result.ok) { setMetrics(null); toast("warn", text("settings.metricsFailed") + "（" + (result.error || "") + "）", "metrics"); return; }
@@ -3570,9 +3882,14 @@ window.__ModuleLoader__.load({
             const current = snapshot.data.state;
             const next = !(current === null || current.enabled !== false);
             runAction("save-policy", async () => {
-              const receipt = await runtime.toggleEnabled(next);
-              handleReceipt(receipt);
-              if (receipt.state === "applied") await runtime.refresh({ reason: "toggle" });
+              const submit = async (expectedRevision) => {
+                const receipt = expectedRevision !== undefined && expectedRevision !== null
+                  ? await runtime.write({ path: "/api/dsh-gate/policy", action: "toggle-enabled", body: { enabled: Boolean(next), expectedRevision: expectedRevision }, queueKey: "toggle-enabled" })
+                  : await runtime.toggleEnabled(next);
+                handleReceipt(receipt, submit);
+                if (receipt.state === "applied") await runtime.refresh({ reason: "toggle" });
+              };
+              await submit();
             });
           },
           recoverCorrupt: () => {
@@ -3591,6 +3908,7 @@ window.__ModuleLoader__.load({
                     draftStore.discardAll();
                     draftStore.json.setDirty(false);
                     applyView({ jsonDirty: false });
+                    resetAdvancedInputDrafts();
                   }
                   handleReceipt(receipt);
                   if (receipt.state === "applied") return runtime.refresh({ reason: "recover" });
@@ -3724,27 +4042,64 @@ window.__ModuleLoader__.load({
           ]) : null);
           const toasts = h("div", { key: "toasts", className: "dshg-col" }, primitives.toastHost({ key: "toasthost", items: toastItems, onDismiss: dismissToast }));
           const dialog = confirmState === null ? null : (confirmState.conflict
-            ? primitives.confirmBar({
-                key: "dialog:conflict",
-                id: "dshg-conflict",
-                title: text("confirm.ok"),
-                text: confirmState.conflict.message,
-                detail: confirmState.conflict.choices.map((choice) => choice.label + " — " + choice.consequence).join("；"),
-                confirmLabel: text("confirm.ok"),
-                cancelLabel: text("confirm.cancel"),
-                destructive: true,
-                onConfirm: () => {
-                  const conflict = confirmState.conflict;
-                  setConfirmState(null);
-                  void runtime.savePolicy(Object.assign({}, draftStore.toPolicyBody(), { expectedRevision: conflict.revision })).then((receipt) => {
-                    if (receipt.state === "applied" || receipt.state === "no-change") draftStore.commitKeys(draftStore.dirtyKeys());
-                    handleReceipt(receipt);
-                    if (receipt.state === "applied") return runtime.refresh({ reason: "post-save" });
-                    return undefined;
-                  });
-                },
-                onCancel: () => setConfirmState(null),
-              })
+            ? (() => {
+                const conflict = confirmState.conflict;
+                const close = () => setConfirmState(null);
+                return primitives.confirmBar({
+                  key: "dialog:conflict",
+                  id: "dshg-conflict",
+                  title: text("conflict.title"),
+                  text: conflict.message,
+                  detail: conflict.choices.map((choice) => choice.label + " — " + choice.consequence).join("；"),
+                  onKeyDown: (event) => { if (event && event.key === "Escape") close(); },
+                  actions: [
+                    {
+                      value: "load-latest",
+                      label: text("conflict.loadLatest"),
+                      onClick: () => {
+                        close();
+                        draftStore.discardAll();
+                        draftStore.json.setDirty(false);
+                        applyView({ jsonDirty: false, jsonNotice: null });
+                        resetAdvancedInputDrafts();
+                        void runtime.refresh({ reason: "conflict-reload" }).then((result) => {
+                          const failures = result && Array.isArray(result.failed) ? result.failed : [];
+                          if (!result || result.applied !== true || failures.length > 0) toast("error", text("conflict.reloadFailed"), "conflict-reload");
+                          else toast("ok", text("conflict.loaded"), "conflict-reload");
+                        });
+                      },
+                    },
+                    {
+                      value: "overwrite",
+                      label: text("conflict.overwrite"),
+                      danger: true,
+                      onClick: () => {
+                        const retry = confirmState.retry;
+                        close();
+                        const expected = conflict.currentRevision !== undefined && conflict.currentRevision !== null ? conflict.currentRevision : conflict.revision;
+                        if (typeof retry === "function") {
+                          void retry(expected);
+                          return;
+                        }
+                        void runtime.savePolicy(Object.assign({}, draftStore.toPolicyBody(), { expectedRevision: expected })).then((receipt) => {
+                          if (receipt.state === "applied" || receipt.state === "no-change") {
+                            draftStore.commitKeys(draftStore.dirtyKeys());
+                            resetAdvancedInputDrafts();
+                          }
+                          handleReceipt(receipt);
+                          if (receipt.state === "applied") return runtime.refresh({ reason: "post-save" });
+                          return undefined;
+                        });
+                      },
+                    },
+                    {
+                      value: "diff",
+                      label: text("conflict.diff"),
+                      onClick: () => { close(); applyView({ diffOpen: true }); },
+                    },
+                  ],
+                });
+              })()
             : primitives.confirmBar({
                 key: "dialog:confirm",
                 id: "dshg-confirm",
@@ -3755,12 +4110,22 @@ window.__ModuleLoader__.load({
                 cancelLabel: confirmState.gate.cancelLabel,
                 destructive: true,
                 onKeyDown: (event) => { if (event && event.key === "Escape") setConfirmState(null); },
-                onConfirm: () => { const run = confirmState.run; setConfirmState(null); if (typeof run === "function") void run(); },
+                onConfirm: () => {
+                  const pending = confirmState;
+                  setConfirmState(null);
+                  if (pending.discard === true) {
+                    draftStore.discardAll();
+                    draftStore.json.setDirty(false);
+                    applyView({ jsonDirty: false, jsonNotice: null });
+                    resetAdvancedInputDrafts();
+                  }
+                  if (typeof pending.run === "function") void pending.run();
+                },
                 onCancel: () => setConfirmState(null),
               }));
           const tabCount = (value) => {
             if (value === "caps") return model ? model.stats.rows : "";
-            if (value === "skills") return model ? model.stats.skills : "";
+            if (value === "skills") return isObject(snapshot.data.skills) && Array.isArray(snapshot.data.skills.skills) ? snapshot.data.skills.skills.length : "";
             if (value === "mcp") return isObject(snapshot.data.mcp) && Array.isArray(snapshot.data.mcp.servers) ? snapshot.data.mcp.servers.length : "";
             return summary.total > 0 ? "•" : "";
           };
@@ -3938,7 +4303,7 @@ window.__ModuleLoader__.load({
      * 生产态该键不存在，exports 仍严格是 ['inject','apply']（I-6 / ADR A-5）。 */
     const testHook = typeof window === "undefined" ? undefined : window.__DSH_GATE_TEST_HOOK__;
     if (testHook !== undefined && testHook !== null && typeof testHook === "object") {
-      testHook.version = "0.7.1";
+      testHook.version = "0.7.2";
       testHook.template = () => fallbackTemplate();
       testHook.text = TEXT;
       testHook.textKeys = Object.keys(TEXT);
@@ -3952,7 +4317,7 @@ window.__ModuleLoader__.load({
         MAX_UNDO: 50,
         MAX_TOASTS: 5,
         TOAST_LIFETIME: { ok: 4000, info: 6000, warn: 8000, error: 0 },
-        PANEL_VERSION: "0.7.1",
+        PANEL_VERSION: "0.7.2",
       };
       testHook.helpers = {
         parseArgs: shell.parseArgs,
@@ -3960,6 +4325,7 @@ window.__ModuleLoader__.load({
         tabOf: shell.tabOf,
         sessionLabelOf: shell.sessionLabelOf,
         stableStringify: stableStringify,
+        isGroupExpanded: views.isGroupExpanded,
         fnv1a: fnv1a,
         warningText: warningText,
       };

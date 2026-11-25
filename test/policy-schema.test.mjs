@@ -16,8 +16,10 @@ import {
   POLICY_KEY_NAMES,
   describePolicySchema,
   emptyPolicyTemplate,
+  importPathKey,
   mergePolicyLayer,
   validatePolicyInput,
+  validateSkillsImports,
 } from "../lib/policy-schema.js";
 import { POLICY_KEYS, DEFAULT_POLICY } from "../lib/policy.js";
 
@@ -212,6 +214,39 @@ check("有序表整表替换：skills.off / skills.imports / protected 都不是
   assert.deepEqual(merged.policy.skills.off, ["c"]);
   assert.deepEqual(merged.policy.skills.imports, [{ path: "/two" }], "imports 归一成 { path } 且整表替换");
   assert.deepEqual(merged.policy.protected, ["keep"], "protected 不在提交里 ⇒ 保持原样");
+});
+
+// ── 3. /policy 写入前的 skills.imports 路径闸（与 skills-service 的路径安全闸对齐）──
+check("导入路径闸：空路径 / 路径穿越 / 重复路径逐条给原因，合法路径原样通过", () => {
+  // 合法：字符串或 { id?, path }，path 去掉首尾空白后原样保留。
+  const good = validateSkillsImports(["  skills/a  ", { id: "b", path: "D:\\skills\\b" }]);
+  assert.equal(good.ok, true, JSON.stringify(good.errors));
+  assert.deepEqual(good.errors, []);
+  assert.deepEqual(good.rows, [{ path: "skills/a" }, { id: "b", path: "D:\\skills\\b" }]);
+
+  // 空路径：空串 / 全空白 / 缺 path —— 一条都不许静默变成「当前目录」。
+  const empty = validateSkillsImports(["", "   ", {}, { id: "x" }]);
+  assert.equal(empty.ok, false);
+  assert.equal(empty.errors.length, 4, JSON.stringify(empty.errors));
+  for (const row of empty.errors) assert.equal(row.code, "IMPORT_PATH_MISSING", JSON.stringify(row));
+
+  // 路径穿越：任一段是 .. 就拒（正反斜杠等价、中间段同样算）。
+  const traversal = validateSkillsImports(["../outside", "a/../../b", "a\\..\\b", ".."]);
+  assert.equal(traversal.ok, false);
+  assert.equal(traversal.errors.length, 4, JSON.stringify(traversal.errors));
+  for (const row of traversal.errors) assert.equal(row.code, "IMPORT_PATH_UNSAFE", JSON.stringify(row));
+  assert.match(traversal.errors[0].message, /\.\./);
+
+  // 重复路径：分隔符 / 尾部斜杠 / ./ 前缀等价视为同一条。
+  const dup = validateSkillsImports(["skills/a", { path: "skills/a/" }, { id: "x", path: "./skills//a" }]);
+  assert.equal(dup.ok, false);
+  assert.equal(dup.errors.length, 2, JSON.stringify(dup.errors));
+  for (const row of dup.errors) assert.equal(row.code, "IMPORT_PATH_DUPLICATE", JSON.stringify(row));
+
+  // 等价键：仅用于去重/变更判定，不改写入值。
+  assert.equal(importPathKey("./skills//a/"), importPathKey("skills/a"));
+  assert.equal(importPathKey("D:\\Skills\\A"), importPathKey("D:/Skills/A"));
+  assert.equal(importPathKey(""), "");
 });
 
 check("合并回执带 changedKeys；无实际变化时为空", () => {

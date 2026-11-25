@@ -114,7 +114,7 @@ const ok = (label) => { passed += 1; console.log("  ok    " + label); };
   const res = await request(routeOf("/api/dsh-gate/skills"), "GET");
   assert.equal(res.code, 200, res.body && JSON.stringify(res.body));
   const body = res.body;
-  assert.deepEqual(Object.keys(body).sort(), ["agent", "defaults", "imports", "off", "prescan", "skills", "takeover", "warnings"]);
+  assert.deepEqual(Object.keys(body).sort(), ["activationPromote", "activationRelay", "agent", "defaults", "imports", "off", "prescan", "skills", "takeover", "warnings"]);
   // 技能表已经非空（真清单在手）：不做预扫描，reason 说明为什么没扫。
   assert.equal(body.prescan.active, false);
   assert.equal(body.prescan.reason, "agent-live");
@@ -136,9 +136,19 @@ const ok = (label) => { passed += 1; console.log("  ok    " + label); };
   assert.equal(beta.shadowed, true, "shadowed 必须原样给 UI（只标注、不隐藏）");
   // 0.3.0 的默认就是接管（takeover=true）：策略文件不存在时 resolvePolicy 补的就是接管配置。
   assert.equal(body.takeover, true, "没有显式 skills 配置时按 0.3.0 默认接管 true");
+  assert.equal(body.activationRelay, true, "activationRelay 默认开（SKILLS_DEFAULTS）");
+  assert.equal(body.activationPromote, true, "activationPromote 默认开（SKILLS_DEFAULTS）");
   assert.deepEqual(body.off, []);
   assert.deepEqual(body.imports, []);
-  ok("GET /skills：行带 provider/origin/path/tier/shadowed/capability，description 来自快照");
+
+  // 1.1 显式关闭时必须如实透传（前端技能页读的就是顶层这两个布尔）。
+  policy.skills = { takeover: true, activationRelay: false, activationPromote: false, off: [], imports: [] };
+  const offRes = await request(routeOf("/api/dsh-gate/skills"), "GET");
+  assert.equal(offRes.code, 200, offRes.body && JSON.stringify(offRes.body));
+  assert.equal(offRes.body.activationRelay, false, "策略里 activationRelay=false 要透传给 UI");
+  assert.equal(offRes.body.activationPromote, false, "策略里 activationPromote=false 要透传给 UI");
+  assert.equal(offRes.body.takeover, true, "两个 activation 开关不许互相污染 takeover");
+  ok("GET /skills：行带 provider/origin/path/tier/shadowed/capability，description 来自快照；activationRelay/activationPromote 透传");
 }
 
 /* ── 2. POST 四种动作：真 gate + 临时策略文件，写完立刻重算 ─────────────────── */

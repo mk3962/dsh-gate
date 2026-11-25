@@ -697,18 +697,25 @@ export function makeHost(options) {
   };
 
   /**
-   * cordis 的 per-listener 通道（0.5.5 · 激活信号隔离派发）。
+   * cordis 的 per-listener 通道（0.5.5 激活信号隔离派发；0.7.2 升级为**任意事件 + 真瀑布**）。
    *
-   * 真实宿主里 ctx.events.dispatch("emit", args) 只把绑定好的回调取出来、不执行；
+   * 真实宿主里 `ctx.events.dispatch(mode, args)` 只把绑定好的回调取出来、不执行；
    * 执行与 try/catch 由调用方负责（宿主自己的 emitPluginDisposed 就是这么用的）。
-   * 这里按同一语义暴露：事件名从 args[0] 取（gate 传的是 ["tools/result", exec, result]）。
+   * 两种 mode 的实参形状（cordis src/events.ts）：
+   *   - "emit"      → args = [event, ...payload]，第 0 位就是事件名；
+   *   - "waterfall" → args = [thisArg?, event, ...payload, inner]，带载体时第 0 位不是事件名。
+   * 载荷里出现字符串事件名时，说明调用方没有给载体 —— 两种形状都要认，不能像 0.5.5 那样
+   * 只硬编码 "tools/result"（票 01：gate 现在还要发 tools/post-execute，旧夹具会把瀑布吞成 0 监听者）。
    */
   if (opts.isolatedEvents === true) {
     rootCtx.events = {
       dispatch(type, args) {
-        if (type !== "emit" || !Array.isArray(args)) return [];
-        if (args[0] !== "tools/result") return [];
-        return listeners("tools/result").slice();
+        if (!Array.isArray(args)) return [];
+        if (type !== "emit" && type !== "waterfall") return [];
+        // 事件名 = 载荷里第一个字符串（载体是 scopeTarget 铸的对象，永远排在前面）。
+        const event = args.find((token) => typeof token === "string");
+        if (typeof event !== "string") return [];
+        return listeners(event).slice();
       },
     };
   }

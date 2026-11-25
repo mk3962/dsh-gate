@@ -584,6 +584,159 @@ await check("写回执：changed=false 表示未写入（同样的 batch 第二�
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 5b. /policy 写入前的 skills.imports 路径闸（与 /skills 的路径安全闸对齐）
+// ─────────────────────────────────────────────────────────────────────────────
+await check("POST /policy：新增的 skills.imports 含 .. → 400 INVALID_BODY，文件一个字节不动", async () => {
+  const env = setup();
+  try {
+    const before = fs.readFileSync(env.policyFile, "utf8");
+    const outcome = await send(env.plane.handlerOf("/api/dsh-gate/policy"), makeRequest({
+      method: "POST",
+      path: "/api/dsh-gate/policy",
+      headers: trustedHeaders(),
+      body: JSON.stringify({ skills: { imports: ["../outside-skills"] } }),
+    }));
+    assert.equal(outcome.status, 400, "body=" + outcome.body);
+    assert.equal(outcome.json.code, "INVALID_BODY");
+    assert.equal(outcome.json.ok, false);
+    const hit = (outcome.json.errors || []).find((row) => row.code === "IMPORT_PATH_UNSAFE");
+    assert.ok(hit, "必须给 IMPORT_PATH_UNSAFE 原因: " + JSON.stringify(outcome.json.errors));
+    assert.match(outcome.json.message, /skills\.imports/);
+    assert.equal(fs.readFileSync(env.policyFile, "utf8"), before, "非法导入路径不许落盘");
+  } finally { cleanup(env); }
+});
+
+await check("POST /policy：设备名 / UNC 路径 → 400（与 skills-service 的 unsafe 判定同口径）", async () => {
+  const env = setup();
+  try {
+    const before = fs.readFileSync(env.policyFile, "utf8");
+    for (const badPath of ["CON", "\\\\server\\\\share\\\\skills"]) {
+      const outcome = await send(env.plane.handlerOf("/api/dsh-gate/policy"), makeRequest({
+        method: "POST",
+        path: "/api/dsh-gate/policy",
+        headers: trustedHeaders(),
+        body: JSON.stringify({ skills: { imports: [badPath] } }),
+      }));
+      assert.equal(outcome.status, 400, "path=" + badPath + " body=" + outcome.body);
+      assert.equal(outcome.json.code, "INVALID_BODY", "path=" + badPath);
+      assert.ok((outcome.json.errors || []).some((row) => row.code === "IMPORT_PATH_UNSAFE"), "path=" + badPath + " errors=" + JSON.stringify(outcome.json.errors));
+    }
+    assert.equal(fs.readFileSync(env.policyFile, "utf8"), before, "非法导入路径不许落盘");
+  } finally { cleanup(env); }
+});
+
+await check("POST /policy：重复导入路径（分隔符/尾斜杠等价）→ 400，不静默合并", async () => {
+  const env = setup();
+  try {
+    const before = fs.readFileSync(env.policyFile, "utf8");
+    const outcome = await send(env.plane.handlerOf("/api/dsh-gate/policy"), makeRequest({
+      method: "POST",
+      path: "/api/dsh-gate/policy",
+      headers: trustedHeaders(),
+      body: JSON.stringify({ skills: { imports: ["skills/dup", "skills//dup/"] } }),
+    }));
+    assert.equal(outcome.status, 400, "body=" + outcome.body);
+    assert.equal(outcome.json.code, "INVALID_BODY");
+    assert.ok((outcome.json.errors || []).some((row) => row.code === "IMPORT_PATH_DUPLICATE"), "errors=" + JSON.stringify(outcome.json.errors));
+    assert.equal(fs.readFileSync(env.policyFile, "utf8"), before, "重复路径不许落盘");
+  } finally { cleanup(env); }
+});
+
+await check("POST /policy：历史一条 + 本次再塞等价重复（尾斜杠 / ./ 前缀）→ 400，不按历史免检放行", async () => {
+  // 回归（0.7.2 复核 must-fix #1）：历史免检原先按「等价键存在」判定，
+  // 同一条历史路径提交两次时两次都被当成历史命中 ⇒ 待检集合为空 ⇒ 重复校验被整体短路 ⇒ 落盘。
+  const legacyDoc = Object.assign({}, POLICY_DOC, {
+    skills: { takeover: true, activationRelay: true, activationPromote: true, off: [], imports: [{ path: "skills/a" }] },
+  });
+  for (const imports of [["skills/a", "skills/a/"], ["skills/a", "./skills/a"]]) {
+    const env = setup({ policyDoc: legacyDoc });
+    try {
+      const before = fs.readFileSync(env.policyFile, "utf8");
+      const outcome = await send(env.plane.handlerOf("/api/dsh-gate/policy"), makeRequest({
+        method: "POST",
+        path: "/api/dsh-gate/policy",
+        headers: trustedHeaders(),
+        body: JSON.stringify({ skills: { imports } }),
+      }));
+      assert.equal(outcome.status, 400, "imports=" + JSON.stringify(imports) + " body=" + outcome.body);
+      assert.equal(outcome.json.code, "INVALID_BODY", "imports=" + JSON.stringify(imports));
+      const hit = (outcome.json.errors || []).find((row) => row.code === "IMPORT_PATH_DUPLICATE");
+      assert.ok(hit, "imports=" + JSON.stringify(imports) + " errors=" + JSON.stringify(outcome.json.errors));
+      assert.equal(hit.index, 1, "重复项定位到第二条（索引按整份 imports 算）");
+      assert.equal(fs.readFileSync(env.policyFile, "utf8"), before, "重复路径不许落盘");
+    } finally { cleanup(env); }
+  }
+});
+
+await check("POST /policy：历史一条 + 新增一条不同路径 → 200（计数免检不误伤正常追加）", async () => {
+  const legacyDoc = Object.assign({}, POLICY_DOC, {
+    skills: { takeover: true, activationRelay: true, activationPromote: true, off: [], imports: [{ path: "skills/a" }] },
+  });
+  const env = setup({ policyDoc: legacyDoc });
+  try {
+    const outcome = await send(env.plane.handlerOf("/api/dsh-gate/policy"), makeRequest({
+      method: "POST",
+      path: "/api/dsh-gate/policy",
+      headers: trustedHeaders(),
+      body: JSON.stringify({ skills: { imports: ["skills/a", "skills/b"] } }),
+    }));
+    assert.equal(outcome.status, 200, "body=" + outcome.body);
+    assert.equal(outcome.json.ok, true);
+    const saved = JSON.parse(fs.readFileSync(env.policyFile, "utf8"));
+    assert.deepEqual(saved.skills.imports.map((row) => row.path), ["skills/a", "skills/b"], "历史条目与新增条目都按原样落盘");
+  } finally { cleanup(env); }
+});
+
+await check("POST /policy：合法新增导入路径落盘（不要求目录存在），且 skills 默认值补齐", async () => {
+  const env = setup();
+  try {
+    const outcome = await send(env.plane.handlerOf("/api/dsh-gate/policy"), makeRequest({
+      method: "POST",
+      path: "/api/dsh-gate/policy",
+      headers: trustedHeaders(),
+      body: JSON.stringify({ skills: { imports: [{ id: "shared", path: "./skills/shared" }] } }),
+    }));
+    assert.equal(outcome.status, 200, "body=" + outcome.body);
+    assert.equal(outcome.json.ok, true);
+    const saved = JSON.parse(fs.readFileSync(env.policyFile, "utf8"));
+    assert.deepEqual(saved.skills.imports, [{ id: "shared", path: "./skills/shared" }], "路径原样落盘（不解析成绝对路径）");
+    assert.equal(saved.skills.activationRelay, true, "未提交的 skills 开关按默认值补齐");
+    assert.equal(saved.skills.activationPromote, true);
+  } finally { cleanup(env); }
+});
+
+await check("POST /policy：历史配置里已有的 .. 路径原样回传不拦（只拦新增/变更）", async () => {
+  const legacyDoc = Object.assign({}, POLICY_DOC, {
+    skills: { takeover: true, activationRelay: true, activationPromote: true, off: [], imports: [{ path: "../legacy-skills" }] },
+  });
+  const env = setup({ policyDoc: legacyDoc });
+  try {
+    // 1) 原样回传历史路径：放行（否则老文件一旦保存就锁死）。
+    const kept = await send(env.plane.handlerOf("/api/dsh-gate/policy"), makeRequest({
+      method: "POST",
+      path: "/api/dsh-gate/policy",
+      headers: trustedHeaders(),
+      body: JSON.stringify({ skills: { imports: [{ path: "../legacy-skills" }] } }),
+    }));
+    assert.equal(kept.status, 200, "body=" + kept.body);
+    assert.deepEqual(JSON.parse(fs.readFileSync(env.policyFile, "utf8")).skills.imports, [{ path: "../legacy-skills" }]);
+
+    // 2) 同一份列表里混入一条新的越界路径：整次写入拒绝，历史条目保持原样。
+    const before = fs.readFileSync(env.policyFile, "utf8");
+    const rejected = await send(env.plane.handlerOf("/api/dsh-gate/policy"), makeRequest({
+      method: "POST",
+      path: "/api/dsh-gate/policy",
+      headers: trustedHeaders(),
+      body: JSON.stringify({ skills: { imports: [{ path: "../legacy-skills" }, { path: "../new-escape" }] } }),
+    }));
+    assert.equal(rejected.status, 400, "body=" + rejected.body);
+    assert.equal(rejected.json.code, "INVALID_BODY");
+    assert.ok((rejected.json.errors || []).some((row) => row.code === "IMPORT_PATH_UNSAFE"), "errors=" + JSON.stringify(rejected.json.errors));
+    assert.equal(fs.readFileSync(env.policyFile, "utf8"), before, "拒绝时文件不许变");
+  } finally { cleanup(env); }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 6. 回放表与闭合表一致（数据表不能出现"表里写了、实现没有"的码）
 // ─────────────────────────────────────────────────────────────────────────────
 await check("回放表：每个 after.code 都在闭合 code 表里，且状态码与 ERROR_STATUS 一致", async () => {

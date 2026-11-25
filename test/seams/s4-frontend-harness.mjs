@@ -516,7 +516,9 @@ export function panelFixtures() {
     },
     policy: { file: "gate.json", version: 3, migrated: false, warnings: [], content: policyContent },
     skills: { skills: [{ name: "matlab-use-package-manager", provider: "host", tier: 2, off: false, description: "MATLAB 包管理", source: "host" }], skillpacks: [], imports: [] },
-    mcp: { servers: [{ name: "fs", transport: "stdio", enabled: true, state: "external", tools: ["mcp__fs__read"] }] },
+    // 默认 fixture 用 owned 行：S4G-12 要验证「编辑保存」真实链路；
+    // external（宿主托管只读）由 S4G-16 用专用 fixture 覆盖。
+    mcp: { servers: [{ name: "fs", transport: "stdio", enabled: true, state: "owned", tools: ["mcp__fs__read"] }] },
   };
 }
 

@@ -2,6 +2,45 @@
 
 本项目遵循语义化版本；0.6.0 是「全量缺陷整改 + 架构深化」的收口版本。
 
+## [0.7.2] — 2026-11-25
+
+0.7.2 是 0.7.1 的**缺陷收口补丁**：技能族前缀改由 `lib/naming.js` 的显式别名表解析，`/policy` 写入补上 `skills.imports` 路径闸；复核阶段又堵住两处漏拦（历史免检按「键存在」判导致等价重复直接落盘、反向查前缀大小写不敏感口径不一致），并各自钉成接缝回归门禁，回退即红。
+
+### 一、P1 修复 · 技能族前缀与激活双通道转发 + `gate_load` outputSchema 同步扩展
+
+- **现象**：`browser-skill` 加载成功、激活信号也送到，族内 `bsk_*` 工具却一个都放不出来（0.7.1 真机缺陷）。
+- **根因**：① 族前缀只按技能名第一段切（`browser-skill` → `browser`），而该插件的工具前缀全是 `bsk_*`；② 懒加载插件仅监听 `tools/post-execute` 瀑布流，0.7.1 只派发 `tools/result` 导致注册未触发；③ 扩展 `relay` 与空放行 `diagnostic` 后，`lib/proxy.js` 的 `gate_load` `output.schema` 仍带 `additionalProperties: false` 且未声明新字段，真实宿主严格校验直接拒收。
+- **修复**：
+  - `lib/naming.js` 新增 `SKILL_TOOL_PREFIXES`（显式别名表，值为前缀数组）与 `toolPrefixesForSkill` / `skillsForToolPrefix` 双向查询；`lib/activation.js` 不再自己切字符串，一律问这张表，未命中才回退首段（与 0.5.4 起逐字节一致）。
+  - 技能激活双通道转发（`lib/gate.js` + `lib/host-adapter.js`）：`tools/post-execute` 瀑布流 + `tools/result` 兼发，`relay` 回执含 `waterfall` / `emit` 通道明细；族前缀零命中时生成 `diagnostic` 空放行诊断。
+  - `gate_load` `outputSchema` 同步扩展（`lib/proxy.js`）：拆出单通道 `RELAY_CHANNEL_SCHEMA`，`RELAY_SCHEMA` 补齐可选 `waterfall` / `emit`，`ACTIVATION_SCHEMA` 补齐可选 `diagnostic` 并随回执透出（`receipts[]` 与 `activation` 共用），全路径通过宿主 strict `additionalProperties: false` 校验。
+
+### 二、P1 修复 · `/policy` 写入前的 `skills.imports` 路径闸
+
+- **现象**：控制面保存策略时，新增导入目录里的 `..` 路径穿越、设备名 / UNC 路径可以直接落盘，与 `/skills` 的判定口径不一致。
+- **修复**：`lib/control/policy-service.js` 在 `savePolicyFile` 之前补一道闸——结构（空路径 / `..` 穿越 / 等价重复，`policy-schema.validateSkillsImports`）与安全（设备名 / UNC，复用 `core.checkImportPath`）叠加；**只校验新增或变更的条目**，历史配置里已有的路径原样回传仍放行，老 `gate.json` 不会被一保存就锁死。非法写入一律 400 `INVALID_BODY` 且文件零字节变化。
+
+### 三、复核缺陷收口（must-fix / should-fix 双票）
+
+- **历史免检改为按次数扣减（must-fix）**：原先用 `Set` 按「等价键存在」判历史条目，历史已有 `skills/a` 时提交 `["skills/a", "skills/a/"]` 两条都算历史命中 ⇒ 待检集合为空 ⇒ 重复校验被整体短路 ⇒ 等价重复落盘。改为计数表逐条扣减历史配额，超出的那条按新增进入校验，重复项稳定拦成 400 `IMPORT_PATH_DUPLICATE`；`test/seams/s3-http-contract.test.mjs` 增两条回归（尾斜杠、`./` 前缀），断言 400 且文件不变。
+- **反向查前缀大小写不敏感（should-fix）**：`skillsForToolPrefix` 原按 `prefixes.includes(prefix)` 精确比对，`skillsForToolPrefix("BSK")` 返回空数组，与 `TOOL_PREFIX_RE` / `toolPrefixesForSkill` 的大小写不敏感口径不一致。改为小写归一后比对，`test/naming.test.mjs` 补 `"BSK" → ["browser-skill"]` 断言。
+
+### 四、发版元信息与测试注册表
+
+- `package.json` / `scripts/test-suites.mjs BASELINE_VERSION` / 本段三处版本号统一为 0.7.2（G90.1 同源校验）。
+- `test/seams/s4-frontend-gate.test.mjs` 实测 25 条真实挂载渲染用例：`node --test` 自报 3.49–3.56s、进程墙钟约 4.0s，默认单文件 2s 预算必被误杀；在 `OVERRIDES` 里登记 `seam-s4-frontend-gate` 并放宽到 7000ms（与 `seam-s4-frontend-v2` 同源渲染夹具同档），整轮 12s 总闸不变。
+
+### 五、行为变化与回滚对照
+
+| 场景 | 0.7.1 行为 | 0.7.2 行为 | 兼容性 |
+|---|---|---|---|
+| `browser-skill` 激活与双通道转发 | 族切成 `browser` 且只发 `tools/result`，`bsk_*` 不可见 | 按别名表取 `bsk` 并兼发 `tools/post-execute` + `tools/result`；`gate_load` `outputSchema` 同步声明 `waterfall` / `emit` / `diagnostic` | `gate.json` 形状不变 |
+| 历史一条 + 本次塞等价重复 | 判成「历史原样回传」，200 且重复写进文件 | 400 `INVALID_BODY` / `IMPORT_PATH_DUPLICATE`，文件不动 | 合法保存行为不变 |
+| 新增 `..` / 设备名 / UNC 导入路径 | 200 落盘 | 400 `INVALID_BODY`，错误带 `index` | 历史已有路径原样回传仍放行 |
+| 反查前缀大小写 | `skillsForToolPrefix("BSK")` 为空 | 返回 `["browser-skill"]` | 只读查询，无写盘影响 |
+
+回滚：本版不改 `gate.json` v3 语义与控制面路由，回退到 `v0.7.1` 即可，无需数据迁移。
+
 ## [0.7.1] — 2026-11-22
 
 0.7.1 是 0.7.0 的**交互缺陷收口补丁**：只动 `client/index.js` 的视图层与动作层，不改 `gate.json` v3 策略语义、不新增控制面路由、不改后端模块；另把两处 P1 缺陷固化为 S4 渲染级回归门禁（S4G-11 / S4G-12），回退即红。
