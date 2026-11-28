@@ -526,10 +526,10 @@ ok("off / 常驻：都不放，且幂等");
   assertStrictSchema(toolOnlyOut, loadSchema);
   assert.equal(toolOnlyOut.activation, undefined);
 
-  // 其余 4 个 gate_* 工具也一并过 strict outputSchema
+  // 其余 3 个 gate_* 工具也一并过 strict outputSchema（gate_call 已移除）
+  assert.equal(host.tool("gate_call"), undefined, "gate_call 不得再注册");
   assertStrictSchema(await host.tool("gate_status").execute({}, { agent: host.agent }), host.tool("gate_status").output.schema);
   assertStrictSchema(await host.tool("gate_search").execute({ query: "web" }, { agent: host.agent }), host.tool("gate_search").output.schema);
-  assertStrictSchema(await host.tool("gate_call").execute({ name: "web_search", arguments: {} }, { agent: host.agent }), host.tool("gate_call").output.schema);
   assertStrictSchema(await host.tool("gate_invoke").execute({ tool: "web_search", arguments: {} }, { agent: host.agent }), host.tool("gate_invoke").output.schema);
 
   // 负面反证：任何未声明字段必红

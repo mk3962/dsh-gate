@@ -129,10 +129,12 @@ check("受保护名字恒常驻，覆盖任何层级设置", () => {
     },
     { logger: undefined, dshHome: policyDir },
   );
-  for (const name of ["gate_status", "gate_search", "gate_load", "gate_call", "run_code"]) {
+  for (const name of ["gate_status", "gate_search", "gate_load", "gate_invoke", "run_code"]) {
     const decided = resolveTier(guarded, name, { loaded: false, globallyVisible: true, own: false });
     assert.equal(decided.bucket, "resident", name + " 必须常驻，实际 " + decided.bucket);
   }
+  assert.equal(guarded.protectedNames.has("gate_call"), false, "已移除的 gate_call 不再在受保护名单中");
+  assert.notEqual(resolveTier(guarded, "gate_call", { loaded: false, globallyVisible: true, own: false }).reason, "protected");
 });
 
 check("已加载名字恒常驻", () => {

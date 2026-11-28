@@ -49,9 +49,11 @@ await check("默认策略：插件工具按需", () => {
   }
 });
 await check("闸门自己的工具受保护", () => {
-  for (const name of ["gate_status", "gate_search", "gate_load", "gate_invoke", "gate_call"]) {
+  for (const name of ["gate_status", "gate_search", "gate_load", "gate_invoke"]) {
     assert.equal(tierForTool(examplePolicy, name), TIER_RESIDENT, name);
+    assert.equal(examplePolicy.protectedNames.has(name), true, name + " 必须在 protectedNames");
   }
+  assert.equal(examplePolicy.protectedNames.has("gate_call"), false, "gate_call 不再受保护");
 });
 await check("restrict 已生效：第二层工具从 view 消失", () => {
   const visible = host.visibleOf(host.agent);
@@ -89,7 +91,7 @@ await check("gate_load 生效", () => {
 });
 
 const forwarded = await gate.callThrough(host.agent, "ssh_exec", { command: "echo hi" }, undefined, undefined);
-await check("gate_call 能调到被隐藏的工具", () => {
+await check("gate_invoke 转发管线能调到被隐藏的工具", () => {
   assert.equal(forwarded.content[0].text, "ssh_exec ok {\"command\":\"echo hi\"}");
 });
 await check("代理执行后限制自动恢复", () => {
@@ -252,6 +254,15 @@ await check("gate_status 能真的执行并返回全部键", async () => {
   for (const key of Object.keys(definition.output.schema.properties)) {
     assert.ok(Object.prototype.hasOwnProperty.call(value, key), "缺少返回值键: " + key);
   }
+});
+await check("隐藏工具转发自测：gate_call 未注册，gate_invoke 免 gate_load 直呼成功", async () => {
+  assert.equal(host.tool("gate_call"), undefined, "gate_call 不得注册");
+  const invoke = host.tool("gate_invoke");
+  assert.ok(invoke, "gate_invoke 必须已注册");
+  const out = await invoke.execute({ tool: "ssh_exec", arguments: { command: "echo selftest" } }, { agent: host.agent });
+  assert.equal(out.isError, false, out.text);
+  assert.equal(out.text, 'ssh_exec ok {"command":"echo selftest"}');
+  assert.equal(host.visibleOf(host.agent).has("ssh_exec"), false, "转发后限制自动恢复");
 });
 
 // —— R1：/api/dsh-gate/* 必须走宿主 connection 服务的浏览器会话认证 ——
