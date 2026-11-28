@@ -11,7 +11,7 @@ import { makeHost } from "./host.mjs";
 
 const host = makeHost({
   id: "agent-loadtest",
-  names: ["read", "write", "univer_sheet", "ssh_exec", "gate_status", "gate_search", "gate_load", "gate_call"],
+  names: ["read", "write", "univer_sheet", "ssh_exec"],
 });
 const agent = host.agent;
 
@@ -27,10 +27,11 @@ check("插件名", () => assert.equal(name, "dsh-gate"));
 const policyFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "gate-loadtest-")), "gate.json");
 const dispose = apply(host.rootCtx, { enabled: true, policyFile });
 check("apply 返回卸载函数", () => assert.equal(typeof dispose, "function"));
-check("注册了 5 个闸门工具", () => {
-  for (const toolName of ["gate_status", "gate_search", "gate_load", "gate_invoke", "gate_call"]) {
+check("注册了 4 个闸门工具（gate_call 已移除）", () => {
+  for (const toolName of ["gate_status", "gate_search", "gate_load", "gate_invoke"]) {
     assert.ok(host.registry.has(toolName), toolName);
   }
+  assert.equal(host.registry.has("gate_call"), false, "gate_call 不得再注册");
 });
 check("挂了 assemble 与 pre-step 钩子", () => {
   assert.equal(host.hookCount("system-prompt/assemble") >= 1, true);

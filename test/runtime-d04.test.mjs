@@ -80,23 +80,31 @@ await check("C31：gate.js 的单次防抖调度有句柄、合并与并发上�
 });
 
 // ── 2. C32 / P2-5：闸门工具族一律不可转发 ────────────────────────────────────
-await check("C32：gate_call / gate_invoke 转发闸门工具族一律拒绝（code=gate-tool-not-forwardable）", async () => {
+await check("C32：gate_invoke 转发闸门工具族一律拒绝（code=gate-tool-not-forwardable）", async () => {
   const { host, gate, agent } = makeRig();
   await gate.attach(agent);
-  for (const name of ["gate_invoke", "gate_call", "gate_load", "gate_search", "gate_status"]) {
-    for (const tool of ["gate_call", "gate_invoke"]) {
-      const args = tool === "gate_call" ? { name } : { tool: name };
-      await assert.rejects(
-        () => host.tool(tool).execute({ ...args, arguments: {} }, { agent, signal: undefined }),
-        (error) => {
-          assert.equal(error.code, "gate-tool-not-forwardable", tool + " -> " + name + " 必须带可区分错误码");
-          assert.match(error.message, /不能自调|不能作为转发目标/);
-          return true;
-        },
-        tool + " 必须拒绝转发 " + name,
-      );
-    }
+  assert.equal(host.tool("gate_call"), undefined, "gate_call 不得再注册");
+  for (const name of ["gate_invoke", "gate_load", "gate_search", "gate_status"]) {
+    await assert.rejects(
+      () => host.tool("gate_invoke").execute({ tool: name, arguments: {} }, { agent, signal: undefined }),
+      (error) => {
+        assert.equal(error.code, "gate-tool-not-forwardable", "gate_invoke -> " + name + " 必须带可区分错误码");
+        assert.match(error.message, /^gate_invoke:/);
+        assert.match(error.message, /不能自调|不能作为转发目标/);
+        return true;
+      },
+      "gate_invoke 必须拒绝转发 " + name,
+    );
   }
+  await assert.rejects(
+    () => host.tool("gate_invoke").execute({ tool: "gate_call", arguments: {} }, { agent, signal: undefined }),
+    (error) => {
+      assert.equal(error.code, "gate-target-not-invocable", "已移除的 gate_call 应按未知工具拒绝");
+      assert.match(error.message, /^gate_invoke:/);
+      assert.match(error.message, /未知工具/);
+      return true;
+    },
+  );
   await gate.release(agent);
 });
 
@@ -146,11 +154,11 @@ await check("C33：未知块保留浅层元数据并标记省略（不猜它是�
   assert.match(normalized.text, /unknown-type/);
 });
 
-await check("C33 / P1-8：gate_call 端到端转发多模态工具，blocks 保真、text 只有文本", async () => {
+await check("C33 / P1-8：gate_invoke 端到端转发多模态工具，blocks 保真、text 只有文本", async () => {
   const { host, gate, agent } = makeRig();
   registerTool(host, "media_tool", async () => ({ content: [{ type: "text", text: "A" }, imageBlock, { type: "text", text: "B" }] }));
   await gate.attach(agent);
-  const forwarded = await host.tool("gate_call").execute({ name: "media_tool", arguments: {} }, { agent, signal: undefined });
+  const forwarded = await host.tool("gate_invoke").execute({ tool: "media_tool", arguments: {} }, { agent, signal: undefined });
   assert.equal(forwarded.isError, false, forwarded.text);
   assert.equal(forwarded.text, "A\nB", "文本视图只有文本块、单换行拼接");
   assert.equal(forwarded.blocks.length, 1, "图片块必须作为结构化块回来");
@@ -326,9 +334,9 @@ await check("C40 / P2-5：闸门工具族不进护栏计数；内层已计入的
   resetRepeatGuardDiagnostics();
   await gate.attach(agent);
 
-  // 外层：gate_call 本身是转发口，不计数。
+  // 外层：gate_invoke 本身是转发口，不计数。
   await host.postExecute(
-    { callId: "c1", name: "gate_call", arguments: { name: "ssh_exec" }, agent },
+    { callId: "c1", name: "gate_invoke", arguments: { tool: "ssh_exec" }, agent },
     { isError: false, content: [{ type: "text", text: "ok" }] },
   );
   assert.equal(repeatGuardDiagnostics().counted, 0, "转发口本身不算一次重复劳动");

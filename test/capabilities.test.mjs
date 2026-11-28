@@ -251,7 +251,7 @@ const basePolicy = () => resolvePolicy({
     "propose_custom_expert", "propose_expert_team",
     "open_custom_expert_editor", "open_expert_team_editor",
     "get_expert_team", "list_expert_teams",
-    "gate_status", "gate_load", "gate_search", "gate_invoke", "gate_call",
+    "gate_status", "gate_load", "gate_search", "gate_invoke",
   ];
   for (const name of names) {
     assert.equal(capabilityIdOfToolName(name), "native:" + name, name + " 的来源必须是 native");
@@ -260,12 +260,13 @@ const basePolicy = () => resolvePolicy({
     assert.notEqual(decision.capability, "tool:unknown", name + " 不许落 unknown");
     assert.equal(decision.confidence, "medium", name + " 的来源置信度应为 native 级");
   }
+  assert.equal(capabilityIdOfToolName("gate_call"), "tool:gate_call", "已移除的 gate_call 不再属于原生工具名表");
   ok("原生清单补齐：团队 / 专家 / 闸门工具的能力 id 是 native:<name>，不是 tool:<name>");
 }
 
 // ── 9. 原生来源在能力视图里也读得出来（行 provenance） ────────────────────────
 {
-  const names = ["spawn_teammate", "list_experts", "gate_status", "gate_load", "gate_search", "gate_call"];
+  const names = ["spawn_teammate", "list_experts", "gate_status", "gate_load", "gate_search", "gate_invoke"];
   const view = capabilityState(basePolicy(), { tools: names.map((name) => ({ name })) });
   for (const name of names) {
     const tool = view.tools.find((entry) => entry.name === name);

@@ -65,7 +65,7 @@ export const makeOpaqueExecutor = () => new OpaqueExecutor();
 export const DEFAULT_TOOL_NAMES = [
   "pwsh", "read", "write", "edit", "grep", "glob", "web_search", "web_fetch", "ws_mcp_call", "skill",
   "univer_sheet", "univer_doc", "office_docx", "ssh_exec", "mnemon_recall", "todo_write", "terminal_open",
-  "gate_status", "gate_search", "gate_load", "gate_call",
+  "gate_status", "gate_search", "gate_load", "gate_invoke",
 ];
 
 /** 派发时序（一致性夹具的对拍口径）。 */

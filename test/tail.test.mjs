@@ -118,19 +118,26 @@ await check("冻结：gate_load 后工具仍不在工具表里，但仍可 gate_
   await gate.release(agent);
 });
 
-await check("关闭就是关闭：off 的工具 gate_load 不收、gate_invoke / gate_call 不转发", async () => {
+await check("关闭就是关闭：off 的工具 gate_load 不收、gate_invoke 不转发（gate_call 已移除）", async () => {
   const rig = makeRig({ executor: makePtcExecutor(), policy: { capabilities: { "plugin:dsh-univer-office": { tier: 0 } } } });
   const { gate, host, agent } = rig;
   registerGateTools({ ctx: host.rootCtx, gate, policy: rig.policy });
   await gate.attach(agent);
+  assert.equal(host.tool("gate_call"), undefined, "gate_call 不得再注册");
   const loaded = await gate.load(agent, ["univer_doc"]);
   assert.deepEqual(loaded.denied, ["univer_doc"], "off 的工具不能算 loaded");
   assert.deepEqual(loaded.loaded, []);
   assert.deepEqual(gate.canInvoke(agent, "univer_doc"), { ok: false, reason: "off" });
   const invoke = host.tool("gate_invoke");
-  await assert.rejects(() => invoke.execute({ tool: "univer_doc", arguments: {} }, { agent, signal: undefined }), /关闭/);
-  const call = host.tool("gate_call");
-  await assert.rejects(() => call.execute({ name: "univer_doc", arguments: {} }, { agent, signal: undefined }), /关闭/);
+  await assert.rejects(
+    () => invoke.execute({ tool: "univer_doc", arguments: {} }, { agent, signal: undefined }),
+    (error) => {
+      assert.equal(error.code, "gate-target-not-invocable");
+      assert.match(error.message, /^gate_invoke:/);
+      assert.match(error.message, /关闭/);
+      return true;
+    },
+  );
   await gate.release(agent);
 });
 

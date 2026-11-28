@@ -82,9 +82,11 @@ check("空结果：空文本、无块、不抛", () => {
 });
 
 check("gate 工具族：一律禁止作为转发目标", () => {
-  assert.equal(isGateToolName("gate_call"), true);
+  assert.equal(isGateToolName("gate_invoke"), true);
   assert.equal(isGateToolName("gate_load"), true);
+  assert.equal(isGateToolName("gate_call"), false);
   assert.equal(isGateToolName("read_file"), false);
+  assert.deepEqual([...GATE_TOOL_FAMILY].sort(), ["gate_invoke", "gate_load", "gate_search", "gate_status"]);
   for (const name of GATE_TOOL_FAMILY) {
     const refusal = forwardTargetRefusal(name);
     assert.equal(refusal.ok, false, name + " 必须被拒绝");
