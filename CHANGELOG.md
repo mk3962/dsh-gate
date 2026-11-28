@@ -2,6 +2,57 @@
 
 本项目遵循语义化版本；0.6.0 是「全量缺陷整改 + 架构深化」的收口版本。
 
+## [0.8.0] — 2026-11-28
+
+0.8.0 是**破坏性变更（Breaking Change）**版本：移除与 `gate_invoke` 重复的常驻转发工具 `gate_call`，闸门工具面由 5 个收敛为 4 个（`gate_status` / `gate_search` / `gate_load` / `gate_invoke`），转发执行口唯一化为 `gate_invoke`。除工具名消失外，策略文件形状、控制面路由与目录字节均不变；旧 `gate.json` 不需要迁移，回退到 `v0.7.2` 也无需数据迁移。
+
+### 一、破坏性变更 · `gate_call` 退役
+
+- **变更**：`lib/proxy.js` 不再注册 `gate_call`；转发处理器合并为唯一实现 `makeInvokeForwarder(gate)`，不再为「两个转发口共用」保留参数化外壳。
+- **影响面**：`gate_status` / `gate_search` / `gate_load` / `gate_invoke` 四件套受保护、策略不可摘除；`gate_call` 不再出现在工具表、目录、`lib/naming.js` 的 `NATIVE_TOOL_NAMES` 与 `lib/normalize.js` 的 `GATE_TOOL_FAMILY` 里。
+- **迁移**：仍按旧习惯调用 `gate_call({ name, arguments })` 的提示词 / 脚本会得到「未知工具」，改用 `gate_invoke({ tool, arguments })`，参数与返回信封完全一致。
+- **判据不变**：C32 / P2-5 仍然拒绝把闸门工具族当作转发目标（错误码 `gate-tool-not-forwardable`），`gate_invoke` 不能自调或递归转发。
+
+### 二、`gate_invoke` 行为契约
+
+- **无条件常驻**：native 与 PTC 两种执行器下都常驻注册，是按需工具统一的转发执行口；PTC 工具表冻结时它是唯一执行口这一结论不变。
+- **免 `gate_load` 直呼**：目标在 known、非 upstreamHidden、策略不为层 0 关闭时，`gate_invoke` 直接转发，不必先 `gate_load`；未知签名或需要正文时仍先 `gate_load`。
+- **键名双认**：`tool` 是主键，`name` 是兼容别名（`resolveTargetName`，空串让位给别名）；两者都为空才报错，报错文本同时点出两个键名。
+- **目录字节稳定**：本次不新增也不删除目录条目字段，catalog 输出与 0.7.2 逐字节一致，缓存前缀不受影响。
+- **错误文案**：`gate_invoke: <目标> 已被闸门关闭（off）` / `被上游隐藏` / `未知工具 <名>（用 gate_search 查准确名字）`，错误码 `gate-target-not-invocable`。
+
+### 三、配置退役与兼容
+
+- `lib/migrate.js` 的 `RETIRED_TOOL_NAMES` 收进 `gate_call`（与 `ws_mcp_call` 并列）：v2 策略里的 `gate_call` 键一律进 `legacy.unknownOverrides` 并产生 `dangling-key` 告警，**即使当前视图里残留同名注册也不迁成能力**（退休名单优先于 `knownNames`）。
+- **v3 不升版本、不自动改写磁盘**：`gate.json` 的 `version` 仍为 3，`normalizeV3Policy` / `resolvePolicy` 对残留的 `gate_call` 静默兼容、零告警，`degraded` 与 `migrated` 均为 `false`，文件字节零变化。
+- **残留条目不阻断运行**：旧文件里 `capabilities["native:gate_call"]`、`protected: ["gate_call"]`、`repeatGuard.exclude: ["gate_call"]` 都按普通名字保留；`protected: ["gate_call"]` **不会阻断任何运行路径**，只是不再对应真实工具，想清理就手工删掉这几项，不清理也不会红。
+- 内置受保护名单由 5 项收敛为 4 项（`lib/policy-schema.js` 的 `INTRINSIC_PROTECTED`），用户自定义 `protected` 不受影响。
+
+### 四、测试覆盖无损迁移
+
+- 断言同步为四件套：`test/loadtest.mjs`「注册了 4 个闸门工具」并显式断言 `gate_call` 不得注册；`test/selftest.mjs` 受保护名循环改为 4 个并断言 `gate_call` 不再受保护，同时新增「隐藏工具转发自测：`gate_call` 未注册，`gate_invoke` 免 `gate_load` 直呼成功」。
+- 缺陷回放逐字保号：C32（闸门族不可转发）、C33 / P1-8（多模态保真）、C40 / P2-5（一次转发只计一次）用例名随工具名替换为 `gate_invoke`，`test/seams/defect-registry.mjs` 的 `replay` / `verifiedBy` 同步改口径。
+- P2-5 补 S1 真实回放：`test/seams/s1-host-contract.test.mjs` 的「P2-5 gate_invoke 禁止自调转发」对 `gate_invoke` / `gate_load` / `gate_search` / `gate_status` 逐个断言 `code=gate-tool-not-forwardable` 且消息前缀为 `gate_invoke:`。
+- 新增两条兼容回归：`test/migrate.test.mjs` 覆盖 v2 退休名归 legacy（含 `knownNames` 反例），`test/policy.test.mjs` 覆盖 v3 残留 `protected` / `capabilities` / `repeatGuard.exclude` 静默兼容、不升版、不改文件、`gate_invoke` 照常可转发。
+
+### 五、文档口径对齐与发版元信息
+
+- README / `docs/ARCHITECTURE.md` / `docs/TROUBLESHOOTING.md` 统一改为「闸门四工具」口径：层 2 描述由「经 `gate_call` 直接调用」改为「经 `gate_invoke` 直接调用（已知签名可免 `gate_load`）」，转发禁令清单改为 `gate_invoke` / `gate_load` / `gate_search` / `gate_status`，PTC 章节补「已知签名可免 `gate_load` 直呼」与 native 侧同口径说明。
+- `package.json` / `scripts/test-suites.mjs BASELINE_VERSION` / `client/index.js PANEL_VERSION` 与门控钩子 / `test/seams/s4-frontend-v2.test.mjs` 断言 / 本段，共七处版本号统一为 0.8.0（G90.1 / G90.4 同源校验）。
+
+### 六、行为变化与回滚对照
+
+| 场景 | 0.7.2 行为 | 0.8.0 行为 | 兼容性 |
+|---|---|---|---|
+| 闸门工具面 | 5 个（含 `gate_call`） | 4 个（`gate_status` / `gate_search` / `gate_load` / `gate_invoke`） | 破坏性：提示词里写 `gate_call` 的调用点要改名 |
+| 用 `gate_call({ name, arguments })` 调隐藏工具 | 正常转发 | 「未知工具」报错 | 改用 `gate_invoke({ tool, arguments })`，信封一致 |
+| 用 `gate_invoke` 调可见非关闭按需工具 | PTC 下可免 `gate_load`；native 需先 `gate_load` | native 与 PTC 下均可免 `gate_load` 直呼 | 只放宽、不收紧 |
+| v2 策略里的 `gate_call` 键 | 迁成悬空能力或只告警 | 退休名优先，进 `legacy.unknownOverrides` + `dangling-key` 告警 | 迁移幂等，重复迁逐字节一致 |
+| v3 `gate.json` 残留 `gate_call` | 视作普通名字 | 静默兼容、不升版、不改文件、不阻断运行 | 双向兼容 |
+| 目录输出字节 | — | — | 不变（缓存前缀不受影响） |
+
+回滚：本版不升 `gate.json` 版本、不新增控制面路由、不改目录字节，回退到 `v0.7.2` 即可，无需数据迁移；回退后 `gate_call` 重新出现，已改写成 `gate_invoke` 的提示词仍可正常使用（两个名字在 0.7.2 同时存在）。
+
 ## [0.7.2] — 2026-11-25
 
 0.7.2 是 0.7.1 的**缺陷收口补丁**：技能族前缀改由 `lib/naming.js` 的显式别名表解析，`/policy` 写入补上 `skills.imports` 路径闸；复核阶段又堵住两处漏拦（历史免检按「键存在」判导致等价重复直接落盘、反向查前缀大小写不敏感口径不一致），并各自钉成接缝回归门禁，回退即红。

@@ -3245,7 +3245,7 @@ window.__ModuleLoader__.load({
       const createProjection = env.createProjection;
       const createOrchestrator = env.createOrchestrator;
       const fallbackTemplate = env.fallbackTemplate;
-      const PANEL_VERSION = "0.7.2";
+      const PANEL_VERSION = "0.8.0";
 
       const TABS = Object.freeze([
         { value: "caps", label: text("tab.caps") },
@@ -4303,7 +4303,7 @@ window.__ModuleLoader__.load({
      * 生产态该键不存在，exports 仍严格是 ['inject','apply']（I-6 / ADR A-5）。 */
     const testHook = typeof window === "undefined" ? undefined : window.__DSH_GATE_TEST_HOOK__;
     if (testHook !== undefined && testHook !== null && typeof testHook === "object") {
-      testHook.version = "0.7.2";
+      testHook.version = "0.8.0";
       testHook.template = () => fallbackTemplate();
       testHook.text = TEXT;
       testHook.textKeys = Object.keys(TEXT);
@@ -4317,7 +4317,7 @@ window.__ModuleLoader__.load({
         MAX_UNDO: 50,
         MAX_TOASTS: 5,
         TOAST_LIFETIME: { ok: 4000, info: 6000, warn: 8000, error: 0 },
-        PANEL_VERSION: "0.7.2",
+        PANEL_VERSION: "0.8.0",
       };
       testHook.helpers = {
         parseArgs: shell.parseArgs,
