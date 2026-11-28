@@ -30,6 +30,7 @@ import { createGate } from "../../lib/gate.js";
 import { apply as applyGatePlugin } from "../../lib/index.js";
 import { resolvePolicy } from "../../lib/policy.js";
 import { mountTailGate } from "../../lib/prestep.js";
+import { registerGateTools } from "../../lib/proxy.js";
 import {
   DEFECT_COUNT,
   adrs,
@@ -560,6 +561,36 @@ await check("P2-1 冻结视图与快照一致：PTC 冻结下已加载工具仍�
   const row = gate.capabilityView(agent).tools.find((tool) => tool.name === "todo_write");
   assert.ok(row, "能力视图必须包含该工具");
   assert.equal(row.bucket, "ondemand", "能力视图的桶必须与快照层值一致");
+  await gate.releaseAll();
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// #04 缺陷回放（P2-5）：gate_invoke 不得自调转发
+//
+// 闸门工具族（gate_invoke / gate_load / gate_search / gate_status）若可被转发，
+// gate_invoke 就能自调或递归转发；这条回放只断言**用户可见的错误码**，不摸内部函数。
+// ─────────────────────────────────────────────────────────────────────────────
+
+await check("P2-5 gate_invoke 禁止自调转发", async () => {
+  const host = makeHost({ id: "p2-5", names: ["read", "ssh_exec"] });
+  const agent = host.agent;
+  const policy = s1Policy("p2-5", { defaults: { capability: 2, section: 1, skillpack: 2 } });
+  const gate = createGate({ ctx: host.rootCtx, logger: host.logger, policy });
+  await gate.attach(agent);
+  registerGateTools({ ctx: host.rootCtx, gate, policy });
+  const invoke = host.tool("gate_invoke");
+  assert.ok(invoke, "gate_invoke 必须已注册");
+  for (const name of ["gate_invoke", "gate_load", "gate_search", "gate_status"]) {
+    await assert.rejects(
+      () => invoke.execute({ tool: name, arguments: {} }, { agent, signal: undefined }),
+      (error) => {
+        assert.equal(error.code, "gate-tool-not-forwardable", "gate_invoke -> " + name + " 必须带可区分错误码");
+        assert.match(error.message, /^gate_invoke:/);
+        return true;
+      },
+      "gate_invoke 必须拒绝转发 " + name,
+    );
+  }
   await gate.releaseAll();
 });
 

@@ -30,7 +30,7 @@
 | 技能列一直是空 | 宿主没注册 `skill` 工具（PTC profile） | 已知限制；非 PTC profile 会正常记录 |
 | 段落「摘除」后目录里也找不到它 | 0.1.5 前段落快照是覆盖写 | 升级到 0.1.5+（改并集合并 + 立刻重算） |
 | 目录里段落行只有名字、没有摘要 | 已知问题：`recordSections` 只记 `{name, chars, tokens}`，`renderCatalog` 却读 `entry.summary` | 正常现象，0.1.8 起记为已知限制（修它要改目录字节、破缓存前缀，另开票） |
-| 经转发口（现 `gate_invoke`）调用一次后工具表抖两下 | 0.1.1 前 `callThrough` 没置 `applying` | 升级到 0.1.2+（0.8.0 起已移除旧别名 `gate_call`，统一使用 `gate_invoke`） |
+| 经转发口（现 `gate_invoke`）调用一次后工具表抖两下 | 0.1.1 前 `callThrough` 没置 `applying` | 升级到 0.1.2+（0.8.0 起已移除旧转发工具 `gate_call`，统一使用 `gate_invoke`） |
 | 真机调 `gate_status` 报 `ToolCallError: value.xxx is not a declared property` | `output.schema` 与 `STATUS_KEYS` 漂了（宿主 `additionalProperties: false`） | 升级到 0.1.5+；改 schema 时用 `npm test` 里的 schema 覆盖用例兜住 |
 | PTC 下 `gate_load` 后工具不在工具表 | 正常：PTC 冻结了工具表，声明追加在消息末尾 | 用 `gate_invoke({ tool, arguments })` 调；`GET /api/dsh-gate/state` 的 `executor` / `frozen` 看判定（`gate_status` 18 键不含它们） |
 | PTC 下工具表仍随 `gate_load` 变化 | 执行器没认出来（fail-open 按 native），或策略里 `freezePtcToolset: false` | 看 HTTP 快照的 `executor.reason`；认不出属宿主演进，按 native 跑即可 |
