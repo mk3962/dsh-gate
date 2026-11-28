@@ -50,7 +50,7 @@ dsh-gate 把「模型能看见多少提示面」收成一份策略文件：**层
 | lib/skills.js | 技能扫描、导入与来源标注 | scanSkills, skillSourceLabel |
 | lib/sections.js | 段落装配与摘除（只读 plan.sections） | mountSectionGate |
 | lib/prestep.js | pre-step 有序管线（尾块自愈与去重） | mountPreStepPipeline |
-| lib/proxy.js | gate_* 工具族：加载、转发、搜索、状态 | registerGateTools |
+| lib/proxy.js | 闸门四工具族（`gate_status` / `gate_search` / `gate_load` / `gate_invoke`）：状态、搜索、加载、统一转发 | registerGateTools |
 | lib/guardrail.js | 重复调用护栏（只读文本视图，不解析结构化块） | mountRepeatGuard |
 | lib/mcp.js / lib/upstream.js | MCP 自挂与上游工具面 | — |
 | lib/server.js | 控制面 HTTP 页与 JSON 端点 | mountServer |
@@ -87,7 +87,7 @@ dsh-gate 把「模型能看见多少提示面」收成一份策略文件：**层
 ## 6. 执行面（I-12 / I-13）
 
 - 转发结果统一走 normalize.normalizeToolResult：文本块按单个换行拼接；image / audio / resource 原样保留为结构化块（绝不 base64 进 text）；超限降级为结构化占位摘要。
-- 转发目标禁令统一走 normalize.forwardTargetRefusal：gate_invoke / gate_call / gate_load / gate_search 一律不得作为转发目标。
+- 转发目标禁令统一走 normalize.forwardTargetRefusal：`gate_invoke` / `gate_load` / `gate_search` / `gate_status`（闸门四工具族）一律不得作为转发目标。
 - 限制租约：窗口内新的目标只登记（pending），最后一个租约释放时一次施加；窗口内不得撤/改当前摘除集。
 
 ## 7. 控制面端点（由 CONTROL_PLANE_ROUTES 生成）

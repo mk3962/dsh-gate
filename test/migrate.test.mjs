@@ -107,6 +107,38 @@ const readJson = (file) => JSON.parse(fs.readFileSync(file, "utf8"));
   ok("悬空键 → legacy.unknownOverrides + 告警；退休名优先，当前工具面里有同名注册也不迁能力");
 }
 
+// ── 3b. 0.8.0 退役工具 gate_call：v2 迁移归入 legacy.unknownOverrides 并告警 ──
+{
+  const v2WithGateCall = {
+    version: 2,
+    enabled: true,
+    tools: {
+      defaultTier: 2,
+      overrides: {
+        read: 1,
+        gate_call: 1,
+      },
+    },
+    sections: { defaultTier: 1, overrides: {} },
+    skills: { tier: 2 },
+  };
+  const migrated = migrateV2ToV3(v2WithGateCall, {});
+  assert.equal(migrated.policy.capabilities["tool:gate_call"], undefined, "gate_call 不得生成 tool:gate_call 能力");
+  assert.equal(migrated.policy.capabilities["native:gate_call"], undefined, "gate_call 不得生成 native:gate_call 能力");
+  assert.equal(migrated.policy.legacy.unknownOverrides.gate_call, TIER_RESIDENT, "v2 的 gate_call 必须进 legacy.unknownOverrides");
+  assert.ok(
+    migrated.warnings.some((row) => row.code === "dangling-key" && row.name === "gate_call"),
+    "gate_call 退役迁移必须产生 dangling-key 告警",
+  );
+
+  // 即使当前视图意外还残留同名注册，退役名单仍优先于 knownNames。
+  const alive = migrateV2ToV3(v2WithGateCall, { knownNames: new Set(["gate_call", "read"]) });
+  assert.equal(alive.policy.capabilities["tool:gate_call"], undefined, "gate_call 退役名优先，不得迁成能力");
+  assert.equal(alive.policy.legacy.unknownOverrides.gate_call, TIER_RESIDENT, "即使在 knownNames 中，gate_call 仍进 legacy");
+  assert.ok(alive.warnings.some((row) => row.code === "dangling-key" && row.name === "gate_call"), "即使在 knownNames 中，gate_call 仍需告警");
+  ok("0.8.0 退役工具 gate_call：v2→v3 迁移归入 legacy.unknownOverrides 并产生退役告警");
+}
+
 // ── 4. 幂等：同输入迁两次逐字节一致 ───────────────────────────────────────────
 {
   const a = migrateV2ToV3(V2, {});

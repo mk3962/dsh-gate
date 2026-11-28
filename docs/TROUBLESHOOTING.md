@@ -30,12 +30,12 @@
 | 技能列一直是空 | 宿主没注册 `skill` 工具（PTC profile） | 已知限制；非 PTC profile 会正常记录 |
 | 段落「摘除」后目录里也找不到它 | 0.1.5 前段落快照是覆盖写 | 升级到 0.1.5+（改并集合并 + 立刻重算） |
 | 目录里段落行只有名字、没有摘要 | 已知问题：`recordSections` 只记 `{name, chars, tokens}`，`renderCatalog` 却读 `entry.summary` | 正常现象，0.1.8 起记为已知限制（修它要改目录字节、破缓存前缀，另开票） |
-| `gate_call` 一次后工具表抖两下 | 0.1.1 前 `callThrough` 没置 `applying` | 升级到 0.1.2+ |
+| 经转发口（现 `gate_invoke`）调用一次后工具表抖两下 | 0.1.1 前 `callThrough` 没置 `applying` | 升级到 0.1.2+（0.8.0 起已移除旧别名 `gate_call`，统一使用 `gate_invoke`） |
 | 真机调 `gate_status` 报 `ToolCallError: value.xxx is not a declared property` | `output.schema` 与 `STATUS_KEYS` 漂了（宿主 `additionalProperties: false`） | 升级到 0.1.5+；改 schema 时用 `npm test` 里的 schema 覆盖用例兜住 |
 | PTC 下 `gate_load` 后工具不在工具表 | 正常：PTC 冻结了工具表，声明追加在消息末尾 | 用 `gate_invoke({ tool, arguments })` 调；`GET /api/dsh-gate/state` 的 `executor` / `frozen` 看判定（`gate_status` 18 键不含它们） |
 | PTC 下工具表仍随 `gate_load` 变化 | 执行器没认出来（fail-open 按 native），或策略里 `freezePtcToolset: false` | 看 HTTP 快照的 `executor.reason`；认不出属宿主演进，按 native 跑即可 |
 | `gate_invoke` 返回 `{ isError: true }` | 参数被宿主 `defineTool` 校验拒绝，或工具自身抛错 | 看 `text` 里的 `Error: …`；闸门不代校验参数，签名以声明里那行退化签名为准 |
-| `gate_invoke` 说「未知工具」/「被上游隐藏」 | 目标不在 known、被上游隐藏、或名字打错（`gate_invoke` 只执行已加载 / 常驻工具，不像 `gate_call` 接受任意已知工具） | 先 `gate_search` / `gate_load`；上游隐藏的名字闸门不会放出来 |
+| `gate_invoke` 说「未知工具」/「被上游隐藏」 | 目标不在 known、被上游隐藏、策略为层 0 关闭、或名字打错（`gate_invoke` 在 native 与 PTC 下对可见非关闭工具均支持免 `gate_load` 直呼；参数支持 `tool` 主键与 `name` 别名） | 先 `gate_search` 核对名字，未知签名先 `gate_load`；层 0 关闭或上游隐藏的名字闸门不会放出来 |
 | 尾部声明每次加载都多一条 | 清单变了（新加载的名字、段落正文首次取到） | 正常：只在内容变化时追加；旧的块留在历史里自然过时（宿主不提供摘除通道）。0.3.1 前每步都追加，长会话会累积上万 token |
 | 尾部声明完全不见了 | 上下文被压缩/折叠，或插件重启后还没到下一步 | 0.3.1 起会按 `agent.session` 表面自愈；读不到表面时以 `lastEmitted` 记忆为准 |
 
@@ -61,10 +61,10 @@ pnpm 在 D: 盘找不到同盘 store，于是拒绝任何写操作。两步对�
 
 ## PTC 会话的加载语义（0.2.0+）
 
-- 看到 `frozen: true` 就是冻结模式：`gate_load` 不改工具表，只让末尾声明变长；调用一律走 `gate_invoke`。
+- 看到 `frozen: true` 就是冻结模式：`gate_load` 不改工具表，只让末尾声明变长；调用走 `gate_invoke`（已知签名可免 `gate_load` 直呼，未知签名先 `gate_load` 再调用）。
 - 冻结在第一次 `gate_load` 之前就生效 —— 别指望「先加载一次、再冻上」能省缓存。
 - 想退回 0.1.8 的加载语义（加载即改工具表）：策略里写 `"freezePtcToolset": false`，下一轮生效，不用降级。
-- native 会话没有尾部声明；段落加载后仍回系统提示词，这是有意保留的差异（native 没有 `gate_invoke` 这条执行口）。
+- native 会话没有尾部声明；`gate_load` 后工具回到工具表、段落回到系统提示词。同时 `gate_invoke` 在 native 与 PTC 两种模式下均无条件常驻，已知签名可免 `gate_load` 直呼，未知签名可先 `gate_load` 再调用或直接调用已恢复进工具表的工具。
 
 ## 日志
 
