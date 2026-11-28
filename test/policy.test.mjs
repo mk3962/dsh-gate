@@ -12,7 +12,11 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { register } from "node:module";
 import { fileURLToPath } from "node:url";
+
+register("./stub-resolver.mjs", import.meta.url);
+const { registerGateTools } = await import("../lib/proxy.js");
 import {
   DEFAULT_POLICY,
   DEFAULT_RESIDENT_NATIVE,
@@ -20,6 +24,7 @@ import {
   POLICY_KEYS,
   emptyPolicyTemplate,
   mergePolicyFile,
+  normalizeV3Policy,
   resolvePolicy,
   savePolicy,
   tierForTool,
@@ -27,6 +32,8 @@ import {
   TIER_ONDEMAND,
   TIER_RESIDENT,
 } from "../lib/policy.js";
+import { createGate } from "../lib/gate.js";
+import { makeHost } from "./host.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.join(here, "..");
@@ -599,5 +606,59 @@ await (async () => {
   assert.ok(policySource.includes("policyKeyRows()"), "POLICY_KEYS 必须是字段表的投影，而不是第二份数组");
   ok("A18 / 单一真源：示例、v2 透传、门禁断言、POLICY_KEYS 全部派生自 lib/policy-schema.js 一张表");
 }
+
+// ── 22. 0.8.0 v3 静默兼容：gate.json 残留 gate_call 条目不报错、不升版、不阻断 ──
+await (async () => {
+  const dir = tmpDir();
+  const file = path.join(dir, "gate.json");
+  const legacyV3 = {
+    version: 3,
+    enabled: true,
+    defaults: { capability: 2, section: 1, skillpack: 2 },
+    capabilities: {
+      "native:read": { tier: 1 },
+      "native:gate_call": { tier: 1 },
+    },
+    protected: ["gate_call"],
+    repeatGuard: {
+      enabled: true,
+      exclude: ["gate_call"],
+    },
+  };
+  const originalText = JSON.stringify(legacyV3, null, 2) + "\n";
+  fs.writeFileSync(file, originalText, "utf8");
+  const originalBytes = fs.readFileSync(file);
+
+  const normalized = normalizeV3Policy(legacyV3);
+  assert.equal(normalized.policy.version, 3, "v3 规范化不得升版本号");
+  assert.deepEqual(normalized.warnings, [], "v3 残留 gate_call 规范化不得产生告警");
+  assert.equal(normalized.policy.capabilities["native:gate_call"].tier, TIER_RESIDENT, "v3 capabilities 残留条目应原样保留");
+  assert.deepEqual(normalized.policy.protected, ["gate_call"], "v3 protected 残留条目应静默保留");
+  assert.ok(normalized.policy.repeatGuard.exclude.includes("gate_call"), "v3 repeatGuard.exclude 残留条目应静默保留");
+
+  const resolved = resolvePolicy({}, { dshHome: dir });
+  assert.equal(resolved.version, 3, "resolvePolicy 不得升版本号");
+  assert.equal(resolved.degraded, false, "v3 残留 gate_call 不得降级");
+  assert.equal(resolved.migrated, false, "v3 文件不得被当成 v2 迁移");
+  assert.deepEqual(resolved.warnings, [], "v3 残留 gate_call 加载必须静默兼容、无告警");
+  assert.deepEqual(fs.readFileSync(file), originalBytes, "不得自动改写用户 v3 gate.json 文件");
+  assert.equal(resolved.protectedNames.has("gate_call"), true, "用户 protected 条目兼容留存");
+  assert.equal(resolved.protectedNames.has("gate_invoke"), true, "内置受保护名单仍含 gate_invoke");
+
+  const host = makeHost({ names: ["read", "univer_sheet"], id: "v3-compat-agent" });
+  const gate = createGate({ ctx: host.rootCtx, logger: host.logger, policy: resolved });
+  registerGateTools({ ctx: host.rootCtx, gate, policy: resolved });
+  await gate.attach(host.agent);
+  assert.equal(host.tool("gate_call"), undefined, "兼容旧配置不得重新注册 gate_call");
+  assert.equal(host.registry.has("gate_call"), false, "registry 不得包含 gate_call");
+  const invoked = await host.tool("gate_invoke").execute(
+    { tool: "univer_sheet", arguments: { x: 1 } },
+    { agent: host.agent, signal: undefined },
+  );
+  assert.equal(invoked.isError, false, "v3 残留 gate_call 不得阻断 gate_invoke 正常运行: " + invoked.text);
+  assert.equal(invoked.text, 'univer_sheet ok {"x":1}');
+  await gate.release(host.agent);
+  ok("0.8.0 v3 静默兼容：残留 protected/capabilities/repeatGuard gate_call 不报错、不升版、不改文件、不阻断运行");
+})();
 
 console.log("\n全部通过 (" + passed + ")");
