@@ -169,7 +169,7 @@ test("#07 · 单文件外壳内 L1-L7 七个命名空间齐备且可求值", () 
   for (const name of ["L1", "L2", "L3", "L4"]) assert.equal(typeof hook[name].create, "function", name + " 必须通过门控钩子暴露工厂");
   assert.equal(typeof hook.primitives.createToastQueue, "function");
   assert.equal(typeof hook.shell.parseArgs, "function");
-  assert.equal(hook.constants.PANEL_VERSION, "0.7.2");
+  assert.equal(hook.constants.PANEL_VERSION, "0.8.0");
 });
 
 test("#07 · 生产态导出仍严格是 ['apply','inject']，门控钩子只在预置时出现", () => {
